@@ -8,22 +8,30 @@ INCLUDES=-I +ocamlgraph
 OCAMLFLAGS=$(INCLUDES)    # add other options for ocamlc here
 OCAMLOPTFLAGS=$(INCLUDES) # add other options for ocamlopt here
 
-# The list of common object files
-COMMON_OBJS=\
-	trs_ast.cmo trs_parser.cmo trs_lexer.cmo trs_sem.cmo read.cmo \
-	util.cmo matrix.cmo params.cmo proc.cmo smt.cmo preorder.cmo mset.cmo \
-	abbrev.cmo term.cmo subst.cmo trs.cmo dp.cmo app.cmo wpo.cmo nonterm.cmo \
-	main.cmo
+# The list of ocaml source files
+OCAML_SRCS=\
+	trs_ast.ml trs_parser.mly trs_lexer.mll trs_sem.ml read.ml \
+	util.ml matrix.ml params.ml proc.ml smt.ml preorder.ml mset.ml \
+	abbrev.ml term.ml subst.ml trs.ml dp.ml app.ml wpo.ml nonterm.ml \
+	main.ml
+OCAML_CMAS=\
+	graph.cma unix.cma str.cma
 
-COMMON_CMXS= $(COMMON_OBJS:%.cmo=%.cmx)
+OCAML_MLS=$(patsubst %.mll,%.ml,$(OCAML_SRCS:%.mly=%.ml))
 
-all: depend NaTT
+OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
+
+OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
+
+OCAML_CMXAS=$(OCAML_CMAS:%.cma=%.cmxa)
+
+all: NaTT
 
 install: all
 	cp -f NaTT.bin NaTT xtc2tpdb.xml /usr/local/bin/
 
-NaTT: $(COMMON_OBJS)
-	$(OCAMLC) -o $@ graph.cma unix.cma str.cma $(OCAMLFLAGS) $^
+NaTT: $(OCAML_CMXS)
+	$(OCAMLOPT) -o $@ $(OCAML_CMXAS) $(OCAMLFLAGS) $^
 
 # Common rules
 .SUFFIXES: .ml .mli .cmo .cmi .cmx .mll .mly
@@ -39,7 +47,6 @@ NaTT: $(COMMON_OBJS)
 
 .mly.ml:
 	$(OCAMLYACC) $<
-	$(OCAMLC) -c $*.mli
 
 .mll.ml:
 	$(OCAMLLEX) $<
@@ -48,10 +55,11 @@ NaTT: $(COMMON_OBJS)
 clean:
 	rm -f NaTT
 	rm -f *.cm[iox] *.o *.mli .depend
+	rm trs_parser.ml trs_lexer.ml
 
 # Dependencies
-depend:
+.depend: $(OCAML_MLS)
 	$(OCAMLDEP) *.mli *.ml > .depend
 
--include experiments.mk
+include experiments.mk
 -include .depend
