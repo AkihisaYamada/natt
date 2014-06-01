@@ -1,0 +1,10 @@
+(VAR x)
+(RULES 
+	f(f(x)) -> g(x)
+	g(c(x)) -> f(c(f(x)))
+	k(x,a2,b1) -> k(a1,x,b1)
+	k(a1',x,b1) -> k(x,a2',b1)
+	k(x,x,b1) -> k(g(x),b2,b2)
+	k(g(x),b3,b3) -> k(x,x,b4)
+	f(f(f(f(x)))) -> k(x,x,x)
+)

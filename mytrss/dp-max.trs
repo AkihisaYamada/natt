@@ -1,0 +1,6 @@
+(VAR x y)
+(RULES
+	if(true,x,y) -> x
+	if(false,x,y) -> y
+	f(true,x) -> f(if(x,x,x),false)
+)

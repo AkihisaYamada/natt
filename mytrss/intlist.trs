@@ -1,0 +1,6 @@
+(VAR x y)
+(RULES
+	p(s(x)) -> x
+	intlist(x,0) -> nil
+	intlist(x,s(y)) -> cons(x,intlist(s(x),p(s(y))))
+)

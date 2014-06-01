@@ -1,0 +1,5 @@
+(VAR x)
+(RULES
+	f(s(x)) -> f(p(s(x)))
+	p(s(x)) -> x
+)

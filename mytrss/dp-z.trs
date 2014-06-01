@@ -1,0 +1,7 @@
+(VAR x y)
+(RULES
+	add(0,y) -> y
+	add(s(x),y) -> s(add(x,y))
+	g(s(x)) -> add(g(x),s(0))
+	f(s(x)) -> f(g(x))
+)

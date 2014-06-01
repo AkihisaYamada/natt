@@ -1,0 +1,5 @@
+(VAR x y)
+(RULES
+	dbl(s(x)) -> s(s(dbl(x)))
+	s(dbl(s(x))) -> s(s(s(dbl(x))))
+)

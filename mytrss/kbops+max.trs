@@ -1,0 +1,4 @@
+(VAR x)
+(RULES
+	f(g(f(x))) -> f(f(g(g(f(f(x))))))
+)

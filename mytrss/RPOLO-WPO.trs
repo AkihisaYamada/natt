@@ -1,0 +1,6 @@
+(VAR x y z)
+(RULES
+	f(g(h(x))) -> g(f(h(g(x))))
+	f(i(x,i(y,f(g(z))))) -> f(i(y,i(f(z),x)))
+	f(g(h(x))) -> x
+)

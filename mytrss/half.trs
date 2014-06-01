@@ -1,0 +1,6 @@
+(VAR x)
+(RULES
+	p(s(x)) -> x
+	half(0) -> 0
+	half(s(x)) -> s(half(p(x)))
+)

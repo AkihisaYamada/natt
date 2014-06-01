@@ -1,0 +1,5 @@
+(VAR x)
+(RULES
+	fact(0) -> s(0)
+	fact(s(x)) -> *(s(x), fact(x))
+)

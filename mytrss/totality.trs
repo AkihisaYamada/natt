@@ -1,0 +1,7 @@
+(THEORY (AC +))
+(RULES
+ +(f(b,a),g(a,b)) -> +(f(a,b),g(b,a))
+ f(c,+(c,c)) -> +(c,f(c,c))
+ +(c,g(c,c)) -> g(c,+(c,c))
+ a -> b
+)

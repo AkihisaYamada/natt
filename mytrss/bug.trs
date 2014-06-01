@@ -1,0 +1,8 @@
+(VAR x y)
+(RULES
+  fs -> f(n_fs)
+  a(n_fs) -> fs
+  i(f(x)) -> a(x)
+  g(f(x)) -> i(f(n_g(x)))
+  a(n_g(x)) -> g(a(x))
+)

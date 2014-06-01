@@ -1,0 +1,6 @@
+(VAR x)
+(RULES
+	p(s(x)) -> x
+	ones(0) -> 0
+	ones(s(x)) -> cons(1,ones(p(s(x))))
+)

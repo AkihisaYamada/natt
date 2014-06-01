@@ -1,0 +1,5 @@
+(VAR x y)
+(THEORY (AC + *))
+(RULES
+  *(x,s(y)) -> +(x,*(x,y))
+)

@@ -1,0 +1,5 @@
+(VAR x y)
+(RULES
+ f(x,g(g(y))) -> g(f(g(y),g(y)))
+ g(f(g(x),y)) -> f(x,g(x))
+)

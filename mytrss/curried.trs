@@ -1,0 +1,5 @@
+(VAR f g x)
+(RULES 
+  app(app(app(comp, f), g), x) -> app(f, app(g, x))
+  app(twice, f) -> app(app(comp, f), f)
+)

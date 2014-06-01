@@ -1,0 +1,6 @@
+(VAR y x)
+
+(RULES
+f(s(x)) -> f(id(s(x)))
+f(id(s(x))) -> f(s(id(x)))
+)

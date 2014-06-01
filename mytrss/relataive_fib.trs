@@ -1,0 +1,13 @@
+(VAR x y ys)
+(RULES
+	+(0,0) ->= 0
+	+(0,s(y)) ->= s(y)
+	+(s(x),y) ->= s(+(x,y))
+
+	fib_gen(x,y) ->= :(x,fib_gen(y,+(x,y)))
+
+	!!(0,:(y,ys)) -> y
+	!!(s(x), :(y,ys)) -> !!(x,ys)
+
+	fib(x) -> !!(x, fib_gen(0,s(0)))
+)

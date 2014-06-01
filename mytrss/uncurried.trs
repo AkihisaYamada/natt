@@ -1,0 +1,9 @@
+(VAR f g x x3 x4 x5)
+(RULES
+  comp3(f,g,x) -> app(f,app(g,x))
+  twice1(f) -> comp2(f,f)
+  app(comp2(x4,x3),x5) -> comp3(x4,x3,x5)
+  app(comp1(x4),x5) -> comp2(x4,x5)
+  app(comp(),x5) -> comp1(x5)
+  app(twice(),x5) -> twice1(x5)
+)

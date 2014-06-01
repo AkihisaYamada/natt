@@ -1,0 +1,6 @@
+(VAR x y)
+(RULES
+ sub(s(x),s(y)) -> sub(x,y)
+ sub(x,0) -> x
+ f(s(x)) -> f(sub(s(x),s(0)))
+)
