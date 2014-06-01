@@ -5,7 +5,9 @@ type ty = Nat | Int | Real | Bool | Prod of ty * ty
 type name = string
 
 class virtual ['e,'d] base =
-	object (_:'b)
+	object (x:'b)
+		val mutable base_ty = Int
+		method set_base_ty ty = base_ty <- ty
 		method virtual add_assertion : 'e -> unit
 		method virtual add_definition : name -> ty -> 'e -> unit
 		method virtual add_declaration : 'd -> unit
@@ -13,6 +15,7 @@ class virtual ['e,'d] base =
 		method virtual new_variable : name -> ty -> 'e
 		method virtual temp_variable : ty -> 'e
 		method virtual refer : ty -> 'e -> 'e
+		method refer_base e = x#refer base_ty e
 		method virtual expand : 'e -> 'e
 	end;;
 
@@ -447,7 +450,7 @@ class virtual context =
 				else if e = LI 0 then
 					If(c, x#mul_if t e2, e)
 				else
-					let e2 = x#refer_sub Int e2 in
+					let e2 = x#refer_sub base_ty e2 in
 					If(c, x#mul_if t e2, x#mul_if e e2)
 			| _, If(c,t,e) ->
 				if t = LI 0 then
@@ -455,7 +458,7 @@ class virtual context =
 				else if e = LI 0 then
 					If(c, x#mul_if e1 t, e)
 				else
-					let e1 = x#refer_sub Int e1 in
+					let e1 = x#refer_sub base_ty e1 in
 					If(c, x#mul_if e1 t, x#mul_if e1 e)
 			| _ ->
 				e1 *^ e2
@@ -510,7 +513,7 @@ class virtual context =
 				function
 				| []	-> x#add_assertion eq; max
 				| e::es	->
-					let e = x#refer Int e in
+					let e = x#refer base_ty e in
 					x#add_assertion (max >=^ e);
 					sub ((max =^ e) |^ eq) max es
 			in
@@ -519,7 +522,7 @@ class virtual context =
 				| []	-> raise (Invalid_formula "empty max")
 				| [e]	-> x#expand e
 				| es	-> (* Max (List.map x#expand es)*)
-					sub (LB false) (x#temp_variable Int) es
+					sub (LB false) (x#temp_variable base_ty) es
 
 		method private expand_car =
 			function

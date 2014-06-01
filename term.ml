@@ -155,4 +155,31 @@ let output_eq os (l,r) =
 let prerr_term = output_term stderr
 let prerr_rule = output_rule stderr
 let prerr_aterm s = prerr_term (erase s)
-;;
+
+(* xml printers *)
+let rec output_xml_term os =
+	let rec sub =
+		function
+		| []	-> output_string os "</arg></funapp>"
+		| t::ts -> output_string os "</arg><arg>"; output_xml_term os t; sub ts
+	in
+	fun (Node(fty,fname,ts)) ->
+		if fty = Var then begin
+			output_string os "<var>";
+			output_string os fname;
+			output_string os "</var>";
+		end else begin
+			output_string os "<funapp><name>";
+			output_string os fname;
+			output_string os "</name>";
+			match ts with
+			| []	-> if fty <> Var then output_string os "</funapp>";
+			| t::ts	-> output_string os "<arg>"; output_xml_term os t; sub ts
+		end
+
+let output_xml_rule os (l,r) =
+	output_string os "<rule><lhs>";
+	output_xml_term os l;
+	output_string os "</lhs><rhs>";
+	output_xml_term os r;
+	output_string os "</rhs></rule>"

@@ -121,6 +121,7 @@ class processor p (trs:Trs.t) dg =
 		let (tool,options) = p.smt_tool in
 		create_solver p.peek_to p.peek_in p.peek_out tool options
 	in
+	let () = solver#set_base_ty weight_ty in
 	(* Signature as the set of function symbols with their informations. *)
 	let sigma = Hashtbl.create 256 in
 	let lookup fname =
@@ -208,7 +209,7 @@ class processor p (trs:Trs.t) dg =
 		Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (coef *^ value)) vc
 	in
 	let vc_refer context vc =
-		Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (context#refer weight_ty value)) vc
+		Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (context#refer_base value)) vc
 	in
 	(* weight order *)
 	let weq =
@@ -414,12 +415,14 @@ class processor p (trs:Trs.t) dg =
 
 	let add_weight =
 		let bind_lower =
-			if p.w_neg then fun _ _ -> ()
+			if p.w_neg then
+				if p.w_max = 0 then fun _ _ -> ()
+				else fun _ fw -> solver#add_assertion (fw >=^ LI (- p.w_max))
 			else fun finfo fw -> solver#add_assertion (fw >=^ if finfo.arity = 0 then mcw else LI 0)
 		in
 		let bind_upper =
 			if p.w_max = 0 then fun _ _ -> ()
-			else fun _ fw -> solver#add_assertion (fw <=^ LI p.w_max);
+			else fun _ fw -> solver#add_assertion (fw <=^ LI p.w_max)
 		in
 		let sub finfo v i =
 			let fw = add_number p.w_mode (v i) in
@@ -466,13 +469,16 @@ class processor p (trs:Trs.t) dg =
 			let coef = add_number p.sc_mode (supply_matrix_index v j k) in
 			match p.sc_mode with
 			| W_num ->
-				if not p.dp && j = 1 && k = 1 then
+				if not p.dp && j = 1 && k = 1 then begin
 					(* if not in DP mode, assert top left element >= 1 *)
-					solver#add_assertion (coef >=^ LI 1)
-				else
+					solver#add_assertion (coef >=^ LI 1);
+					if p.sc_max > 0 then
+						solver#add_assertion (coef <=^ LI (p.sc_max + 1));
+				end else begin
 					solver#add_assertion (coef >=^ LI 0);
 				if p.sc_max > 0 then
 					solver#add_assertion (coef <=^ LI p.sc_max);
+				end;
 				coef
 			| _ ->
 				if not p.dp && j = 1 && k = 1 then
@@ -763,12 +769,11 @@ class processor p (trs:Trs.t) dg =
 					solver#add_assertion (argfilt finfo i =>^ (subterm_penalty finfo i >^ LI 0));
 				done
 			else if p.mcw_val = 0 then
-				(* non standard admissibility. *)
 				solver#add_assertion (is_const finfo |^ (fw >^ LI 0))
 			else begin
 				solver#add_assertion (fp <=^ !pmax);
-				(* standard admissibility. *)
-				solver#add_assertion ((is_unary finfo to_n &^ (fw =^ LI 0)) =>^ (fp =^ !pmax));
+				(* asserting admissibility of weight and precedence. *)
+				solver#add_assertion (smt_if (is_unary finfo to_n &^ (fw =^ LI 0)) (fp =^ !pmax) (fp <^ !pmax));
 			end;
 		end else if p.maxcons then begin
 			solver#add_assertion (fp <=^ !pmax);
@@ -797,7 +802,7 @@ class processor p (trs:Trs.t) dg =
 
 	let refer_w =
 		if p.refer_w then
-			solver#refer weight_ty
+			solver#refer_base
 		else
 			fun x -> x
 	in
@@ -849,12 +854,12 @@ class processor p (trs:Trs.t) dg =
 	let weight_max =
 		let folder af sp ret (vc,e) =
 			if af = LB true then
-				(vc, solver#refer Int (sp +^ e))::ret
+				(vc, solver#refer_base (sp +^ e))::ret
 			else
 				let vc' = Hashtbl.copy vc in
 				vc_mul vc' (smt_pb af);
 				vc_refer solver vc';
-				(vc', solver#refer Int (smt_pb af *^ (sp +^ e)))::ret
+				(vc', solver#refer_base (smt_pb af *^ (sp +^ e)))::ret
 		in
 		let rec sub_fun finfo i ret =
 			function

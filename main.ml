@@ -245,6 +245,10 @@ class main =
 				trs#read params.file;
 
 			match params.mode with
+			| MODE_higher_xml ->
+				trs#output_xml_ho stdout;
+			| MODE_through ->
+				trs#output stdout;
 			| MODE_flat ->
 				trs#iter_rules (fun i (l,r) -> trs#replace_rule i (flat l) (flat r));
 				trs#output stdout;

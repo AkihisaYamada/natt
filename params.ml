@@ -56,6 +56,8 @@ type mode =
 | MODE_simple
 | MODE_dist
 | MODE_dup
+| MODE_through
+| MODE_higher_xml
 type smt_tool = string * string list
 
 type order_params =
@@ -147,7 +149,7 @@ let order_default =
 	refer_w = true;
 	reset_mode = RESET_reset;
 	use_scope = true;
-	use_scope_ratio = 2;
+	use_scope_ratio = 3;
 	remove_all = false;
 	smt_tool = z3cmd;
 	peek_in = false;
@@ -371,8 +373,6 @@ while !i < argc do
 		| "-all", None ->
 			if p.dp then err "--all cannot applied here!";
 			p.remove_all <- true;
-			p.use_scope <- false;
-			p.use_scope_ratio <- 0;
 		| "-Tempvar",None ->
 			params.tmpvar <- false;
 		| "-Sort", None -> params.sort_scc <- SORT_none;
@@ -561,6 +561,15 @@ while !i < argc do
 			end;
 		| "-z3", None -> p.smt_tool <- z3cmd;
 		| "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
+		| "-dup", None -> default := false; params.mode <- MODE_dup;
+		| "t", mode ->
+			default := false;
+			begin
+				match mode with
+				| Some "ho" -> params.mode <- MODE_higher_xml;
+				| Some str -> err ("Unknown transformation mode: " ^ str ^ "!");
+				| _ -> params.mode <- MODE_through;
+			end
 		| _ -> erro arg;
 	end else begin
 		match arg with
@@ -644,9 +653,9 @@ if !default then begin
 	!pp.max_mode <- MAX_dup;
 	apply_polo ();
 	!pp.w_dim <- 2;
-	!pp.use_scope <- false;
+(*	!pp.use_scope <- false;
 	!pp.use_scope_ratio <- 0;
-	params.max_loop <- 3;
+*)	params.max_loop <- 3;
 end
 
 type comment_type =

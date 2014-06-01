@@ -196,6 +196,57 @@ class t =
 			x#output_ths os;
 			x#output_rules os;
 			x#output_eqs os;
+		method output_xml_rules os =
+			output_string os "<rules>";
+			x#iter_rules (fun _ rule -> output_xml_rule os rule);
+			output_string os "</rules>";
+		method output_xml_ho_signature os =
+			output_string os "<higherOrderSignature>";
+			let first = ref true in
+			let iterer_var fname finfo =
+				if finfo.symtype = Var then begin
+					if !first then begin
+						output_string os "<variableTypeInfo>";
+						first := false;
+					end;
+					output_string os "<varDeclaration><var>";
+					output_string os fname;
+					output_string os "</var><type><basic>o</basic></type></varDeclaration>";
+				end;
+			in
+			Hashtbl.iter iterer_var sym_table;
+			if not !first then
+				output_string os "</variableTypeInfo>";
+			first := true;
+			let iterer_fun fname finfo =
+				if finfo.symtype = Fun then begin
+					if !first then begin
+						output_string os "<functionSymbolTypeInfo>";
+						first := false;
+					end;
+					output_string os "<funcDeclaration><name>";
+					output_string os fname;
+					output_string os "</name><typeDeclaration>";
+					match finfo.arity with
+					| Arity n ->
+						for i = 0 to n do
+							output_string os "<type><basic>o</basic></type>";
+						done;
+						output_string os "</typeDeclaration></funcDeclaration>";
+					| _ -> raise (Internal "arity");
+				end;
+			in
+			Hashtbl.iter iterer_fun sym_table;
+			if not !first then
+				output_string os "</functionSymbolTypeInfo>";
+			output_string os "</higherOrderSignature>";
+		method output_xml_ho os =
+			output_string os "<?xml version=\"1.0\"?><problem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://dev.aspsimon.org/xtc.xsd\" type=\"termination\">";
+			output_string os "<trs>";
+			x#output_xml_rules os;
+			x#output_xml_ho_signature os;
+			output_string os "</trs><strategy>FULL</strategy></problem>";
+
 (* estimations *)
 		method estimate_narrow (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 			fty = Var ||
@@ -312,3 +363,5 @@ let instantiate_edge trs cnt =
 			sub2 lim ss ts
 		else
 			[]
+
+

@@ -52,8 +52,8 @@ let rec smt_order e1 e2 =
 		else not_ordered
 	| _ ->
 		Delay(fun solver ->
-			let e1 = solver#refer Int e1 in
-			let e2 = solver#refer Int e2 in
+			let e1 = solver#refer_base e1 in
+			let e2 = solver#refer_base e2 in
 			match e1, e2 with
 			| Vec(e1::es1), Vec(e2::es2) ->
 				smt_if (smt_for_all2 (>=^) es1 es2) (smt_order e1 e2) not_ordered
