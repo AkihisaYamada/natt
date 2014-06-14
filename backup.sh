@@ -20,7 +20,7 @@ fi
 
 chmod -x $src $common
 
-if [ -e $bak ]
+if [ -e "$bak" ]
 then
 	if [ -e "$bak/$1.tar.gz" ]
 	then
