@@ -8,13 +8,12 @@ open Params
 exception Continue
 exception No_support of string
 
-let tbl2list tbl = Hashtbl.fold (fun _ x xs -> x::xs) tbl []
-
 let k_comb x _ = x
 let supply_index v i = v ^ "_" ^ string_of_int i
 
 let rec eq (WT(fty,fname,ss,sw)) (WT(gty,gname,ts,tw)) =
-	fty = gty && fname = gname && 
+	fty = gty &&
+	fname = gname && 
 	match fty with
 	| Th "C" -> eq_mset ss ts
 	| Th "AC" -> eq_mset ss ts

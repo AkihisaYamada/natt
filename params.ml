@@ -42,6 +42,7 @@ type acdp_mode =
 | ACDP_KT98
 | ACDP_MU98
 | ACDP_GK01
+| ACDP_new
 type ac_mark_mode =
 | AC_unmark
 | AC_mark
@@ -252,7 +253,7 @@ let params =
 	uncurry = false;
 	max_loop = 0;
 	max_narrowing = 8;
-	acdp_mode = ACDP_KT98;
+	acdp_mode = ACDP_new;
 	ac_mark_mode = AC_guard;
 	orders_removal = Array.make 0 order_default;
 	orders_dp = Array.make 0 order_default;
