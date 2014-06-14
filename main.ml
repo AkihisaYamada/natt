@@ -231,8 +231,8 @@ class main =
 			if trs#get_eqsize > 0 then
 				err "Has equations";
 			let rest = StrSet.remove "C" trs#get_ths in
-			let rest = StrSet.remove "AC" rest in
-			if not (StrSet.is_empty rest) then
+(*			let rest = StrSet.remove "AC" rest in
+*)			if not (StrSet.is_empty rest) then
 				err ("Unacceptable theories: " ^ StrSet.fold (^) rest "")
 
 		method duplicating =
