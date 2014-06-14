@@ -28,22 +28,22 @@ then
 		exit 1
 	fi
 	
-	gmake || exit 1
+	make || exit 1
 	
-	cd $bak
+	cd "$bak"
 	
 	mkdir NaTT
 	
-	(cd $pwd; eval cp $local $bak/NaTT)
+	(cd "$pwd"; eval cp $local \"$bak/NaTT\")
 	$tar -czf $1.tar.gz NaTT
 	
 	if [ "$release" = "y" ]
 	then
 		rm -f NaTT/*
-		(cd $pwd; eval cp $bin $script $common $bak/NaTT)
+		(cd "$pwd"; echo cp $bin $script $common \"$bak/NaTT\")
 		$tar -czf $1.bin.tar.gz NaTT
 		rm -f NaTT/*
-		(cd $pwd; eval cp $src $script $common $bak/NaTT)
+		(cd "$pwd"; eval cp $src $script $common \"$bak/NaTT\")
 		$tar -czf $1.src.tar.gz NaTT
 	fi
 	
