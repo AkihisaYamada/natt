@@ -56,22 +56,20 @@ let make_dp_table (trs:Trs.t) =
 			add_dp s (mark t);
 		List.iter (sub s) ts;
 	in
-	if params.acdp_mode <> ACDP_new then begin
-		let ext_ac fty fname t = Node(fty,fname,[t; var "_1"]) in
-		let iterer _ (Node(fty,fname,_) as l, r) =
-			if fty = Th "AC" then begin
-				let xl = ext_ac fty fname l in
-				let xr = ext_ac fty fname r in
-				if params.acdp_mode = ACDP_KT98 then begin
-					add_dp (mark xl) (mark xr);
-				end else begin
-					sub (mark xl) xr;
-				end;
+	let ext_ac fty fname t = Node(fty,fname,[t; var "_1"]) in
+	let iterer _ (Node(fty,fname,_) as l, r) =
+		if fty = Th "AC" && params.acdp_mode <> ACDP_new then begin
+			let xl = ext_ac fty fname l in
+			let xr = ext_ac fty fname r in
+			if params.acdp_mode = ACDP_KT98 then begin
+				add_dp (mark xl) (mark xr);
+			end else begin
+				sub (mark xl) xr;
 			end;
-			sub (mark l) r;
-		in
-		trs#iter_rules iterer;
-	end;
+		end;
+		sub (mark l) r;
+	in
+	trs#iter_rules iterer;
 	dp_table
 
 let edged trs (_,r) (l,_) = trs#estimate_edge r l
