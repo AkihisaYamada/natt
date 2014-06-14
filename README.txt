@@ -2,7 +2,7 @@
   Welcome to Nagoya Termination Tool (NaTT)
 =============================================
 
-This is a release of NaTT ver.1.0.
+This is a release of NaTT ver.1.1.
 
 
 ---- Installation ----

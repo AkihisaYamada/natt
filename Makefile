@@ -1,3 +1,5 @@
+TARG=./bin/NaTT
+TARG_OPT=./NaTT.exe
 OCAMLC=ocamlc
 OCAMLOPT=ocamlopt
 OCAMLDEP=ocamldep
@@ -25,13 +27,16 @@ OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
 
 OCAML_CMXAS=$(OCAML_CMAS:%.cma=%.cmxa)
 
-all: NaTT
+all: $(TARG_OPT)
 
 install: all
-	cp -f NaTT.bin NaTT xtc2tpdb.xml /usr/local/bin/
+	cp -f $(TARG_OPT) xtc2tpdb.xml /usr/local/bin/
 
-NaTT: $(OCAML_CMXS)
+$(TARG_OPT): $(OCAML_CMXS)
 	$(OCAMLOPT) -o $@ $(OCAML_CMXAS) $(OCAMLFLAGS) $^
+
+$(TARG): $(OCAML_CMOS)
+	$(OCAMLC) -o $@ $(OCAML_CMAS) $(OCAMLFLAGS) $^
 
 # Common rules
 .SUFFIXES: .ml .mli .cmo .cmi .cmx .mll .mly
@@ -53,8 +58,7 @@ NaTT: $(OCAML_CMXS)
 
 # Clean up
 clean:
-	rm -f NaTT
-	rm -f *.cm[iox] *.o *.mli .depend
+	rm -f $(TARG) $(TARG_OPT) *.cm[iox] *.o *.mli .depend
 	rm trs_parser.ml trs_lexer.ml
 
 # Dependencies

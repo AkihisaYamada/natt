@@ -28,7 +28,7 @@ then
 		exit 1
 	fi
 	
-	make || exit 1
+	gmake || exit 1
 	
 	cd $bak
 	
