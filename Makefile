@@ -1,14 +1,19 @@
-TARG=./bin/NaTT
+TARG=./NaTT
 TARG_OPT=./NaTT.exe
-OCAMLC=ocamlc
-OCAMLOPT=ocamlopt
+
+# use ocamlfind, if available...
+ifeq ("$(shell which ocamlfind 2> /dev/null)","")
+	OCAMLC=ocamlc -I +ocamlgraph
+	OCAMLOPT=ocamlopt -I +ocamlgraph
+else
+	PACKS=ocamlgraph
+	OCAMLC=ocamlfind ocamlc -package $(PACKS)
+	OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
+endif
 OCAMLDEP=ocamldep
 OCAMLYACC=ocamlyacc
 OCAMLLEX=ocamllex
 OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool"
-INCLUDES=-I +ocamlgraph
-OCAMLFLAGS=$(INCLUDES)    # add other options for ocamlc here
-OCAMLOPTFLAGS=$(INCLUDES) # add other options for ocamlopt here
 
 # The list of ocaml source files
 OCAML_SRCS=\
