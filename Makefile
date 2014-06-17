@@ -1,8 +1,14 @@
 TARG=./NaTT
 TARG_OPT=./NaTT.exe
-PACKS=ocamlgraph
-OCAMLC=ocamlfind ocamlc -package $(PACKS)
-OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
+# Use ocamlfind, if it is found...
+ifeq ("$(shell @which ocamlfind 2> /dev/null)","")
+	OCAMLC=ocamlc -I +ocamlgraph
+	OCAMLOPT=ocamlopt -I +ocamlgraph
+else
+	PACKS=ocamlgraph
+	OCAMLC=ocamlfind ocamlc -package $(PACKS)
+	OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
+endif
 OCAMLDEP=ocamldep
 OCAMLYACC=ocamlyacc
 OCAMLLEX=ocamllex
