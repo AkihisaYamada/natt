@@ -46,7 +46,7 @@ then
 	shift
 fi
 
-pre="/usr/bin/time -p -o $timefile timeout $t $dir/bin/NaTT"
+pre="/usr/bin/time -p -o $timefile timeout $t $dir/NaTT.exe"
 
 l=$1
 shift
