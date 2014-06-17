@@ -1,15 +1,8 @@
 TARG=./NaTT
 TARG_OPT=./NaTT.exe
-
-# use ocamlfind, if available...
-ifeq ("$(shell which ocamlfind 2> /dev/null)","")
-	OCAMLC=ocamlc -I +ocamlgraph
-	OCAMLOPT=ocamlopt -I +ocamlgraph
-else
-	PACKS=ocamlgraph
-	OCAMLC=ocamlfind ocamlc -package $(PACKS)
-	OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
-endif
+PACKS=ocamlgraph
+OCAMLC=ocamlfind ocamlc -package $(PACKS)
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
 OCAMLDEP=ocamldep
 OCAMLYACC=ocamlyacc
 OCAMLLEX=ocamllex
@@ -70,5 +63,4 @@ clean:
 .depend: $(OCAML_MLS)
 	$(OCAMLDEP) *.mli *.ml > .depend
 
-include experiments.mk
 -include .depend
