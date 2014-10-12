@@ -239,6 +239,7 @@ type params_type =
 	mutable warning : bool;
 	mutable comment : bool;
 	mutable problem : bool;
+	mutable cpf : bool;
 	mutable proof : bool;
 	mutable debug : bool;
 	mutable debug2 : bool;
@@ -260,6 +261,7 @@ let params =
 	warning = true;
 	comment = true;
 	problem = true;
+	cpf = false;
 	proof = true;
 	debug = false;
 	debug2 = false;
@@ -417,6 +419,12 @@ while !i < argc do
 			params.proof <- v > 2;
 			params.debug <- v > 3;
 			params.debug2 <- v > 4;
+		| "x", None ->
+			params.warning <- false;
+			params.comment <- false;
+			params.problem <- false;
+			params.proof <- false;
+			params.cpf <- true;
 		| "-peek", _ ->
 			begin
 				p.peek_in <- true;
@@ -665,10 +673,15 @@ type comment_type =
 | CMT_proof
 | CMT_debug
 
-let guard test = if test then fun proc -> proc stderr else fun _ -> ()
-let warning = guard params.warning
-let comment = guard params.comment
-let problem = guard params.problem
-let proof = guard params.proof
-let debug = guard params.debug
-let debug2 = guard params.debug2
+let guard test os =
+	if test then
+		fun proc -> proc os
+	else
+		fun _ -> ()
+let warning = guard params.warning stderr
+let comment = guard params.comment stderr
+let problem = guard params.problem stderr
+let cpf = guard params.cpf stdout
+let proof = guard params.proof stderr
+let debug = guard params.debug stderr
+let debug2 = guard params.debug2 stderr

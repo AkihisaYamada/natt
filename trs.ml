@@ -241,11 +241,14 @@ class t =
 				output_string os "</functionSymbolTypeInfo>";
 			output_string os "</higherOrderSignature>";
 		method output_xml_ho os =
-			output_string os "<?xml version=\"1.0\"?><problem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://dev.aspsimon.org/xtc.xsd\" type=\"termination\">";
 			output_string os "<trs>";
 			x#output_xml_rules os;
 			x#output_xml_ho_signature os;
-			output_string os "</trs><strategy>FULL</strategy></problem>";
+			output_string os "</trs><strategy>FULL</strategy>";
+		method output_xml os =
+			output_string os "<trs>";
+			x#output_xml_rules os;
+			output_string os "</trs><strategy>FULL</strategy>";
 
 (* estimations *)
 		method estimate_narrow (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =

@@ -42,181 +42,203 @@ let uncurry =
 					StrSet.iter (fun aname -> prerr_string " "; prerr_string aname) appsyms;
 					prerr_newline ();
 				);
-				problem (fun _ -> trs#output stderr;);
+				problem trs#output;
 				true
 			)
 	else
 		fun _ _ -> false
 
 let prove_termination (trs:Trs.t) =
-try
-	problem (fun _ -> prerr_endline "Input TRS:"; trs#output stderr;);
-
-	let extra_test i (l,r) =
-		let lvars = varlist l in
-		let rvars = varlist r in
-		if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
-		begin
-			comment
-			(fun _ ->
-				prerr_string "Extra variable in rule ";
-				prerr_int i;
-				prerr_endline ".";
-			);
-			raise Nonterm;
-		end;
-	in
-	trs#iter_rules extra_test;
-
-	let ordercount = Array.length params.orders_removal in
-
-	let init_dg = new Dp.dg (new Trs.t) in
-	let rule_remove_loop () =
-		if ordercount > 0 then begin
-			let proc_list =
-				let folder p procs =
-					new Wpo.processor p trs init_dg :: procs
-				in
-				Array.fold_right folder params.orders_removal []
-			in
-			let remove_strict current_usables =
-				List.exists (fun proc -> proc#direct current_usables) proc_list
-			in
-		
-			let rec loop () =
-				let current_usables = trs#fold_rules (fun i _ is -> i::is) [] in
-				comment (fun _ ->
-					prerr_string "Number of Rules: ";
-					prerr_int trs#get_size;
-					prerr_newline ();
+	let ret = try
+		problem (fun os ->
+			output_string os "Input TRS:\n";
+			trs#output os;
+		);
+		cpf (fun os ->
+			output_string os "<input>
+ <trsInput>
+";
+			trs#output_xml os;
+			output_string os 
+" </trsInput>
+</input>
+<cpfVersion>2.0</cpfVersion>
+<proof>
+ <trsTerminationProof>
+"
+		);
+	
+		let extra_test i (l,r) =
+			let lvars = varlist l in
+			let rvars = varlist r in
+			if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
+			begin
+				comment
+				(fun _ ->
+					prerr_string "Extra variable in rule ";
+					prerr_int i;
+					prerr_endline ".";
 				);
-				if trs#get_size = 0 then raise Success
-				else if remove_strict current_usables then
-					loop ()
-				else
-					comment (fun _ -> prerr_endline " failed.");
+				raise Nonterm;
+			end;
+		in
+		trs#iter_rules extra_test;
+	
+		let ordercount = Array.length params.orders_removal in
+	
+		let init_dg = new Dp.dg (new Trs.t) in
+		let rule_remove_loop () =
+			if ordercount > 0 then begin
+				let proc_list =
+					let folder p procs =
+						new Wpo.processor p trs init_dg :: procs
+					in
+					Array.fold_right folder params.orders_removal []
+				in
+				let remove_strict current_usables =
+					List.exists (fun proc -> proc#direct current_usables) proc_list
+				in
+			
+				let rec loop () =
+					let current_usables = trs#fold_rules (fun i _ is -> i::is) [] in
+					comment (fun _ ->
+						prerr_string "Number of Rules: ";
+						prerr_int trs#get_size;
+						prerr_newline ();
+					);
+					if trs#get_size = 0 then raise Success
+					else if remove_strict current_usables then
+						loop ()
+					else
+						comment (fun _ -> prerr_endline " failed.");
+				in
+				loop ();
+			end;
+		in
+	
+		rule_remove_loop ();
+	
+		if uncurry trs init_dg then rule_remove_loop ();
+	
+		if params.mode = MODE_order then raise Unknown;
+	
+		(* making dependency pairs *)
+		problem (fun _ -> prerr_endline "Dependency Pairs:");
+		let dg = new Dp.dg trs in
+		problem
+		(fun _ ->
+			dg#output_dps stderr;
+			if trs#get_eqsize > 0 then begin
+				prerr_endline "Equations:";
+				trs#output_eqs stderr;
+			end;
+		);
+	
+		let remove_unusable =
+			let init = ref true in
+			fun sccs ->
+				let used_dpset = List.fold_left IntSet.union IntSet.empty sccs in
+				let curr_len = IntSet.cardinal used_dpset in
+				if !init || curr_len < dg#get_size then
+				begin
+					debug2 (fun _ -> prerr_string "Removing unusable DPs:");
+					init := false;
+					(* removing unrelated DPs *)
+					let dp_remover i _ =
+						if not (IntSet.mem i used_dpset) then
+						begin
+							debug2 (fun _ -> prerr_string " #"; prerr_int i;);
+							dg#remove_dp i;
+						end;
+					in
+					dg#iter_dps dp_remover;
+					debug2 (fun _ -> prerr_string "\nRemoving unusable rules:");
+					let (_,unusables) = static_usable_rules trs dg used_dpset in
+					let rule_remover i =
+						debug2 (fun _ -> prerr_string " "; prerr_int i;);
+						trs#remove_rule i;
+					in
+					List.iter rule_remover unusables;
+					debug2 (fun _ -> prerr_newline ());
+				end;
+		in
+	
+		let scc_sorter =
+			let scc_size scc =
+				IntSet.fold (fun i r -> dg#get_dp_size i + r) scc 0
+			in
+			match params.sort_scc with
+			| SORT_asc ->
+				Sort.list (fun scc1 scc2 -> scc_size scc1 < scc_size scc2)
+			| SORT_desc ->
+				Sort.list (fun scc1 scc2 -> scc_size scc1 > scc_size scc2)
+			| SORT_none ->
+				fun sccs -> sccs
+		in
+	
+		let sccs = ref (scc_sorter dg#get_sccs) in
+		let nsccs = ref (List.length !sccs) in
+	
+		let dp_remove_loop () =
+	
+			let given_up = ref false in
+	
+			let proc_list =
+				Array.fold_right
+				(fun p procs -> new Wpo.processor p trs dg :: procs)
+				params.orders_dp []
+			in
+	
+			let remove_strict sccref =
+				problem
+				(fun _ ->
+					let folder i abbr = abbr#add i in
+					prerr_string "  SCC {";
+					(IntSet.fold folder !sccref (new Abbrev.for_int stderr " #"))#close;
+					prerr_string " }\n    ";
+				);
+	
+				let (usables,_) = static_usable_rules trs dg !sccref in
+	
+				List.exists (fun proc -> proc#reduce usables sccref) proc_list
+			in
+	
+			let rec loop () =
+				comment (fun _ -> prerr_string "Number of SCCs: "; prerr_int !nsccs; prerr_newline (););
+				match !sccs with
+				| [] ->
+					cpf (fun os -> output_string os "</proof>";);
+					if !given_up then raise Unknown else raise Success
+				| scc::rest ->
+					remove_unusable !sccs;
+					let sccref = ref scc in
+					if remove_strict sccref then begin
+						let subsccs = scc_sorter (dg#get_subsccs !sccref) in
+						sccs := subsccs @ rest;
+						nsccs := !nsccs - 1 + List.length subsccs;
+						loop ();
+					end else begin
+						comment
+						(fun _ ->
+							prerr_endline "failed.";
+						);
+						if params.max_loop > 0 then
+							Nonterm.find_loop params.max_loop trs dg scc;
+					end
 			in
 			loop ();
-		end;
-	in
-
-	rule_remove_loop ();
-
-	if uncurry trs init_dg then rule_remove_loop ();
-
-	if params.mode = MODE_order then raise Unknown;
-
-	(* making dependency pairs *)
-	problem (fun _ -> prerr_endline "Dependency Pairs:");
-	let dg = new Dp.dg trs in
-	problem
-	(fun _ ->
-		dg#output_dps stderr;
-		if trs#get_eqsize > 0 then begin
-			prerr_endline "Equations:";
-			trs#output_eqs stderr;
-		end;
-	);
-
-	let remove_unusable =
-		let init = ref true in
-		fun sccs ->
-			let used_dpset = List.fold_left IntSet.union IntSet.empty sccs in
-			let curr_len = IntSet.cardinal used_dpset in
-			if !init || curr_len < dg#get_size then
-			begin
-				debug2 (fun _ -> prerr_string "Removing unusable DPs:");
-				init := false;
-				(* removing unrelated DPs *)
-				let dp_remover i _ =
-					if not (IntSet.mem i used_dpset) then
-					begin
-						debug2 (fun _ -> prerr_string " #"; prerr_int i;);
-						dg#remove_dp i;
-					end;
-				in
-				dg#iter_dps dp_remover;
-				debug2 (fun _ -> prerr_string "\nRemoving unusable rules:");
-				let (_,unusables) = static_usable_rules trs dg used_dpset in
-				let rule_remover i =
-					debug2 (fun _ -> prerr_string " "; prerr_int i;);
-					trs#remove_rule i;
-				in
-				List.iter rule_remover unusables;
-				debug2 (fun _ -> prerr_newline ());
-			end;
-	in
-
-	let scc_sorter =
-		let scc_size scc =
-			IntSet.fold (fun i r -> dg#get_dp_size i + r) scc 0
 		in
-		match params.sort_scc with
-		| SORT_asc ->
-			Sort.list (fun scc1 scc2 -> scc_size scc1 < scc_size scc2)
-		| SORT_desc ->
-			Sort.list (fun scc1 scc2 -> scc_size scc1 > scc_size scc2)
-		| SORT_none ->
-			fun sccs -> sccs
-	in
-
-	let sccs = ref (scc_sorter dg#get_sccs) in
-	let nsccs = ref (List.length !sccs) in
-
-	let dp_remove_loop () =
-
-		let given_up = ref false in
-
-		let proc_list =
-			Array.fold_right
-			(fun p procs -> new Wpo.processor p trs dg :: procs)
-			params.orders_dp []
-		in
-
-		let remove_strict sccref =
-			problem
-			(fun _ ->
-				let folder i abbr = abbr#add i in
-				prerr_string "  SCC {";
-				(IntSet.fold folder !sccref (new Abbrev.for_int stderr " #"))#close;
-				prerr_string " }\n    ";
-			);
-
-			let (usables,_) = static_usable_rules trs dg !sccref in
-
-			List.exists (fun proc -> proc#reduce usables sccref) proc_list
-		in
-
-		let rec loop () =
-			comment (fun _ -> prerr_string "Number of SCCs: "; prerr_int !nsccs; prerr_newline (););
-			match !sccs with
-			| [] -> if !given_up then raise Unknown else raise Success
-			| scc::rest ->
-				remove_unusable !sccs;
-				let sccref = ref scc in
-				if remove_strict sccref then begin
-					let subsccs = scc_sorter (dg#get_subsccs !sccref) in
-					sccs := subsccs @ rest;
-					nsccs := !nsccs - 1 + List.length subsccs;
-					loop ();
-				end else begin
-					comment
-					(fun _ ->
-						prerr_endline "failed.";
-					);
-					if params.max_loop > 0 then
-						Nonterm.find_loop params.max_loop trs dg scc;
-				end
-		in
-		loop ();
-	in
-	dp_remove_loop ();
-
-	raise Unknown;
-with
-| Success -> YES
-| Unknown -> MAYBE
-| Nonterm -> NO
+		dp_remove_loop ();
+	
+		raise Unknown;
+	with
+	| Success -> YES
+	| Unknown -> MAYBE
+	| Nonterm -> NO
+in
+	cpf (fun os -> output_string os " </trsTerminationProof>
+</proof>");
+	ret
 ;;
 
 class main =
@@ -244,7 +266,15 @@ class main =
 			else
 				trs#read params.file;
 
-			match params.mode with
+			cpf (fun os ->
+				output_string os
+"<?xml version=\"1.0\"?>
+<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>
+<certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\">
+";
+			);
+
+			begin match params.mode with
 			| MODE_higher_xml ->
 				trs#output_xml_ho stdout;
 			| MODE_through ->
@@ -295,13 +325,25 @@ class main =
 						if not p.remove_all && nonmonotone p then
 							err "Rule removal processor must be monotone";
 					) params.orders_removal;
-				let ans =
-						match prove_termination trs with
+				let ans = prove_termination trs in
+(*				cpf (fun os ->
+					output_string os
+					(	match ans with
+						| YES	-> "<yes>"
+						| NO	-> "<no>"
+						| MAYBE	-> "<maybe>"
+					);
+					output_char os '\n';
+				);
+*)				cpf (fun os -> output_string os "</certificationProblem>\n");
+				if not params.cpf then
+					print_endline
+					(	match ans with
 						| YES	-> "YES"
 						| NO	-> "NO"
 						| MAYBE	-> "MAYBE"
-				in
-				print_endline ans;
+					);
+			end;
 	end;;
 
 begin

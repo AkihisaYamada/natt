@@ -1341,6 +1341,23 @@ class processor p (trs:Trs.t) dg =
 		else wpo
 	in
 
+
+	let zero =
+		function
+		| LI 0 -> true
+		| LR 0.0 -> true
+		| Vec u -> Matrix.is_zero_vec (LI 0) u
+		| Mat m -> Matrix.is_zero (LI 0) m
+		| _ -> false
+	in
+	let one =
+		function
+		| LI 1 -> true
+		| LR 1.0 -> true
+		| Mat m -> Matrix.is_unit (LI 0) (LI 1) m
+		| _ -> false
+	in
+
 	(* Print proof *)
 	let prerr_proof =
 		let prerr_perm fname finfo =
@@ -1366,21 +1383,6 @@ class processor p (trs:Trs.t) dg =
 				done;
 			done;
 			prerr_string rbr;
-		in
-		let zero =
-			function
-			| LI 0 -> true
-			| LR 0.0 -> true
-			| Vec u -> Matrix.is_zero_vec (LI 0) u
-			| Mat m -> Matrix.is_zero (LI 0) m
-			| _ -> false
-		in
-		let one =
-			function
-			| LI 1 -> true
-			| LR 1.0 -> true
-			| Mat m -> Matrix.is_unit (LI 0) (LI 1) m
-			| _ -> false
 		in
 		let prerr_interpret =
 			let prerr_exp_append =
@@ -1555,6 +1557,113 @@ class processor p (trs:Trs.t) dg =
 				prerr_exp (solver#get_value mcw);
 				prerr_newline ();
 			end;
+	in
+	(* Print CPF proof *)
+	let output_cpf os =
+		let pr = output_string os in
+		let pr_status finfo =
+			pr "  <status>\n";
+			let n = finfo.arity in
+			for j = 1 to n do
+				for i = 1 to n do
+					if solver#get_bool (perm finfo i j) then begin
+						pr "   <position>";
+						pr (string_of_int i);
+						pr "</position>\n";
+					end;
+				done;
+			done;
+			pr "  </status>\n";
+		in
+		let pr_prec finfo =
+			pr "  <precedence>";
+			pr (string_of_int (smt_eval_int (solver#get_value (prec finfo))));
+			pr "</precedence>\n";
+		in
+		let pr_precstat fname finfo =
+			pr " <precedenceStatusEntry>\n";
+			pr "  <name>"; pr fname; pr "</name>\n";
+			pr "  <arity>"; pr (string_of_int finfo.arity); pr "</arity>\n";
+			pr_status finfo;
+			pr_prec finfo;
+			pr " </precedenceStatusEntry>\n";
+		in
+		let pr_interpret fname finfo =
+			pr "<interpret>\n <name>"; pr fname; pr "</name>\n";
+			let n = finfo.arity in
+			pr " <arity>";
+			pr (string_of_int n);
+			pr "</arity>\n ";
+			let sc =
+				if finfo.symtype = Fun then subterm_coef finfo
+				else (fun v _ -> v) (subterm_coef finfo 1)
+			in
+			let pr_int i =
+				pr "<polynomial><coefficient><integer>";
+				pr (string_of_int i);
+				pr "</integer></coefficient></polynomial>";
+			in
+			let pr_sum () =
+				pr "<polynomial><sum>";
+				for i = 1 to n do
+					let coef = smt_eval_int (solver#get_value (sc i)) in
+					if coef <> 0 then begin
+						pr "<polynomial><product>";
+						pr_int coef;
+						pr "<polynomial><variable>";
+						pr (string_of_int i);
+						pr "</variable></polynomial>";
+						pr "</product></polynomial>";
+					end;
+				done;
+				pr_int (smt_eval_int (solver#get_value (weight finfo)));
+				pr "</sum></polynomial>";
+			in
+			if max_status finfo then begin
+				let usemax = solver#get_bool (argfilt_list finfo) in
+				if usemax then
+					pr "<polynomial><max>";
+				for i = 1 to n do
+					let pen = smt_eval_int (solver#get_value (subterm_penalty finfo i)) in
+					if solver#get_bool (maxfilt finfo i) then begin
+						pr "<polynomial><sum><polynomial><variable>";
+						pr (string_of_int i);
+						pr "</variable></polynomial>";
+						pr_int pen;
+						pr "</sum></polynomial>";
+					end;
+				done;
+				if finfo.maxpol then
+					pr_sum ()
+				else
+					pr_int (smt_eval_int (solver#get_value mcw));
+				if usemax then pr "</max></polynomial>";
+			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
+				pr "<polynomial><max>";
+				pr_sum ();
+				pr_int (smt_eval_int (solver#get_value mcw));
+				pr "</max></polynomial>";
+			end else
+				pr_sum ();
+			pr "\n</interpret>\n";
+		in
+		pr "<weightedPathOrder>\n<precedenceStatus>\n";
+		Hashtbl.iter pr_precstat sigma;
+		pr "\
+</precedenceStatus>
+<interpretation>
+ <type>
+  <polynomial>
+   <domain><naturals/></domain>
+   <degree>1</degree>
+  </polynomial>
+ </type>
+";
+		Hashtbl.iter pr_interpret sigma;
+		pr "\
+</interpretation>
+</weightedPathOrder>
+";
 	in
 	let putdot _ =
 		prerr_char '.';
@@ -1858,6 +1967,7 @@ class processor p (trs:Trs.t) dg =
 				) !sccref;
 				comment (fun _ -> prerr_newline ());
 				proof (fun _ -> prerr_proof ());
+				cpf output_cpf;
 				x#pop;
 				true
 			with Inconsistent ->
@@ -1902,6 +2012,7 @@ class processor p (trs:Trs.t) dg =
 					comment(fun _ -> prerr_newline ());
 				end;
 				proof (fun _ -> prerr_proof ());
+				cpf output_cpf;
 				x#pop;
 				true
 			with Inconsistent -> x#pop; false

@@ -835,6 +835,14 @@ let rec smt_eval_float =
 	| Div(e1,e2) -> smt_eval_float e1 /. smt_eval_float e2
 	| _ -> raise (Invalid_formula "value")
 
+let rec smt_eval_int =
+	function
+	| LI i -> i
+	| LR r -> raise (Invalid_formula "real as int")
+	| Neg e -> -(smt_eval_int e)
+	| Div(e1,e2) -> raise (Invalid_formula "rational as int")
+	| _ -> raise (Invalid_formula "value")
+
 let test_sat str = Str.string_match (Str.regexp "sat.*") str 0
 let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 
