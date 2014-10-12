@@ -62,7 +62,7 @@ let prove_termination (trs:Trs.t) =
 			output_string os 
 " </trsInput>
 </input>
-<cpfVersion>2.0</cpfVersion>
+<cpfVersion>2.2</cpfVersion>
 <proof>
  <trsTerminationProof>
 "
