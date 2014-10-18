@@ -248,7 +248,7 @@ class t =
 		method output_xml os =
 			output_string os "<trs>";
 			x#output_xml_rules os;
-			output_string os "</trs><strategy>FULL</strategy>";
+			output_string os "</trs>";
 
 (* estimations *)
 		method estimate_narrow (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =

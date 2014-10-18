@@ -1,3 +1,5 @@
+let version = "1.2.-0";
+
 type base_ty =
 | TY_int
 | TY_real
@@ -278,6 +280,7 @@ let argc = Array.length argv in
 let prerr_help () =
 	let pr = prerr_string in
 	let pe = prerr_endline in
+	pr "NaTT ver."; pe version;
 	pr "Usage: "; pr argv.(0); pe " [FILE] [OPTION]... [PROCESSOR]...";
 	pe "";
 	pe "Checks termination of TRS specified by FILE (stdin by default).";

@@ -236,8 +236,22 @@ let prove_termination (trs:Trs.t) =
 	| Unknown -> MAYBE
 	| Nonterm -> NO
 in
-	cpf (fun os -> output_string os " </trsTerminationProof>
-</proof>");
+	cpf (fun os -> output_string os
+" </trsTerminationProof>
+</proof>
+<origin>
+ <proofOrigin>
+  <tool>
+   <name>NaTT</name>
+   <version>";
+   output_string os version;
+   output_string os
+"</version>
+  </tool>
+ </proofOrigin>
+</origin>
+"
+	);
 	ret
 ;;
 

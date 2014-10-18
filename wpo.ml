@@ -1359,7 +1359,7 @@ class processor p (trs:Trs.t) dg =
 	in
 
 	(* Print proof *)
-	let prerr_proof =
+	let output_proof =
 		let prerr_perm fname finfo =
 			prerr_string "sigma(";
 			prerr_string fname;
@@ -1547,7 +1547,7 @@ class processor p (trs:Trs.t) dg =
 			else
 				fun () -> ()
 		in
-		fun () ->
+		fun _ ->
 			Hashtbl.iter prerr_symbol sigma;
 			prerr_prec ();
 			prerr_usable ();
@@ -1584,8 +1584,8 @@ class processor p (trs:Trs.t) dg =
 			pr " <precedenceStatusEntry>\n";
 			pr "  <name>"; pr fname; pr "</name>\n";
 			pr "  <arity>"; pr (string_of_int finfo.arity); pr "</arity>\n";
-			pr_status finfo;
 			pr_prec finfo;
+			pr_status finfo;
 			pr " </precedenceStatusEntry>\n";
 		in
 		let pr_interpret fname finfo =
@@ -1649,20 +1649,22 @@ class processor p (trs:Trs.t) dg =
 		in
 		pr "<weightedPathOrder>\n<precedenceStatus>\n";
 		Hashtbl.iter pr_precstat sigma;
-		pr "\
-</precedenceStatus>
-<interpretation>
- <type>
-  <polynomial>
-   <domain><naturals/></domain>
-   <degree>1</degree>
-  </polynomial>
- </type>
+		pr
+" </precedenceStatus>
+ <redPair>
+  <interpretation>
+   <type>
+    <polynomial>
+     <domain><naturals/></domain>
+     <degree>1</degree>
+    </polynomial>
+   </type>
 ";
 		Hashtbl.iter pr_interpret sigma;
-		pr "\
-</interpretation>
-</weightedPathOrder>
+		pr
+"  </interpretation>
+  </redPair>
+ </weightedPathOrder>
 ";
 	in
 	let putdot _ =
@@ -1966,7 +1968,7 @@ class processor p (trs:Trs.t) dg =
 					end;
 				) !sccref;
 				comment (fun _ -> prerr_newline ());
-				proof (fun _ -> prerr_proof ());
+				proof output_proof;
 				cpf output_cpf;
 				x#pop;
 				true
@@ -2011,8 +2013,22 @@ class processor p (trs:Trs.t) dg =
 					) current_usables;
 					comment(fun _ -> prerr_newline ());
 				end;
-				proof (fun _ -> prerr_proof ());
-				cpf output_cpf;
+				proof output_proof;
+				cpf (fun os ->
+					output_string os "<ruleRemoval>
+ <orderingConstraintProof>
+  <redPair>
+";
+					output_cpf os;
+					output_string os "  </redPair>
+ </orderingConstraintProof>
+";
+					trs#output_xml os;
+					output_string os
+" <trsTerminationProof><rIsEmpty/></trsTerminationProof>
+</ruleRemoval>
+";
+				);
 				x#pop;
 				true
 			with Inconsistent -> x#pop; false
