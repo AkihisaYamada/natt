@@ -20,24 +20,12 @@ module Rules = IntSet
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymPath = Graph.Path.Check(SymG)
 
-type ruleinfo =
-{
-	size : int;
-	rule : term * term;
-}
 type finfo =
 {
 	mutable symtype : symtype;
 	mutable arity : arity;
 	mutable defined_by : Rules.t;
 }
-
-let make_ruleinfo l r =
-{
-	size = 1(*size l + size r*);
-	rule = (l,r);
-}
-let output_ruleinfo i ri = output_rule i ri.rule
 
 let var_finfo = {symtype = Var; arity = Unknown; defined_by = Rules.empty;}
 
@@ -78,7 +66,9 @@ class t =
 		method get_defsyms = defsyms
 (* methods for symbols *)
 		method private add_sym fname =
-			let finfo = {symtype = Fun; arity = Unknown; defined_by = Rules.empty;} in
+			let finfo =
+				{ symtype = Fun; arity = Unknown; defined_by = Rules.empty; }
+			in
 			Hashtbl.add sym_table fname finfo;
 			finfo
 		method get_sym fname =
@@ -105,8 +95,7 @@ class t =
 				match sym_path_opt with
 				| None ->
 					Hashtbl.iter (fun fname _ -> SymG.add_vertex sym_g fname) sym_table;
-					Hashtbl.iter (fun _ ri ->
-						let (Node(_,fname,_),Node(gty,gname,_)) = ri.rule in
+					Hashtbl.iter (fun _ (Node(_,fname,_),Node(gty,gname,_)) ->
 						SymG.add_edge sym_g fname (if gty = Var then "" else gname);
 					) rule_table;
 					SymPath.create sym_g
@@ -114,32 +103,34 @@ class t =
 			in
 			SymPath.check_path p fname "" || SymPath.check_path p fname gname
 (* methods for rules *)
-		method find_rule i = (Hashtbl.find rule_table i).rule
-		method iter_rules f = Hashtbl.iter (fun i ri -> f i ri.rule) rule_table
-		method exists_rule f = hashtbl_exists (fun i ri -> f i ri.rule) rule_table
+		method find_rule = Hashtbl.find rule_table
+		method find_eq = Hashtbl.find eq_table
+		method iter_rules f = Hashtbl.iter f rule_table
+		method iter_eqs f = Hashtbl.iter f eq_table
+		method exists_rule f = hashtbl_exists f rule_table
 		method fold_rules :
 			'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
-			fun f a -> Hashtbl.fold (fun i ri b -> f i ri.rule b) rule_table a
+			fun f a -> Hashtbl.fold f rule_table a
+		method fold_eqs :
+			'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
+			fun f a -> Hashtbl.fold f eq_table a
 		method add_rule (Node(_,fname,_) as l) r =
 			rule_cnt <- rule_cnt + 1;
 			x#define fname rule_cnt;
-			Hashtbl.add rule_table rule_cnt (make_ruleinfo l r);
-		method replace_rule i (Node(_,fname,_) as l) r =
-			let (Node(_,gname,_),_) = (Hashtbl.find rule_table i).rule in
-			x#undefine gname i;
-			x#define fname i;
-			Hashtbl.replace rule_table i (make_ruleinfo l r);
-		method remove_rule i =
-			let (Node(_,fname,_),_) = (Hashtbl.find rule_table i).rule in
-			x#undefine fname i;
-			Hashtbl.remove rule_table i;
-			
-(* methods for equations *)
-		method find_eq = Hashtbl.find eq_table
-		method iter_eqs f = Hashtbl.iter f eq_table
+			Hashtbl.add rule_table rule_cnt (l,r);
 		method add_eq l r =
 			eq_cnt <- eq_cnt + 1;
 			Hashtbl.add eq_table eq_cnt (l,r);
+		method replace_rule i (Node(_,fname,_) as l) r =
+			let (Node(_,gname,_),_) = Hashtbl.find rule_table i in
+			x#undefine gname i;
+			x#define fname i;
+			Hashtbl.replace rule_table i (l,r);
+		method remove_rule i =
+			let (Node(_,fname,_),_) = Hashtbl.find rule_table i in
+			x#undefine fname i;
+			Hashtbl.remove rule_table i;
+			
 (* input *)
 		method private trans_term (Trs_ast.Term ((_,fname),ss)) =
 			let finfo = x#get_sym fname in
@@ -189,9 +180,9 @@ class t =
 			in
 			Ths.iter iterer_th ths;
 		method output_rules os =
-			output_tbl os output_ruleinfo "    " rule_table;
+			output_tbl os output_rule "    " rule_table;
 		method output_eqs os =
-			output_tbl os output_eq "    e" eq_table;
+			output_tbl os output_eq "   e" eq_table;
 		method output os =
 			x#output_ths os;
 			x#output_rules os;
@@ -244,7 +235,7 @@ class t =
 			output_string os "<trs>";
 			x#output_xml_rules os;
 			x#output_xml_ho_signature os;
-			output_string os "</trs><strategy>FULL</strategy>";
+			output_string os "</trs>";
 		method output_xml os =
 			output_string os "<trs>";
 			x#output_xml_rules os;

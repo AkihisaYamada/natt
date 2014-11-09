@@ -18,7 +18,7 @@ let make_dp_table (trs:Trs.t) =
 	let cnt = ref 0 in
 	let add_dp l r =
 		cnt := !cnt + 1;
-		Hashtbl.add dp_table (!cnt) (make_ruleinfo l r);
+		Hashtbl.add dp_table (!cnt) (l,r);
 	in
 	let add_marked_symbol fname finfo =
 		if trs#defines fname then begin
@@ -93,7 +93,7 @@ let make_dg trs dp_table =
 	Hashtbl.iter
 	(fun i1 dp1 ->
 		Hashtbl.iter
-		(fun i2 dp2 -> if edged trs dp1.rule dp2.rule then DG.add_edge dg i1 i2)
+		(fun i2 dp2 -> if edged trs dp1 dp2 then DG.add_edge dg i1 i2)
 		dp_table
 	)
 	dp_table;
@@ -119,14 +119,14 @@ class dg trs =
 		val dp_table = init_dp_table
 		val dg = init_dg
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
-		method replace_dp i l r = Hashtbl.replace dp_table i (make_ruleinfo l r);
+		method replace_dp i l r = Hashtbl.replace dp_table i (l,r);
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
 		method get_subsccs dpset = ll2ls (get_subsccs dg dpset)
 		method get_size = Hashtbl.length dp_table
-		method find_dp i = (Hashtbl.find dp_table i).rule
-		method get_dp_size i = (Hashtbl.find dp_table i).size
-		method iter_dps f = Hashtbl.iter (fun i ri -> f i ri.rule) dp_table
-		method get_dps = Hashtbl.fold (fun i ri ps -> (i,ri.rule)::ps) dp_table []
-		method output_dps os = output_tbl os output_ruleinfo "   #" dp_table
+		method find_dp i = Hashtbl.find dp_table i
+		method get_dp_size i = let (l,r) = x#find_dp i in size l + size r
+		method iter_dps f = Hashtbl.iter f dp_table
+		method get_dps = Hashtbl.fold (fun i ri ps -> (i,ri)::ps) dp_table []
+		method output_dps os = output_tbl os output_rule "   #" dp_table
 	end;;

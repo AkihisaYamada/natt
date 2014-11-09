@@ -149,7 +149,7 @@ let output_rule os (l,r) =
 
 let output_eq os (l,r) =
 	output_term os l;
-	output_string os " = ";
+	output_string os " ->= ";
 	output_term os r
 
 let prerr_term = output_term stderr

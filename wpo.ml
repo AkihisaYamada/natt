@@ -1808,14 +1808,12 @@ class processor p (trs:Trs.t) dg =
 				"A"
 			);
 
-			(
+			begin
 				match p.mcw_mode with
-				| MCW_num ->
-					solver#add_variable mcw_v weight_ty;
-				| MCW_bool ->
-					solver#add_variable mcw_v Bool;
+				| MCW_num  -> solver#add_variable mcw_v weight_ty;
+				| MCW_bool -> solver#add_variable mcw_v Bool;
 				| _ -> ();
-			);
+			end;
 			solver#add_assertion (mcw >=^ mcw_val);
 
 			if p.maxcons then
@@ -2005,11 +2003,10 @@ class processor p (trs:Trs.t) dg =
 					comment (fun _ -> prerr_string " removes:");
 					List.iter
 					(fun i ->
-						if solver#get_bool (EV(gt_r_v i)) then
-						(
+						if solver#get_bool (EV(gt_r_v i)) then begin
 							trs#remove_rule i;
 							comment(fun _ -> prerr_string " "; prerr_int i;);
-						);
+						end;
 					) current_usables;
 					comment(fun _ -> prerr_newline ());
 				end;

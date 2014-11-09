@@ -95,19 +95,18 @@ let prove_termination (trs:Trs.t) =
 					in
 					Array.fold_right folder params.orders_removal []
 				in
-				let remove_strict current_usables =
-					List.exists (fun proc -> proc#direct current_usables) proc_list
+				let remove_strict rules =
+					List.exists (fun proc -> proc#direct rules) proc_list
 				in
-			
 				let rec loop () =
-					let current_usables = trs#fold_rules (fun i _ is -> i::is) [] in
+					let rules = trs#fold_rules (fun i _ is -> i::is) [] in
 					comment (fun _ ->
 						prerr_string "Number of Rules: ";
 						prerr_int trs#get_size;
 						prerr_newline ();
 					);
 					if trs#get_size = 0 then raise Success
-					else if remove_strict current_usables then
+					else if remove_strict rules then
 						loop ()
 					else
 						comment (fun _ -> prerr_endline " failed.");
@@ -264,11 +263,11 @@ class main =
 		method no_ac = not(StrSet.mem "AC" trs#get_ths)
 
 		method theory_test =
-			if trs#get_eqsize > 0 then
+(*			if trs#get_eqsize > 0 then
 				err "Has equations";
-			let rest = StrSet.remove "C" trs#get_ths in
-(*			let rest = StrSet.remove "AC" rest in
-*)			if not (StrSet.is_empty rest) then
+*)			let rest = StrSet.remove "C" trs#get_ths in
+			let rest = StrSet.remove "AC" rest in
+			if not (StrSet.is_empty rest) then
 				err ("Unacceptable theories: " ^ StrSet.fold (^) rest "")
 
 		method duplicating =
