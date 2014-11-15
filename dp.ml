@@ -14,6 +14,12 @@ let mark (Node(fty,fname,ss) as s) =
 		Node(fty, mark_name fname, ss)
 
 let make_dp_table (trs:Trs.t) =
+	trs#iter_eqs (fun i (l,r) ->
+		if not(trs#const_term l) || not(trs#const_term r) then begin
+			trs#remove_eq i;
+			trs#add_rule l r;
+		end;
+	);
 	let dp_table = Hashtbl.create 256 in
 	let cnt = ref 0 in
 	let add_dp l r =

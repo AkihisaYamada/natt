@@ -25,9 +25,16 @@ type finfo =
 	mutable symtype : symtype;
 	mutable arity : arity;
 	mutable defined_by : Rules.t;
+	mutable equated_by : Rules.t;
 }
 
-let var_finfo = {symtype = Var; arity = Unknown; defined_by = Rules.empty;}
+let var_finfo =
+{
+	symtype = Var;
+	arity = Unknown;
+	defined_by = Rules.empty;
+	equated_by = Rules.empty;
+}
 
 let output_tbl os output prefix ruletbl =
 	List.iter
@@ -67,7 +74,12 @@ class t =
 (* methods for symbols *)
 		method private add_sym fname =
 			let finfo =
-				{ symtype = Fun; arity = Unknown; defined_by = Rules.empty; }
+				{
+					symtype = Fun;
+					arity = Unknown;
+					defined_by = Rules.empty;
+					equated_by = Rules.empty;
+				}
 			in
 			Hashtbl.add sym_table fname finfo;
 			finfo
@@ -90,6 +102,20 @@ class t =
 			finfo.defined_by <- Rules.remove i finfo.defined_by;
 			if Rules.is_empty finfo.defined_by then
 				defsyms <- Syms.remove fname defsyms;
+		method equates fname =
+			try not (Rules.is_empty (Hashtbl.find sym_table fname).equated_by)
+			with Not_found -> false
+		method equate fname i =
+			let finfo = x#get_sym fname in
+			defsyms <- Syms.add fname defsyms;
+			finfo.equated_by <- Rules.add i finfo.equated_by;
+		method unequate fname i =
+			let finfo = x#get_sym fname in
+			finfo.equated_by <- Rules.remove i finfo.equated_by;
+			if Rules.is_empty finfo.equated_by then
+				defsyms <- Syms.remove fname defsyms;
+		method const_term (Node(fty,fname,ss)) =
+			(fty = Var || not(x#defines fname)) && List.for_all x#const_term ss
 		method trans_sym fname gname =
 			let p =
 				match sym_path_opt with
@@ -118,8 +144,9 @@ class t =
 			rule_cnt <- rule_cnt + 1;
 			x#define fname rule_cnt;
 			Hashtbl.add rule_table rule_cnt (l,r);
-		method add_eq l r =
+		method add_eq (Node(_,fname,_) as l) r =
 			eq_cnt <- eq_cnt + 1;
+			x#equate fname eq_cnt;
 			Hashtbl.add eq_table eq_cnt (l,r);
 		method replace_rule i (Node(_,fname,_) as l) r =
 			let (Node(_,gname,_),_) = Hashtbl.find rule_table i in
@@ -130,7 +157,11 @@ class t =
 			let (Node(_,fname,_),_) = Hashtbl.find rule_table i in
 			x#undefine fname i;
 			Hashtbl.remove rule_table i;
-			
+		method remove_eq i =
+			let (Node(_,fname,_),_) = Hashtbl.find eq_table i in
+			x#unequate fname i;
+			Hashtbl.remove eq_table i;
+
 (* input *)
 		method private trans_term (Trs_ast.Term ((_,fname),ss)) =
 			let finfo = x#get_sym fname in
@@ -261,11 +292,16 @@ class t =
 				| _ -> true
 			)
 		method is_redex_candidate (Node(_,fname,ss)) =
-			let tester i =
+			let rtester i =
 				let (Node(_,_,ls),_) = x#find_rule i in
 				List.for_all2 x#estimate_narrow ss ls
 			in
-				Rules.exists tester (x#find_sym fname).defined_by
+			let etester i =
+				let (Node(_,_,ls),_) = x#find_eq i in
+				List.for_all2 x#estimate_narrow ss ls
+			in
+				Rules.exists rtester (x#find_sym fname).defined_by ||
+				Rules.exists etester (x#find_sym fname).equated_by
 		method find_matchable (Node(_,fname,_) as s) =
 			let finfo = x#find_sym fname in
 			let folder i ret =

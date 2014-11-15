@@ -83,9 +83,10 @@ let prove_termination (trs:Trs.t) =
 			end;
 		in
 		trs#iter_rules extra_test;
-	
+
 		let ordercount = Array.length params.orders_removal in
-	
+
+		let flag = ref false in
 		let init_dg = new Dp.dg (new Trs.t) in
 		let rule_remove_loop () =
 			if ordercount > 0 then begin
@@ -106,31 +107,33 @@ let prove_termination (trs:Trs.t) =
 						prerr_newline ();
 					);
 					if trs#get_size = 0 then raise Success
-					else if remove_strict rules then
-						loop ()
-					else
+					else if remove_strict rules then begin
+						flag := true;
+						loop ();
+					end else begin
 						comment (fun _ -> prerr_endline " failed.");
+					end;
 				in
 				loop ();
 			end;
 		in
 	
 		rule_remove_loop ();
-	
+
 		if uncurry trs init_dg then rule_remove_loop ();
-	
+
 		if params.mode = MODE_order then raise Unknown;
-	
+
 		(* making dependency pairs *)
-		problem (fun _ -> prerr_endline "Dependency Pairs:");
 		let dg = new Dp.dg trs in
-		problem
-		(fun _ ->
-			dg#output_dps stderr;
+		problem (fun _ ->
+			prerr_endline "Rules:";
+			trs#output_rules stderr;
 			if trs#get_eqsize > 0 then begin
-				prerr_endline "Equations:";
 				trs#output_eqs stderr;
 			end;
+			prerr_endline "Dependency Pairs:";
+			dg#output_dps stderr;
 		);
 	
 		let remove_unusable =

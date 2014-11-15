@@ -1676,6 +1676,8 @@ class processor p (trs:Trs.t) dg =
 	let ge_v i = "ge#" ^ string_of_int i in
 	let gt_r_v i = "gt" ^ string_of_int i in
 	let ge_r_v i = "ge" ^ string_of_int i in
+	let gt_e_v i = "gt=" ^ string_of_int i in
+	let ge_e_v i = "ge=" ^ string_of_int i in
 
 	object (x)
 
@@ -1863,24 +1865,31 @@ class processor p (trs:Trs.t) dg =
 							solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
 						end;
 					end else if p.usable then begin
-							solver#add_assertion (usable i =>^ set_usable argfilt usable r);
-							solver#add_assertion (usable i =>^ weakly (frame la ra));
-						end else begin
-						(* rule removal mode *)
-							let (ge,gt) = split (frame la ra) solver in
+						solver#add_assertion (usable i =>^ set_usable argfilt usable r);
+						solver#add_assertion (usable i =>^ weakly (frame la ra));
+					end else begin
+					(* rule removal mode *)
+						let (ge,gt) = split (frame la ra) solver in
 						solver#add_assertion (usable i =>^ ge);
-							solver#add_definition (gt_r_v i) Bool gt;
-						end;
+						solver#add_definition (gt_r_v i) Bool gt;
+					end;
 				in
 				List.iter iterer !usables;
 				debug2 (fun _ -> prerr_endline " }");
 
-				debug2 (fun _ -> prerr_string "    Equations: {");
+				debug2 (fun _ -> prerr_string "    Relative Rules: {");
 				let iterer i (l,r) =
 					debug2 (fun _ -> prerr_string " e"; prerr_int i; flush stderr;);
 					let la = annote l in
 					let ra = annote r in
-					solver#add_assertion (weakly (frame la ra) &^ weakly (frame ra la));
+					if p.dp then begin
+						solver#add_assertion (weakly (frame la ra));
+					end else begin
+						(* rule removal mode *)
+						let (ge,gt) = split (frame la ra) solver in
+						solver#add_assertion ge;
+						solver#add_definition (gt_e_v i) Bool gt;
+					end;
 				in
 				trs#iter_eqs iterer;
 				debug2 (fun _ -> prerr_endline " }");
@@ -1958,8 +1967,7 @@ class processor p (trs:Trs.t) dg =
 				comment (fun _ -> prerr_string " removes:");
 				IntSet.iter
 				(fun i ->
-					if solver#get_bool (EV(gt_v i)) then
-					begin
+					if solver#get_bool (EV(gt_v i)) then begin
 						dg#remove_dp i;
 						comment(fun _ -> prerr_string " #"; prerr_int i;);
 						sccref := IntSet.remove i !sccref;
@@ -1997,7 +2005,9 @@ class processor p (trs:Trs.t) dg =
 					trs#iter_rules (fun i _ -> trs#remove_rule i);
 				end else begin
 					solver#add_assertion
-						(smt_exists (fun i -> EV(gt_r_v i)) current_usables);
+						(trs#fold_eqs (fun i _ result -> EV(gt_e_v i) |^ result)
+						 (smt_exists (fun i -> EV(gt_r_v i)) current_usables)
+						);
 					comment putdot;
 					solver#check;
 					comment (fun _ -> prerr_string " removes:");
@@ -2008,6 +2018,13 @@ class processor p (trs:Trs.t) dg =
 							comment(fun _ -> prerr_string " "; prerr_int i;);
 						end;
 					) current_usables;
+					trs#iter_eqs
+					(fun i _ ->
+						if solver#get_bool (EV(gt_e_v i)) then begin
+							trs#remove_eq i;
+							comment (fun _ -> prerr_string " e"; prerr_int i;);
+						end;
+					);
 					comment(fun _ -> prerr_newline ());
 				end;
 				proof output_proof;
