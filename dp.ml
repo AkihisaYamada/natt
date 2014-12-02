@@ -15,7 +15,7 @@ let mark (Node(fty,fname,ss) as s) =
 
 let make_dp_table (trs:Trs.t) =
 	trs#iter_eqs (fun i (l,r) ->
-		if not(trs#const_term l) || not(trs#const_term r) then begin
+		if not(trs#const_term r) then begin
 			trs#remove_eq i;
 			trs#add_rule l r;
 		end;

@@ -107,7 +107,8 @@ let auto_uncurry trs dg =
 					List.iter (sub2 0) (tl ss);
 				end else begin
 					if d > 0 then
-						if fty <> Fun || trs#defines fname then bad d
+						if fty <> Fun || trs#defines fname || trs#equates fname
+						then bad d
 						else good d;
 					List.iter (sub2 0) ss;
 				end
