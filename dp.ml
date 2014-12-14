@@ -76,6 +76,12 @@ let make_dp_table (trs:Trs.t) =
 		sub (mark l) r;
 	in
 	trs#iter_rules iterer;
+	trs#iter_eqs (fun i (l,r) ->
+		if size l >= size r then begin
+			trs#remove_eq i;
+			trs#add_rule l r;
+		end;
+	);
 	dp_table
 
 let edged trs (_,r) (l,_) = trs#estimate_edge r l
