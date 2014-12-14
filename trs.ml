@@ -153,6 +153,11 @@ class t =
 			x#undefine gname i;
 			x#define fname i;
 			Hashtbl.replace rule_table i (l,r);
+		method replace_eq i (Node(_,fname,_) as l) r =
+			let (Node(_,gname,_),_) = Hashtbl.find eq_table i in
+			x#unequate gname i;
+			x#equate fname i;
+			Hashtbl.replace eq_table i (l,r);
 		method remove_rule i =
 			let (Node(_,fname,_),_) = Hashtbl.find rule_table i in
 			x#undefine fname i;

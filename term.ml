@@ -72,6 +72,7 @@ let dupvarlist =
 	fun l r ->
 		let lvars, dupvars = sub (varlist l, []) r in
 		dupvars
+let duplicating l r = dupvarlist l r <> []
 
 (* the set of variables in a term *)
 module VarSet = Set.Make(String)

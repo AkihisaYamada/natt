@@ -28,6 +28,7 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 	in
 	let iterer _ (l,r) = dig 0 l; dig 0 r; in
 	trs#iter_rules iterer;
+	trs#iter_eqs iterer;
 	dg#iter_dps iterer;
 
 	let rec dig_hd d (Node(fty,fname,ss)) =
@@ -39,6 +40,7 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 	in
 	let iterer _ (l,r) = dig_hd 0 l; in
 	trs#iter_rules iterer;
+	trs#iter_eqs iterer;
 	dg#iter_dps iterer;
 
 	let uncurry_name fname i =
@@ -67,6 +69,7 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 			(fty, fname, ss, 0, aa)
 	in
 	trs#iter_rules (fun i (l,r) -> trs#replace_rule i (uncurry_term l) (uncurry_term r););
+	trs#iter_eqs (fun i (l,r) -> trs#replace_eq i (uncurry_term l) (uncurry_term r););
 	dg#iter_dps (fun i (l,r) -> dg#replace_dp i (uncurry_term l) (uncurry_term r););
 
 	let varlist name start count =
@@ -89,7 +92,7 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 					let l = Node(Fun, aname, !r :: new_args) in
 					args := !args @ new_args;
 					r := Node(Fun, uncurry_name fname i, !args);
-					trs#add_rule l !r;
+					trs#add_eq l !r;
 				done;
 			| _ -> raise (Internal "app")
 		end;
@@ -107,7 +110,7 @@ let auto_uncurry trs dg =
 					List.iter (sub2 0) (tl ss);
 				end else begin
 					if d > 0 then
-						if fty <> Fun || trs#defines fname then bad d
+						if fty <> Fun || trs#defines fname || trs#equates fname then bad d
 						else good d;
 					List.iter (sub2 0) ss;
 				end
@@ -128,8 +131,10 @@ let auto_uncurry trs dg =
 			let iterer_l _ (l,_) = sub (fun _ -> ()) (fun _ -> raise Next) l in
 			let iterer_r _ (_,r) = sub (add ngoods) (add nbads) r in
 			trs#iter_rules iterer_l;
+			trs#iter_eqs iterer_l;
 			dg#iter_dps iterer_l;
 			trs#iter_rules iterer_r;
+			trs#iter_eqs iterer_r;
 			dg#iter_dps iterer_r;
 
 			if !ngoods = 0 (*|| !ngoods < !nbads*) then raise Next;

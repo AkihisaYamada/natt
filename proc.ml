@@ -128,18 +128,24 @@ class t command opts =
 		method flush = flush os
 		method close =
 			if not x#dead then begin
-				debug (fun _ ->
-					prerr_string "killing ";
-					x#output_info stderr;
-					flush stderr;
-				);
-				try
-					x#flush;
-					ignore Unix.(kill pid Sys.sigkill);
+				x#flush;
+				if Sys.os_type <> "Win32" then begin
+					debug (fun _ ->
+						prerr_string "killing ";
+						x#output_info stderr;
+						flush stderr;
+					);
+					try
+						x#flush;
+						ignore Unix.(kill pid Sys.sigkill);
+						pid <- 0;
+						debug (fun _ -> prerr_endline ". ok.");
+					with Unix.Unix_error(_,_,_) ->
+					debug (fun _ -> prerr_endline "... failed.");
+				end else begin
+					Unix.waitpid [] pid;
 					pid <- 0;
-					debug (fun _ -> prerr_endline ". ok.");
-				with Unix.Unix_error(_,_,_) ->
-				debug (fun _ -> prerr_endline "... failed.");
+				end;
 				Unix.close in_from;
 				Unix.close out_to;
 			end;
