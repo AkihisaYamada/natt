@@ -1867,6 +1867,8 @@ class processor p (trs:Trs.t) dg =
 					end else if p.usable then begin
 						solver#add_assertion (usable i =>^ set_usable argfilt usable r);
 						solver#add_assertion (usable i =>^ weakly (frame la ra));
+					end else if p.dp then begin
+						solver#add_assertion (weakly (frame la ra));
 					end else begin
 					(* rule removal mode *)
 						let (ge,gt) = split (frame la ra) solver in
