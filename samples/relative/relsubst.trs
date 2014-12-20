@@ -1,0 +1,14 @@
+(VAR x y z )
+(RULES 
+        o(lambda(x),y) -> lambda(o(x,d(1,o(y,p))))
+        o(d(x,y),z) -> d(o(x,z),o(y,z))
+        o(o(x,y),z) -> o(x,o(y,z))
+        lambda(x) -> x
+        o(x,y) -> x
+        o(x,y) -> y
+        d(x,y) -> x
+        d(x,y) -> y
+        o(x,y) -> d(x,y)
+        o(x,y) -> d(y,x)
+)
+    

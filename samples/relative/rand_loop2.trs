@@ -1,0 +1,11 @@
+(VAR x y z)
+(RULES
+	rand(x) ->= x
+	rand(x) ->= rand(s(x))
+	arblen -> f(rand(0))
+	f(0) -> nil
+	f(s(x)) -> cons(a,f(x))
+)
+(COMMENT
+	'arblen' gives a list of arbitrary number of 'a's.
+)

@@ -1,0 +1,14 @@
+(VAR x y z)
+(RULES
+	c(x,c(y,z)) ->= c(y,c(x,z))
+	eq(0,0) ->= true
+	eq(s(x),0) ->= false
+	eq(s(x),s(y)) ->= eq(x,y)
+	if(true,x,y) ->= x
+	if(false,x,y) ->= y
+	remove(x,nil) -> nil
+	remove(x,c(y,z)) -> if(eq(x,y),remove(x,z),c(y,remove(x,z)))
+)
+(COMMENT
+	removal of elements in multisets
+)

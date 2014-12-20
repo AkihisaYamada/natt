@@ -1,0 +1,10 @@
+(VAR x y z)
+(RULES
+	rand(x) ->= x
+	rand(x) ->= rand(s(x))
+	rands(0) -> nil
+	rands(s(x)) -> cons(rand(0), rands(x))
+)
+(COMMENT
+	rands(n) gives a length n list of arbitrary naturals numbers.
+)

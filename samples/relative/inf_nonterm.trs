@@ -1,0 +1,5 @@
+(VAR x y z)
+(RULES
+	inf ->= s(inf)
+	f(s(x)) -> f(x)
+)

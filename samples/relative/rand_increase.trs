@@ -1,0 +1,11 @@
+(VAR x y z)
+(RULES
+	rand(x) ->= x
+	rand(x) ->= rand(s(x))
+	rands(0,y) -> nil
+	rands(s(x),0) -> cons(0, rands(x,rand(0)))
+	rands(s(x),s(y)) -> cons(s(y),rands(x,rand(s(y))))
+)
+(COMMENT
+	rands(n,0) gives arbitrary increasing sequence of length n.
+)

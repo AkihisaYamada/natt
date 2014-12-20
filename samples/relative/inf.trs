@@ -1,0 +1,7 @@
+(VAR x y z)
+(RULES
+	inf ->= s(inf)
+	+(x,0) ->= x
+	+(x,s(y)) ->= s(+(x,y))
+	double(x) -> +(x,x)
+)
