@@ -862,6 +862,7 @@ class virtual smt_lib_2_0 =
 				x#pr "(exit)\n";
 				x#flush;
 				x#close;
+				initialized <- false
 			end;
 
 		method set_logic logic =
@@ -951,8 +952,12 @@ class virtual smt_lib_2_0 =
 				in
 				sub vs
 			)
-		method push = if consistent then begin x#pr "(push)\n"; x#flush; end;
-		method pop = x#pr "(pop)\n"; x#flush; consistent <- true;
+		method push =
+			x#pr "(push)\n";
+			x#flush;
+		method pop =
+			x#pr "(pop)\n";
+			x#flush;
 		method reboot =
 			x#pr "(exit)\n"; x#flush; consistent <- true; temp_names <- 0;
 			x#close;

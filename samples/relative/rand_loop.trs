@@ -2,7 +2,7 @@
 (RULES
 	rand(x) ->= x
 	rand(x) ->= rand(s(x))
-	init -> f(rand(0))
+	init -> f(rand(0),nil)
 	f(0,y) -> y
 	f(s(x),y) -> f(x,cons(rand(x),y))
 )
