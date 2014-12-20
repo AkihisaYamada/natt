@@ -852,10 +852,10 @@ class virtual smt_lib_2_0 =
 		inherit solver_frame
 		inherit sexp_printer
 		inherit parser
+		inherit Proc.finalized (fun y -> y#exit)
 
 		val mutable initialized = false
 
-		inherit Proc.finalized (fun y -> y#exit)
 
 		method exit =
 			if initialized then begin
