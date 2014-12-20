@@ -80,7 +80,6 @@ class stderr_outputter =
 class t command opts =
 	object (x)
 		inherit io
-		inherit finalized (fun x -> x#close)
 
 		val mutable pid = 0
 		val mutable in_from = Unix.stdin
@@ -154,7 +153,6 @@ class t command opts =
 class debug_in debug_os command opts =
 	object (x)
 		inherit io
-		inherit finalized (fun x -> x#close)
 		inherit t command opts as super
 
 		method input_line =

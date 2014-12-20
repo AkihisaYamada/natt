@@ -848,19 +848,21 @@ let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 
 class virtual smt_lib_2_0 =
 	object (x)
+		inherit Proc.io
 		inherit solver_frame
 		inherit sexp_printer
 		inherit parser
-		inherit Proc.io
 
 		val mutable initialized = false
 
 		inherit Proc.finalized (fun y -> y#exit)
 
 		method exit =
-			x#pr "(exit)\n";
-			x#flush;
-			debug (fun _ -> prerr_endline "(exit)");
+			if initialized then begin
+				x#pr "(exit)\n";
+				x#flush;
+				x#close;
+			end;
 
 		method set_logic logic =
 			if not initialized then begin
@@ -1001,27 +1003,27 @@ let create_solver debug_to debug_in debug_out tool options =
 	match debug_in, debug_out with
 	| true, true ->
 		object (x)
+			inherit smt_lib_2_0
 			inherit Proc.debug_printer debug_to
 			inherit Proc.debug_in debug_to tool options as proc
-			inherit smt_lib_2_0
 		end
 	| true, false ->
 		object (x)
+			inherit smt_lib_2_0
 			inherit Proc.printer
 			inherit Proc.debug_in debug_to tool options as proc
-			inherit smt_lib_2_0
 		end
 	| false, true ->
 		object (x)
+			inherit smt_lib_2_0
 			inherit Proc.debug_printer debug_to
 			inherit Proc.t tool options as proc
-			inherit smt_lib_2_0
 		end
 	| _ ->
 		object (x)
+			inherit smt_lib_2_0
 			inherit Proc.printer
 			inherit Proc.t tool options as proc
-			inherit smt_lib_2_0
 		end;;
 
 let debug_exp e = if params.debug2 then (prerr_exp e; e) else e
