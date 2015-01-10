@@ -32,6 +32,12 @@ let rec eq (WT(fty,fname,ss,sw)) (WT(gty,gname,ts,tw)) =
 	else
 		false
 
+let rec term_eq (Node(fty,fname,ss)) (Node(gty,gname,ts)) =
+	if fty = gty && fname = gname then
+		List.for_all2 term_eq ss ts
+	else
+		false
+
 let rec is_subterm (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 	s = t || List.exists (is_subterm s) ts
 

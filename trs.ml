@@ -223,6 +223,29 @@ class t =
 			x#output_ths os;
 			x#output_rules os;
 			x#output_eqs os;
+		method output_wst os =
+			output_string os "(VAR";
+			let iterer_var fname finfo =
+				if finfo.symtype = Var then begin
+					output_string os " ";
+					output_string os fname;
+				end
+			in
+			Hashtbl.iter iterer_var sym_table;
+			output_string os ")\n(RULES\n";
+			let iterer_rule _ rule =
+				output_string os "\t";
+				output_rule os rule;
+				output_string os "\n";
+			in
+			x#iter_rules iterer_rule;
+			let iterer_eq _ eq =
+				output_string os "\t";
+				output_eq os eq;
+				output_string os "\n";
+			in
+			x#iter_eqs iterer_eq;
+			output_string os ")\n";
 		method output_xml_rules os =
 			output_string os "<rules>";
 			x#iter_rules (fun _ rule -> output_xml_rule os rule);

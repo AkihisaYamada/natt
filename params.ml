@@ -61,6 +61,7 @@ type mode =
 | MODE_dup
 | MODE_through
 | MODE_higher_xml
+| MODE_id
 type smt_tool = string * string list
 
 type order_params =
@@ -578,6 +579,7 @@ while !i < argc do
 			default := false;
 			begin
 				match mode with
+				| Some "id" -> params.mode <- MODE_id;
 				| Some "ho" -> params.mode <- MODE_higher_xml;
 				| Some str -> err ("Unknown transformation mode: " ^ str ^ "!");
 				| _ -> params.mode <- MODE_through;

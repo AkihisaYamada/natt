@@ -308,6 +308,9 @@ class main =
 				if x#duplicating then err "Duplicating TRS";
 				warn "Non-duplicating TRS";
 				exit 0;
+			| MODE_id	->
+				trs#iter_rules (fun i (l,r) -> if term_eq l r then trs#remove_rule i);
+				trs#output_wst stdout;
 			| MODE_dist	->
 				let sub _ (l,r) =
 					match r with
