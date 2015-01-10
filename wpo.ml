@@ -135,10 +135,10 @@ class processor p (trs:Trs.t) dg =
 
 	(*** Usable rules ***)
 	let usable =
-		if p.remove_all then
-			fun _ -> LB true
-		else
+		if p.usable then
 			fun i -> EV(usable_v i)
+		else
+			fun _ -> LB true
 	in
 	let usable_w =
 		if p.usable_w then

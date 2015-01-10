@@ -77,7 +77,7 @@ let make_dp_table (trs:Trs.t) =
 	in
 	trs#iter_rules iterer;
 	trs#iter_eqs (fun i (l,r) ->
-		if size l >= size r then begin
+		if params.relative_usable && size l >= size r then begin
 			trs#remove_eq i;
 			trs#add_rule l r;
 		end;

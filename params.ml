@@ -247,6 +247,7 @@ type params_type =
 	mutable debug : bool;
 	mutable debug2 : bool;
 	mutable tmpvar : bool;
+	mutable relative_usable : bool;
 };;
 
 let params =
@@ -269,6 +270,7 @@ let params =
 	debug = false;
 	debug2 = false;
 	tmpvar = true;
+	relative_usable = true;
 };;
 
 let err msg =
@@ -467,6 +469,8 @@ while !i < argc do
 		| "U", None -> p.usable <- false;
 		| "uw", None -> p.usable_w <- true;
 		| "Uw", None -> p.usable_w <- false;
+		| "ur", None -> params.relative_usable <- true;
+		| "Ur", None -> params.relative_usable <- false;
 
 		| "s", _ ->
 			begin
