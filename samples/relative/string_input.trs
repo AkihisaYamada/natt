@@ -1,0 +1,40 @@
+(VAR x xs y ys)
+(RULES
+	getc ->= 'a
+	getc ->= 'b
+	getc ->= 'c
+	getc ->= 'd
+	getc ->= 'e
+	getc ->= 'f
+	getc ->= 'g
+	getc ->= 'h
+	getc ->= 'i
+	getc ->= 'j
+	getc ->= 'k
+	getc ->= 'l
+	getc ->= 'm
+	getc ->= 'n
+	getc ->= 'o
+	getc ->= 'p
+	getc ->= 'q
+	getc ->= 'r
+	getc ->= 's
+	getc ->= 't
+	getc ->= 'u
+	getc ->= 'v
+	getc ->= 'w
+	getc ->= 'x
+	getc ->= 'y
+	getc ->= 'z
+	gets(xs) ->= xs
+	gets(xs) ->= gets(cons(getc,xs))
+
+	map_cons(x,nil) -> nil
+	map_cons(x,cons(y,ys)) -> cons(cons(x,y),map_cons(x,ys))
+
+	heads(nil) -> cons(nil,nil)
+	heads(cons(x,xs)) -> map_cons(x,heads(xs))
+)
+(COMMENT
+	gets(nil) gives an arbitrary string
+)
