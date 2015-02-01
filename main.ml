@@ -10,24 +10,28 @@ type result =
 
 (* static usable rules *)
 let static_usable_rules (trs:Trs.t) dg used_dpset =
-	let used = Hashtbl.create 128 in
-	let rec sub (Node(_,_,ts) as t) =
-		let iterer i =
-			if not (Hashtbl.mem used i) then begin
-				let (_,r) = trs#find_rule i in
-				Hashtbl.add used i ();
-				sub r;
-			end;
+	if trs#get_eqsize = 0 then (
+		let used = Hashtbl.create 128 in
+		let rec sub (Node(_,_,ts) as t) =
+			let iterer i =
+				if not (Hashtbl.mem used i) then begin
+					let (_,r) = trs#find_rule i in
+					Hashtbl.add used i ();
+					sub r;
+				end;
+			in
+			List.iter iterer (trs#find_matchable t);
+			List.iter sub ts;
 		in
-		List.iter iterer (trs#find_matchable t);
-		List.iter sub ts;
-	in
-	IntSet.iter (fun i -> let (_,Node(_,_,ts)) = dg#find_dp i in List.iter sub ts) used_dpset;
-
-	trs#fold_rules
-	(fun i _ (usables,unusables) ->
-		if Hashtbl.mem used i then (i::usables,unusables) else (usables,i::unusables)
-	) ([],[])
+		IntSet.iter (fun i -> let (_,Node(_,_,ts)) = dg#find_dp i in List.iter sub ts) used_dpset;
+	
+		trs#fold_rules
+		(fun i _ (usables,unusables) ->
+			if Hashtbl.mem used i then (i::usables,unusables) else (usables,i::unusables)
+		) ([],[])
+	) else (
+		trs#fold_rules (fun i _ is -> i::is) [], []
+	)
 
 let uncurry =
 	if params.uncurry then
