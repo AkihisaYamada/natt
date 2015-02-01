@@ -1,0 +1,12 @@
+(VAR x y z)
+(RULES
+	get_num(x) ->= x
+	get_num(x) ->= get_num(s(x))
+	add(0,y) -> y
+	add(s(x),y) -> s(add(x,y))
+	rand_sum(0) -> 0
+	rand_sum(s(x)) -> add(get_num(0), rand_sum(x))
+)
+(COMMENT
+	rand_sum(n) calculates the sum of n inputs.
+)
