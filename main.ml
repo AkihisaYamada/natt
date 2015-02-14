@@ -341,6 +341,12 @@ class main =
 					print_endline "Duplicating TRS"
 				else
 					print_endline "";
+			| MODE_relative ->
+				trs#iter_eqs (fun i (l,r) ->
+					if duplicating l r || not(trs#const_term r) then begin
+						err "a weak rule is duplicating or uses strict rule";
+					end
+				)
 			| _ ->
 				x#theory_test;
 				Array.iter
