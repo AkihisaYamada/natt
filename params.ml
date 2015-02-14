@@ -257,7 +257,7 @@ type params_type =
 
 let params =
 {
-	mode = MODE_order;
+	mode = MODE_dp;
 	file = "";
 	sort_scc = SORT_asc;
 	uncurry = false;
