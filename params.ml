@@ -65,7 +65,7 @@ type mode =
 | MODE_through
 | MODE_higher_xml
 | MODE_id
-| MODE_relative
+| MODE_relative_test
 type smt_tool = string * string list
 
 type order_params =
@@ -591,7 +591,7 @@ while !i < argc do
 		| "-z3", None -> p.smt_tool <- z3cmd;
 		| "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
 		| "-dup", None -> default := false; params.mode <- MODE_dup;
-		| "-relative-test", None -> params.mode <- MODE_relative;
+		| "-relative-test", None -> params.mode <- MODE_relative_test;
 		| "t", mode ->
 			default := false;
 			begin
