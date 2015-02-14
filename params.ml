@@ -279,6 +279,7 @@ let params =
 	relative_usable = true;
 };;
 
+let dp = ref false in
 let err msg =
 	prerr_endline msg;
 	print_endline "ERR";
@@ -319,7 +320,7 @@ in
 let i = ref 1 in
 let pp = ref order_default in
 let register_order p =
-	if params.mode = MODE_dp then begin
+	if !dp then begin
 		params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
 		pp := params.orders_dp.(Array.length params.orders_dp - 1);
 	end else begin
@@ -328,7 +329,7 @@ let register_order p =
 	end;
 in
 let apply_edg () =
-	params.mode <- MODE_dp;
+	dp := true;
 	order_default.dp <- true;
 	order_default.usable <- true;
 	order_default.sc_mode <- W_bool;
