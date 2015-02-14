@@ -49,6 +49,9 @@ type ac_mark_mode =
 | AC_unmark
 | AC_mark
 | AC_guard
+type rdp_mode = (* for relative DP *)
+| RDP_naive
+| RDP_move
 type mode =
 | MODE_order
 | MODE_flat
@@ -237,6 +240,7 @@ type params_type =
 	mutable max_loop : int;
 	mutable max_narrowing : int;
 	mutable acdp_mode : acdp_mode;
+	mutable rdp_mode : rdp_mode;
 	mutable ac_mark_mode : ac_mark_mode;
 	mutable orders_removal : order_params array;
 	mutable orders_dp : order_params array;
@@ -260,6 +264,7 @@ let params =
 	max_loop = 0;
 	max_narrowing = 8;
 	acdp_mode = ACDP_new;
+	rdp_mode = RDP_move;
 	ac_mark_mode = AC_unmark;
 	orders_removal = Array.make 0 order_default;
 	orders_dp = Array.make 0 order_default;
@@ -408,6 +413,12 @@ while !i < argc do
 				| "KV03"-> p.ac_mode <- AC_KV03;
 				| "KV03i"-> p.ac_mode <- AC_KV';
 				| "w" -> p.ac_mode <- AC_weight;
+				| _ -> erro arg;
+			end;
+		| "-rdp", Some s ->
+			begin
+				match s with
+				| "naive" -> params.rdp_mode <- RDP_naive;
 				| _ -> erro arg;
 			end;
 		| "V", None ->

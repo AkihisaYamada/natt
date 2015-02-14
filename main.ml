@@ -127,6 +127,28 @@ let prove_termination (trs:Trs.t) =
 		if uncurry trs init_dg then rule_remove_loop ();
 
 		if params.mode = MODE_order then raise Unknown;
+		if params.rdp_mode = RDP_naive then begin
+			trs#iter_eqs (fun i (l,r) ->
+				if duplicating l r then begin
+					comment (fun os ->
+						output_string os "Weak rule e";
+						output_string os (string_of_int i);
+						output_string os " is duplicating\n";
+						flush os;
+					);
+					raise Unknown;
+				end;
+				if not(trs#const_term r) then begin
+					comment (fun os ->
+						output_string os "Weak rule e";
+						output_string os (string_of_int i);
+						output_string os " calls a strict rule\n";
+						flush os;
+					);
+					raise Unknown;
+				end;
+			);
+		end;
 
 		(* making dependency pairs *)
 		let dg = new Dp.dg trs in
@@ -341,12 +363,6 @@ class main =
 					print_endline "Duplicating TRS"
 				else
 					print_endline "";
-			| MODE_relative ->
-				trs#iter_eqs (fun i (l,r) ->
-					if duplicating l r || not(trs#const_term r) then begin
-						err "a weak rule is duplicating or uses strict rule";
-					end
-				)
 			| _ ->
 				x#theory_test;
 				Array.iter
