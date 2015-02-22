@@ -1,0 +1,16 @@
+(VAR x y z)
+(RULES
+	rand(x) ->= x
+	rand(x) ->= rand(s(x))
+
+	add'(y) -> pair(0,y)
+	mul'(0) -> pair(0,rand(0))
+	add'(s(z)) -> u1(add'(z))
+	mul'(0) -> pair(rand(0),0)
+	u1(pair(x,y)) -> pair(s(x),y)
+	mul'(s(z)) -> u2(add'(z))
+	add'(add(x,y)) -> pair(x,y)
+	u2(pair(w,y)) -> u3(mul'(w),y)
+	u3(pair(x,s(y)),y) -> pair(s(x),s(y))
+	mul'(mul(x,y)) -> pair(x,y)
+)
