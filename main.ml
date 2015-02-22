@@ -52,6 +52,29 @@ let uncurry =
 	else
 		fun _ _ -> false
 
+
+let relative_test (trs:Trs.t) =
+	trs#exists_eq (fun i (l,r) ->
+		if duplicating l r then (
+			comment (fun os ->
+				output_string os "Weak rule e";
+				output_string os (string_of_int i);
+				output_string os " is duplicating\n";
+				flush os;
+			);
+			true
+		) else if not(trs#const_term r) then (
+			comment (fun os ->
+				output_string os "Weak rule e";
+				output_string os (string_of_int i);
+				output_string os " calls a strict rule\n";
+				flush os;
+			);
+			true
+		) else false
+	);;
+
+
 let prove_termination (trs:Trs.t) =
 	let ret = try
 		problem (fun os ->
@@ -127,6 +150,7 @@ let prove_termination (trs:Trs.t) =
 		if uncurry trs init_dg then rule_remove_loop ();
 
 		if params.mode = MODE_order then raise Unknown;
+		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
 		(* making dependency pairs *)
 		let dg = new Dp.dg trs in
@@ -341,6 +365,8 @@ class main =
 					print_endline "Duplicating TRS"
 				else
 					print_endline "";
+			| MODE_relative_test ->
+				if relative_test trs then exit 1;
 			| _ ->
 				x#theory_test;
 				Array.iter

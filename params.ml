@@ -49,6 +49,9 @@ type ac_mark_mode =
 | AC_unmark
 | AC_mark
 | AC_guard
+type rdp_mode = (* for relative DP *)
+| RDP_naive
+| RDP_move
 type mode =
 | MODE_order
 | MODE_flat
@@ -62,6 +65,7 @@ type mode =
 | MODE_through
 | MODE_higher_xml
 | MODE_id
+| MODE_relative_test
 type smt_tool = string * string list
 
 type order_params =
@@ -236,6 +240,7 @@ type params_type =
 	mutable max_loop : int;
 	mutable max_narrowing : int;
 	mutable acdp_mode : acdp_mode;
+	mutable rdp_mode : rdp_mode;
 	mutable ac_mark_mode : ac_mark_mode;
 	mutable orders_removal : order_params array;
 	mutable orders_dp : order_params array;
@@ -252,13 +257,14 @@ type params_type =
 
 let params =
 {
-	mode = MODE_order;
+	mode = MODE_dp;
 	file = "";
 	sort_scc = SORT_asc;
 	uncurry = false;
 	max_loop = 0;
 	max_narrowing = 8;
 	acdp_mode = ACDP_new;
+	rdp_mode = RDP_move;
 	ac_mark_mode = AC_unmark;
 	orders_removal = Array.make 0 order_default;
 	orders_dp = Array.make 0 order_default;
@@ -273,6 +279,7 @@ let params =
 	relative_usable = true;
 };;
 
+let dp = ref false in
 let err msg =
 	prerr_endline msg;
 	print_endline "ERR";
@@ -313,7 +320,7 @@ in
 let i = ref 1 in
 let pp = ref order_default in
 let register_order p =
-	if params.mode = MODE_dp then begin
+	if !dp then begin
 		params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
 		pp := params.orders_dp.(Array.length params.orders_dp - 1);
 	end else begin
@@ -322,7 +329,7 @@ let register_order p =
 	end;
 in
 let apply_edg () =
-	params.mode <- MODE_dp;
+	dp := true;
 	order_default.dp <- true;
 	order_default.usable <- true;
 	order_default.sc_mode <- W_bool;
@@ -407,6 +414,12 @@ while !i < argc do
 				| "KV03"-> p.ac_mode <- AC_KV03;
 				| "KV03i"-> p.ac_mode <- AC_KV';
 				| "w" -> p.ac_mode <- AC_weight;
+				| _ -> erro arg;
+			end;
+		| "-rdp", Some s ->
+			begin
+				match s with
+				| "naive" -> params.rdp_mode <- RDP_naive;
 				| _ -> erro arg;
 			end;
 		| "V", None ->
@@ -579,6 +592,7 @@ while !i < argc do
 		| "-z3", None -> p.smt_tool <- z3cmd;
 		| "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
 		| "-dup", None -> default := false; params.mode <- MODE_dup;
+		| "-relative-test", None -> params.mode <- MODE_relative_test;
 		| "t", mode ->
 			default := false;
 			begin

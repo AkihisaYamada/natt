@@ -134,6 +134,7 @@ class t =
 		method iter_rules f = Hashtbl.iter f rule_table
 		method iter_eqs f = Hashtbl.iter f eq_table
 		method exists_rule f = hashtbl_exists f rule_table
+		method exists_eq f = hashtbl_exists f eq_table
 		method fold_rules :
 			'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
 			fun f a -> Hashtbl.fold f rule_table a
