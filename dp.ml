@@ -13,11 +13,13 @@ let mark (Node(fty,fname,ss) as s) =
 	else
 		Node(fty, mark_name fname, ss)
 
-let make_dp_table (trs:Trs.t) =
+let make_dp_table (trs:Trs.t) complete minimal =
 	trs#iter_eqs (fun i (l,r) ->
 		if duplicating l r || not(trs#const_term r) then begin
 			trs#remove_eq i;
 			trs#add_rule l r;
+		end else if size l < size r then begin
+			minimal := false;
 		end;
 	);
 	let dp_table = Hashtbl.create 256 in
@@ -58,8 +60,10 @@ let make_dp_table (trs:Trs.t) =
 	in
 	Hashtbl.iter add_marked_symbol trs#get_table;
 	let rec sub s (Node(gty,gname,ts) as t) =
-		if trs#defines gname && not (is_subterm t s) then
+		if trs#defines gname && not (is_subterm t s) then begin
 			add_dp s (mark t);
+			complete := false;
+		end;
 		List.iter (sub s) ts;
 	in
 	let ext_ac fty fname t = Node(fty,fname,[t; var "_1"]) in
@@ -123,13 +127,17 @@ let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
 class dg trs =
-	let init_dp_table = make_dp_table trs in
+	let min = ref true in
+	let compl = ref true in
+	let init_dp_table = make_dp_table trs compl min in
 	let init_dg = make_dg trs init_dp_table in
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
 		val dp_table = init_dp_table
 		val dg = init_dg
+		method complete = !compl
+		method minimal = !min
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
 		method replace_dp i l r = Hashtbl.replace dp_table i (l,r);
 		method get_subdg (scc:IntSet.t) = (dg,scc)

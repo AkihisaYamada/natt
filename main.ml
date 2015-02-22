@@ -3,6 +3,8 @@ open Term
 open Trs
 open Util
 
+let complete = ref true
+
 type result =
 | YES
 | MAYBE
@@ -10,7 +12,7 @@ type result =
 
 (* static usable rules *)
 let static_usable_rules (trs:Trs.t) dg used_dpset =
-	if trs#get_eqsize = 0 then (
+	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,_,ts) as t) =
 			let iterer i =
@@ -157,9 +159,7 @@ let prove_termination (trs:Trs.t) =
 		problem (fun _ ->
 			prerr_endline "Rules:";
 			trs#output_rules stderr;
-			if trs#get_eqsize > 0 then begin
-				trs#output_eqs stderr;
-			end;
+			trs#output_eqs stderr;
 			prerr_endline "Dependency Pairs:";
 			dg#output_dps stderr;
 		);
@@ -208,14 +208,16 @@ let prove_termination (trs:Trs.t) =
 	
 		let sccs = ref (scc_sorter dg#get_sccs) in
 		let nsccs = ref (List.length !sccs) in
-	
 		let dp_remove_loop () =
 	
 			let given_up = ref false in
 	
 			let proc_list =
 				Array.fold_right
-				(fun p procs -> new Wpo.processor p trs dg :: procs)
+				(fun p procs ->
+					p.usable <- dg#minimal;
+					new Wpo.processor p trs dg :: procs
+				)
 				params.orders_dp []
 			in
 	
@@ -252,7 +254,7 @@ let prove_termination (trs:Trs.t) =
 						(fun _ ->
 							prerr_endline "failed.";
 						);
-						if params.max_loop > 0 then
+						if params.max_loop > 0 && dg#complete then
 							Nonterm.find_loop params.max_loop trs dg scc;
 					end
 			in
