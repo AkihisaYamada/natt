@@ -11,13 +11,16 @@ test: NaTT
 	grep -c NO tmp_result; \
 	rm tmp_result
 
-L=\
+MK_PROOF=\
 	mkdir $@;\
 	cd $@;\
 	mkdir proofs;\
 	for d in `cd ${TRS}; find . -type d -name '[^.]*' -print`;\
 	do mkdir proofs/$${d\#./};\
-	done;\
+	done
+
+L=\
+	${MK_PROOF};\
 	${TOOL} -p:proofs ${TRS} ${PRE}
 
 R=${POST} > results.txt
