@@ -58,23 +58,34 @@ fi
 
 if [ "${l##*.}" = "list" ]
 then
-	d=${l%/*}/
+	d="${l%/*}/"
+else
+	if [ -d "$l" ]
+	then
+		d="$l/"
+		l=
+	else
+		d=
+	fi
+fi
+
+if [ "" != "$d" ]
+then
 	info "----------------------------------"
 	info "  $d  "
 	info "----------------------------------"
-else
-	d=
 fi
 
 (	if [ "${l##*.}" = "list" ]
 	then
 		cat "$l"
 	else
-		if [ -d "$l" ]
+		if [ "$d" = "" ]
 		then
-			find "$l" -type f -name "*.trs"
-		else
 			echo "$l"
+		else
+			(cd "$d"; find -type f -name "*.xml") |
+			sed -e "s/^\.\///g"
 		fi
 	fi
 ) |
@@ -84,15 +95,16 @@ do
 #	read dummy < /dev/tty
 	if [ "$proof" = "" ]
 	then
-		post=
+		log=/dev/stderr
 	else
-		post="2> $proof/${f##*/trs/}.txt"
+		log="${f%.trs}.txt"
+		log="$proof/${log//\//-}"
 	fi
 	if [ "${f##*.}" = "xml" ]
 	then
-		out=`eval xsltproc "$dir/xtc2tpdb.xml" "$d$f" | $pre "$@" $options $post`
+		out=`eval xsltproc "$dir/xtc2tpdb.xml" "$d$f" | $pre "$@" $options 2> "$log"`
 	else
-		out=`eval $pre "$d$f" "$@" $options $post`
+		out=`eval $pre "$d$f" "$@" $options 2> "$log"`
 	fi
 	if [ "$out" = "" -o "$out" = "Killed" ]
 	then

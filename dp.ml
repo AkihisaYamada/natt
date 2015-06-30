@@ -14,10 +14,12 @@ let mark (Node(fty,fname,ss) as s) =
 		Node(fty, mark_name fname, ss)
 
 let make_dp_table (trs:Trs.t) complete minimal =
+	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
 	trs#iter_eqs (fun i (l,r) ->
 		if duplicating l r || not(trs#const_term r) then begin
 			trs#remove_eq i;
 			trs#add_rule l r;
+			complete := false;
 		end else if size l < size r then begin
 			minimal := false;
 		end;
@@ -62,7 +64,6 @@ let make_dp_table (trs:Trs.t) complete minimal =
 	let rec sub s (Node(gty,gname,ts) as t) =
 		if trs#defines gname && not (is_subterm t s) then begin
 			add_dp s (mark t);
-			complete := false;
 		end;
 		List.iter (sub s) ts;
 	in
