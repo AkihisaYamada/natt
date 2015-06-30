@@ -13,11 +13,7 @@ test: NaTT
 
 MK_PROOF=\
 	mkdir $@;\
-	cd $@;\
-	mkdir proofs;\
-	for d in `cd ${TRS}; find . -type d -name '[^.]*' -print`;\
-	do mkdir proofs/$${d\#./};\
-	done
+	mkdir $@/proofs
 
 L=\
 	${MK_PROOF};\
