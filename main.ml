@@ -3,8 +3,6 @@ open Term
 open Trs
 open Util
 
-let complete = ref true
-
 type result =
 | YES
 | MAYBE
@@ -96,13 +94,13 @@ let prove_termination (trs:Trs.t) =
  <trsTerminationProof>
 "
 		);
-	
+
 		let extra_test i (l,r) =
 			let lvars = varlist l in
 			let rvars = varlist r in
 			if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
 			begin
-				comment
+				proof
 				(fun _ ->
 					prerr_string "Extra variable in rule ";
 					prerr_int i;
@@ -112,6 +110,18 @@ let prove_termination (trs:Trs.t) =
 			end;
 		in
 		trs#iter_rules extra_test;
+
+		let clean_eq i (l,r) =
+			if l = r then begin
+				proof (fun _ ->
+					prerr_string "Removing trivial relative rule e";
+					prerr_int i;
+					prerr_endline ".";
+				);
+				trs#remove_eq i;
+			end;
+		in
+		trs#iter_eqs clean_eq;
 
 		let ordercount = Array.length params.orders_removal in
 
@@ -146,7 +156,6 @@ let prove_termination (trs:Trs.t) =
 				loop ();
 			end;
 		in
-	
 		rule_remove_loop ();
 
 		if uncurry trs init_dg then rule_remove_loop ();
@@ -157,13 +166,10 @@ let prove_termination (trs:Trs.t) =
 		(* making dependency pairs *)
 		let dg = new Dp.dg trs in
 		problem (fun _ ->
-			prerr_endline "Rules:";
-			trs#output_rules stderr;
-			trs#output_eqs stderr;
 			prerr_endline "Dependency Pairs:";
 			dg#output_dps stderr;
 		);
-	
+
 		let remove_unusable =
 			let init = ref true in
 			fun sccs ->
@@ -254,8 +260,7 @@ let prove_termination (trs:Trs.t) =
 						(fun _ ->
 							prerr_endline "failed.";
 						);
-						if params.max_loop > 0 && dg#complete then
-							Nonterm.find_loop params.max_loop trs dg scc;
+						Nonterm.find_loop params.max_loop trs dg scc;
 					end
 			in
 			loop ();
