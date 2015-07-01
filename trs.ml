@@ -3,7 +3,8 @@ open Term
 open Subst
 
 
-type arity = Unknown | Arity of int;;
+type arity = Unknown | Arity of int
+type strength = StrictRule | WeakRule
 
 exception ExistsConditionalRule
 exception ExistsEquation
@@ -38,12 +39,15 @@ let var_finfo =
 
 let output_tbl os output prefix ruletbl =
 	List.iter
-	(fun (i,rule) ->
+	(fun (i,(l,r,strength)) ->
 		output_string os prefix;
 		output_string os (string_of_int i);
 		output_string os ": ";
-		output os rule;
-		output_char os '\n';
+		output os (l,r);
+		if strength = WeakRule then
+			output_string os "\t[relative]\n"
+		else
+			output_char os '\n';
 		flush os;
 	) (List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i rule l -> (i,rule)::l) ruletbl []))
 
@@ -121,7 +125,7 @@ class t =
 				match sym_path_opt with
 				| None ->
 					Hashtbl.iter (fun fname _ -> SymG.add_vertex sym_g fname) sym_table;
-					Hashtbl.iter (fun _ (Node(_,fname,_),Node(gty,gname,_)) ->
+					Hashtbl.iter (fun _ (Node(_,fname,_),Node(gty,gname,_),_) ->
 						SymG.add_edge sym_g fname (if gty = Var then "" else gname);
 					) rule_table;
 					SymPath.create sym_g
@@ -129,42 +133,47 @@ class t =
 			in
 			SymPath.check_path p fname "" || SymPath.check_path p fname gname
 (* methods for rules *)
-		method find_rule = Hashtbl.find rule_table
-		method find_eq = Hashtbl.find eq_table
-		method iter_rules f = Hashtbl.iter f rule_table
-		method iter_eqs f = Hashtbl.iter f eq_table
-		method exists_rule f = hashtbl_exists f rule_table
-		method exists_eq f = hashtbl_exists f eq_table
+		method find_rule i = let (l,r,_) = Hashtbl.find rule_table i in (l,r)
+		method find_eq i = let (l,r,_) = Hashtbl.find eq_table i in (l,r)
+		method iter_rules f = Hashtbl.iter (fun i (l,r,s) -> f i (l,r)) rule_table
+		method iter_rules_extra f = Hashtbl.iter (fun i (l,r,s) -> f i (l,r,s)) rule_table
+		method iter_eqs f = Hashtbl.iter (fun i (l,r,_) -> f i (l,r)) eq_table
+		method exists_rule f = hashtbl_exists  (fun i (l,r,_) -> f i (l,r)) rule_table
+		method exists_eq f = hashtbl_exists (fun i (l,r,_) -> f i (l,r)) eq_table
 		method fold_rules :
 			'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
-			fun f a -> Hashtbl.fold f rule_table a
+			fun f a -> Hashtbl.fold (fun i (l,r,_) aa -> f i (l,r) aa) rule_table a
 		method fold_eqs :
 			'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
-			fun f a -> Hashtbl.fold f eq_table a
+			fun f a -> Hashtbl.fold (fun i (l,r,_) aa -> f i (l,r) aa) eq_table a
 		method add_rule (Node(_,fname,_) as l) r =
 			rule_cnt <- rule_cnt + 1;
 			x#define fname rule_cnt;
-			Hashtbl.add rule_table rule_cnt (l,r);
+			Hashtbl.add rule_table rule_cnt (l,r,StrictRule);
+		method add_rule_extra (Node(_,fname,_) as l) r s =
+			rule_cnt <- rule_cnt + 1;
+			x#define fname rule_cnt;
+			Hashtbl.add rule_table rule_cnt (l,r,s);
 		method add_eq (Node(_,fname,_) as l) r =
 			eq_cnt <- eq_cnt + 1;
 			x#equate fname eq_cnt;
-			Hashtbl.add eq_table eq_cnt (l,r);
+			Hashtbl.add eq_table eq_cnt (l,r,WeakRule);
 		method replace_rule i (Node(_,fname,_) as l) r =
-			let (Node(_,gname,_),_) = Hashtbl.find rule_table i in
+			let (Node(_,gname,_),_,strength) = Hashtbl.find rule_table i in
 			x#undefine gname i;
 			x#define fname i;
-			Hashtbl.replace rule_table i (l,r);
+			Hashtbl.replace rule_table i (l,r,strength);
 		method replace_eq i (Node(_,fname,_) as l) r =
-			let (Node(_,gname,_),_) = Hashtbl.find eq_table i in
+			let (Node(_,gname,_),_,strength) = Hashtbl.find eq_table i in
 			x#unequate gname i;
 			x#equate fname i;
-			Hashtbl.replace eq_table i (l,r);
+			Hashtbl.replace eq_table i (l,r,strength);
 		method remove_rule i =
-			let (Node(_,fname,_),_) = Hashtbl.find rule_table i in
+			let (Node(_,fname,_),_,_) = Hashtbl.find rule_table i in
 			x#undefine fname i;
 			Hashtbl.remove rule_table i;
 		method remove_eq i =
-			let (Node(_,fname,_),_) = Hashtbl.find eq_table i in
+			let (Node(_,fname,_),_,_) = Hashtbl.find eq_table i in
 			x#unequate fname i;
 			Hashtbl.remove eq_table i;
 
