@@ -1,7 +1,7 @@
 TARG=./NaTT
 TARG_OPT=./NaTT.exe
 # Use ocamlfind, if it is found...
-ifeq ("$(shell which ocamlfind;echo $$?)","0")
+ifneq ("$(shell which ocamlfind 2> /dev/null)","")
 	PACKS=ocamlgraph
 	OCAMLC=ocamlfind ocamlc -package $(PACKS)
 	OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
@@ -30,6 +30,9 @@ OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
 OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
 
 OCAML_CMXAS=$(OCAML_CMAS:%.cma=%.cmxa)
+
+## If you need a statically linked binary
+#OCAMLFLAGS= -cclib '-static'
 
 all: $(TARG_OPT)
 

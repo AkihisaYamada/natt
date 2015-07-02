@@ -205,9 +205,9 @@ let prove_termination (trs:Trs.t) =
 			in
 			match params.sort_scc with
 			| SORT_asc ->
-				Sort.list (fun scc1 scc2 -> scc_size scc1 < scc_size scc2)
+				List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
 			| SORT_desc ->
-				Sort.list (fun scc1 scc2 -> scc_size scc1 > scc_size scc2)
+				List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
 			| SORT_none ->
 				fun sccs -> sccs
 		in

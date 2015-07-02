@@ -5,8 +5,8 @@ bak=~/NaTT.backup
 tar="tar"
 
 common="README.txt xtc2tpdb.xml"
-bin="NaTT"
-script="runme"
+bin="NaTT.exe"
+script="NaTT.sh"
 src="*.ml *.mll *.mly Makefile"
 local="$common $script $src *.sh *.mk"
 

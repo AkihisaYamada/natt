@@ -68,7 +68,7 @@ let find_loop lim trs dg scc =
 						let print_loop _ =
 							prerr_dp i1 l1 r1;
 							prerr_loop dg u1 loop;
-							prerr_endline "  Looping with:";
+							prerr_string "  Looping with: ";
 							u2#output stderr;
 						in
 						if strict then begin

@@ -1505,8 +1505,8 @@ class processor p (trs:Trs.t) dg =
 					in
 					prerr_string "    PREC: ";
 					sub
-					(	Sort.list
-						(fun (_,i) (_,j) -> i > j)
+					(	List.sort
+						(fun (_,i) (_,j) -> compare i j)
 						(	Hashtbl.fold
 							(fun fname finfo ps ->
 								if solver#get_bool (argfilt_list finfo) then
