@@ -971,9 +971,10 @@ class virtual smt_lib_2_0 =
 				if i < len then begin
 					begin
 						match v.[i] with
+						| ' '	-> x#pr "<sp>"
 						| '\''	-> x#pr "<q>"
 						| '<'	-> x#pr "<gt>"
-						| '#'	-> x#pr "<s>"
+						| '#'	-> x#pr "<sh>"
 						| ':'	-> x#pr "<col>"
 						| '\\'	-> x#pr "<bs>"
 						| '.'	-> x#pr "<dot>"

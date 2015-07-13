@@ -201,7 +201,7 @@ class t =
 			| VarDecl xs		-> List.iter (fun (_,v) -> (x#add_sym v).symtype <- Var) xs
 			| TheoryDecl ths	-> List.iter (x#add_theory_raw) ths
 			| RulesDecl rs		-> List.iter (x#add_rule_raw) rs
-			| StrategyDecl _	-> raise UnknownStrategy
+			| StrategyDecl _	-> ()(* raise UnknownStrategy *)
 			| OtherDecl _		-> ())
 		method read file =
 			let c = open_in file in

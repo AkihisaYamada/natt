@@ -3,7 +3,7 @@ open Term
 open Trs
 open Params
 
-let mark_name fname = "#"^fname
+let mark_name fname = "# "^fname
 let mark (Node(fty,fname,ss) as s) =
 	if fty = Th "AC" then
 		match params.ac_mark_mode with
