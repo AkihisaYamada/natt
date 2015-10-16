@@ -1,0 +1,23 @@
+(VAR x y z)
+(RULES
+	+(0,y) -> y
+	+(s(x),y) -> s(+(x,y))
+
+	sum1(nil) -> 0
+	sum1(cons(x,y)) -> +(x,sum1(y))
+
+	sum2(nil,z) -> z
+	sum2(cons(x,y),z) -> sum2(y,+(x,z))
+
+	tests(0) -> true
+	tests(s(x)) -> and(test(rands(rand(0),nil)),x)
+	test(done(y)) -> eq(f(y),g(y))
+	eq(x,x) -> true
+	rands(0,y) -> done(y)
+	rands(s(x),y) -> rands(x,::(rand(0),y))
+	and(true,y) -> y
+	and(false,y) -> false
+
+	rand(x) ->= x
+	rand(x) ->= rand(s(x))
+)

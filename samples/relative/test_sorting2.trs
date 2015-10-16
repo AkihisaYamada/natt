@@ -1,0 +1,56 @@
+(COMMENT 
+  quicksort comes from TRS_Standard/AProVE_06/quicksort.xml
+  bubblesort comes from TcT/examples/sorting/bubblesort-nat.trs  
+  test is origianl but follows the idea of quicktest:
+    - gen_testcase produces a random list (the length and elements are random)
+    - test(n) examines equivalence between two sorting functions n times
+)
+(VAR m n x y x1 xs)
+(RULES 
+  le(0,y) -> true
+  le(s(x),0) -> false
+  le(s(x),s(y)) -> le(x,y)
+  app(nil,y) -> y
+  app(cons(n,x),y) -> cons(n,app(x,y))
+  low(n,nil) -> nil
+  low(n,cons(m,x)) -> if_low(le(m,n),n,cons(m,x))
+  if_low(true,n,cons(m,x)) -> cons(m,low(n,x))
+  if_low(false,n,cons(m,x)) -> low(n,x)
+  high(n,nil) -> nil
+  high(n,cons(m,x)) -> if_high(le(m,n),n,cons(m,x))
+  if_high(true,n,cons(m,x)) -> high(n,x)
+  if_high(false,n,cons(m,x)) -> cons(m,high(n,x))
+  head(cons(n,x)) -> n
+  tail(cons(n,x)) -> x
+  isempty(nil) -> true
+  isempty(cons(n,x)) -> false
+  quicksort(x) -> if_qs(isempty(x),low(head(x),tail(x)),head(x),high(head(x),tail(x)))
+  if_qs(true,x,n,y) -> nil
+  if_qs(false,x,n,y) -> app(quicksort(x),cons(n,quicksort(y)))
+
+  lt(0,0) -> false
+  lt(0,s(y)) -> true
+  lt(s(x),0) -> false
+  lt(s(x),s(y)) -> lt(x,y)
+
+  bubblesort(nil) -> nil
+  bubblesort(cons(x,xs)) -> bubblesort1(bubble(cons(x,xs)))
+  bubblesort1(pair(xs,x)) -> app(bubblesort(xs),cons(x,nil))
+
+  bubble(cons(x,nil)) -> pair(nil,x)
+  bubble(cons(x,cons(x1,xs))) -> bubble1(lt(x,x1), x, x1, xs)
+  bubble1(true, x, x1, xs) -> bubble2(x,bubble(cons(x1,xs)))
+  bubble1(false, x, x1, xs) -> bubble2(x1,bubble(cons(x,xs)))
+  bubble2(x,pair(xs,x1)) -> pair(cons(x,xs), x1)
+
+  test(0) -> true
+  test(s(x)) -> test0(rand_list(nil),x)
+  test0(y,x) -> test1(quicksort(y),bubblesort(y),x)
+  test1(y,y,x) -> test(x)
+
+  rand_list(x) ->= x
+  rand_list(x) ->= rand_list(cons(rand(0),x))
+
+  rand(x) ->= x
+  rand(x) ->= rand(s(x)) 
+)

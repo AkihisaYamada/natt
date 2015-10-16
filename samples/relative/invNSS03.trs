@@ -1,0 +1,9 @@
+(VAR x)
+(RULES
+	f(x,0) -> s(x)
+	g(x) -> h(x,gen)
+	h(0,x) -> f(x,x)
+	a -> b
+
+	gen ->= s(gen)
+)
