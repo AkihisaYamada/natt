@@ -17,7 +17,7 @@ MK_PROOF=\
 
 L=\
 	${MK_PROOF};\
-	${TOOL} -p:proofs ${TRS} ${PRE}
+	${TOOL} -p:"$@/proofs" ${TRS} ${PRE}
 
 R=${POST} > results.txt
 
