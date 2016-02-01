@@ -28,7 +28,7 @@ exception Lexing_error of string
 }
 
 let letter = ['a'-'z' 'A'-'Z' '0'-'9' '\'']
-let symbol = ['#' '+' '-' '*' '/' '.' '\\' ':' '=' '<' '>' '@']
+let symbol = ['#' '+' '-' '*' '/' '.' '\\' ':' '=' '<' '>' '@' '!' '[' ']']
 
 rule token = parse
   | [' ' '\r' '\t']

@@ -3,6 +3,7 @@
 dir=${0%/*}
 options=
 proof=
+ext=xml
 timefile="$dir/tmp.time"
 
 info()
@@ -25,6 +26,12 @@ then
 		echo -n "$@: " 1>&2
 	}
 	options="$options $1"
+	shift
+fi
+
+if [ "$1" = "-trs" ]
+then
+	ext="trs"
 	shift
 fi
 
@@ -84,7 +91,7 @@ fi
 		then
 			echo "$l"
 		else
-			(cd "$d"; find -type f -name "*.xml") |
+			(cd "$d"; find -type f -name "*.$ext") |
 			sed -e "s/^\.\///g"
 		fi
 	fi
