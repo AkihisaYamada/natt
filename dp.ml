@@ -15,14 +15,17 @@ let mark (Node(fty,fname,ss) as s) =
 
 let make_dp_table (trs:Trs.t) minimal =
 	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
-	trs#iter_eqs (fun i (l,r) ->
-		if duplicating l r || not(trs#const_term r) then begin
-			trs#remove_eq i;
-			trs#add_rule_extra l r WeakRule;
-		end else if size l < size r then begin
-			minimal := false;
-		end;
-	);
+	let flag = ref false in
+	while
+		trs#fold_eqs (fun i (l,r) ret ->
+			if duplicating l r || not(trs#const_term r) then (
+				trs#remove_eq i;
+				trs#add_rule_extra l r WeakRule;
+				true)
+			else ret
+		) false do () done;
+	(* minimality can be assumed if all weak rules are size preserving *)
+	minimal := trs#for_all_eq (fun i (l,r) -> size l >= size r);
 	let dp_table = Hashtbl.create 256 in
 	let cnt = ref 0 in
 	let add_dp l r strength =

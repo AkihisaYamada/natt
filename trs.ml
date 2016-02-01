@@ -57,6 +57,12 @@ let hashtbl_exists test hashtbl =
 		false
 	with Success -> true
 
+let hashtbl_for_all test hashtbl =
+	try
+		Hashtbl.iter (fun l v -> if not (test l v) then raise Success;) hashtbl;
+		true
+	with Success -> false
+
 (* the class for TRSs *)
 class t =
 	object (x)
@@ -138,6 +144,8 @@ class t =
 		method iter_rules f = Hashtbl.iter (fun i (l,r,s) -> f i (l,r)) rule_table
 		method iter_rules_extra f = Hashtbl.iter (fun i (l,r,s) -> f i (l,r,s)) rule_table
 		method iter_eqs f = Hashtbl.iter (fun i (l,r,_) -> f i (l,r)) eq_table
+		method for_all_rule f = hashtbl_for_all  (fun i (l,r,_) -> f i (l,r)) rule_table
+		method for_all_eq f = hashtbl_for_all (fun i (l,r,_) -> f i (l,r)) eq_table
 		method exists_rule f = hashtbl_exists  (fun i (l,r,_) -> f i (l,r)) rule_table
 		method exists_eq f = hashtbl_exists (fun i (l,r,_) -> f i (l,r)) eq_table
 		method fold_rules :
