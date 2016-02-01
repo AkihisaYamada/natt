@@ -1,0 +1,14 @@
+(VAR x y)
+(RULES
+	tests(0) -> true
+	tests(s(x)) -> and(test(rands(rand(0),nil)),x)
+	test(done(y)) -> eq(f(y),g(y))
+	eq(x,x) -> true
+	rands(0,y) -> done(y)
+	rands(s(x),y) -> rands(x,::(rand(0),y))
+	and(true,y) -> y
+	and(false,y) -> false
+
+	rand(x) ->= x
+	rand(x) ->= rand(s(x))
+)

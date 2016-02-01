@@ -28,7 +28,7 @@ exception Lexing_error of string
 }
 
 let letter = ['a'-'z' 'A'-'Z' '0'-'9' '\'']
-let symbol = ['#' '+' '-' '*' '/' '.' '\\' ':' '=' '<' '>']
+let symbol = ['#' '+' '-' '*' '/' '.' '\\' ':' '=' '<' '>' '@' '!' '[' ']']
 
 rule token = parse
   | [' ' '\r' '\t']
@@ -56,7 +56,7 @@ rule token = parse
       { BAR }
   | ","
       { COMMA }
-  | ('_' | letter+ | symbol+) ('_' (letter* | symbol*))*
+  | ('_' | letter | symbol )+
       { ident (Lexing.lexeme_start_p lexbuf) (Lexing.lexeme lexbuf) }
   | _ 
       { OTHER(Lexing.lexeme lexbuf) }

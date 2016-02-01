@@ -3,7 +3,7 @@ open Term
 open Trs
 open Params
 
-let mark_name fname = "#"^fname
+let mark_name fname = "# "^fname
 let mark (Node(fty,fname,ss) as s) =
 	if fty = Th "AC" then
 		match params.ac_mark_mode with
@@ -13,22 +13,24 @@ let mark (Node(fty,fname,ss) as s) =
 	else
 		Node(fty, mark_name fname, ss)
 
-let make_dp_table (trs:Trs.t) complete minimal =
+let make_dp_table (trs:Trs.t) minimal =
 	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
-	trs#iter_eqs (fun i (l,r) ->
-		if duplicating l r || not(trs#const_term r) then begin
-			trs#remove_eq i;
-			trs#add_rule l r;
-			complete := false;
-		end else if size l < size r then begin
-			minimal := false;
-		end;
-	);
+	let flag = ref false in
+	while
+		trs#fold_eqs (fun i (l,r) ret ->
+			if duplicating l r || not(trs#const_term r) then (
+				trs#remove_eq i;
+				trs#add_rule_extra l r WeakRule;
+				true)
+			else ret
+		) false do () done;
+	(* minimality can be assumed if all weak rules are size preserving *)
+	minimal := trs#for_all_eq (fun i (l,r) -> size l >= size r);
 	let dp_table = Hashtbl.create 256 in
 	let cnt = ref 0 in
-	let add_dp l r =
+	let add_dp l r strength =
 		cnt := !cnt + 1;
-		Hashtbl.add dp_table (!cnt) (l,r);
+		Hashtbl.add dp_table (!cnt) (l,r,strength);
 	in
 	let add_marked_symbol fname finfo =
 		if trs#defines fname then begin
@@ -61,29 +63,29 @@ let make_dp_table (trs:Trs.t) complete minimal =
 		end;
 	in
 	Hashtbl.iter add_marked_symbol trs#get_table;
-	let rec sub s (Node(gty,gname,ts) as t) =
+	let rec sub s strength (Node(gty,gname,ts) as t) =
 		if trs#defines gname && not (is_subterm t s) then begin
-			add_dp s (mark t);
+			add_dp s (mark t) strength;
 		end;
-		List.iter (sub s) ts;
+		List.iter (sub s strength) ts;
 	in
 	let ext_ac fty fname t = Node(fty,fname,[t; var "_1"]) in
-	let iterer _ (Node(fty,fname,_) as l, r) =
+	let iterer _ (Node(fty,fname,_) as l, r, strength) =
 		if fty = Th "AC" && params.acdp_mode <> ACDP_new then begin
 			let xl = ext_ac fty fname l in
 			let xr = ext_ac fty fname r in
 			if params.acdp_mode = ACDP_KT98 then begin
-				add_dp (mark xl) (mark xr);
+				add_dp (mark xl) (mark xr) strength;
 			end else begin
-				sub (mark xl) xr;
+				sub (mark xl) strength xr;
 			end;
 		end;
-		sub (mark l) r;
+		sub (mark l) strength r;
 	in
-	trs#iter_rules iterer;
+	trs#iter_rules_extra iterer;
 	dp_table
 
-let edged trs (_,r) (l,_) = trs#estimate_edge r l
+let edged trs (_,r,_) (l,_,_) = trs#estimate_edge r l
 
 module DG = Graph.Imperative.Digraph.Concrete(Int)
 module Components = Graph.Components.Make(DG)
@@ -123,25 +125,24 @@ let get_subsccs dg dpset =
 
 class dg trs =
 	let min = ref true in
-	let compl = ref true in
-	let init_dp_table = make_dp_table trs compl min in
+	let init_dp_table = make_dp_table trs min in
 	let init_dg = make_dg trs init_dp_table in
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
 		val dp_table = init_dp_table
 		val dg = init_dg
-		method complete = !compl
 		method minimal = !min
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
-		method replace_dp i l r = Hashtbl.replace dp_table i (l,r);
+		method replace_dp i l r = Hashtbl.replace dp_table i (l,r,StrictRule);
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
 		method get_subsccs dpset = ll2ls (get_subsccs dg dpset)
 		method get_size = Hashtbl.length dp_table
-		method find_dp i = Hashtbl.find dp_table i
+		method find_dp i = let (l,r,_) = Hashtbl.find dp_table i in (l,r)
 		method get_dp_size i = let (l,r) = x#find_dp i in size l + size r
-		method iter_dps f = Hashtbl.iter f dp_table
-		method get_dps = Hashtbl.fold (fun i ri ps -> (i,ri)::ps) dp_table []
+		method iter_dps f = Hashtbl.iter (fun i (l,r,_) -> f i (l,r)) dp_table
+		method get_dps = Hashtbl.fold (fun i (l,r,_) ps -> (i,(l,r))::ps) dp_table []
 		method output_dps os = output_tbl os output_rule "   #" dp_table
+		method is_strict i = let (_,_,s) = Hashtbl.find dp_table i in s = StrictRule
 	end;;

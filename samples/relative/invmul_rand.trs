@@ -1,0 +1,23 @@
+(COMMENT Ver. 1.2a (December 16, 2014) )
+(VAR x2 y x1 x)
+(RULES
+  invmul(s(x2)) -> U1(invadd(x2),x2)
+  U1(tp2(x1,y),x2) -> U2(invmul(x1),x2,y,x1)
+  U2(tp2(x,s(y)),x2,y,x1) -> tp2(s(x),s(y))
+
+  invmul(0) -> tp2(0,rand(0))
+
+  invmul(0) -> tp2(rand(0),0)
+
+  invadd(s(x1)) -> U3(invadd(x1),x1)
+  U3(tp2(x,y),x1) -> tp2(s(x),y)
+
+  invadd(y) -> tp2(0,y)
+
+  invadd(add(x,y)) -> tp2(x,y)
+  invmul(mul(x,y)) -> tp2(x,y)
+
+  rand(x) ->= x
+  rand(x) ->= rand(s(x))
+)
+(COMMENT This is overlapping. )

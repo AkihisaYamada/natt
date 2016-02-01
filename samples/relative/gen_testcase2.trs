@@ -1,0 +1,21 @@
+(COMMENT 
+  test is origianl but follows the idea of quicktest:
+    - gen_testcase produces a random list (the length and elements are random)
+    - test(n) examines equivalence between two sorting functions n times
+)
+(VAR m n x y x1 xs)
+(RULES 
+  quicksort(x) -> x
+  bubblesort(x) -> x
+
+  test(0) -> true
+  test(s(x)) -> test0(rand_list(nil),x)
+  test0(y,x) -> test1(quicksort(y),bubblesort(y),x)
+  test1(y,y,x) -> test(x)
+
+  rand_list(x) ->= x
+  rand_list(x) ->= rand_list(cons(rand(0),x))
+
+  rand(x) ->= x
+  rand(x) ->= rand(s(x)) 
+)

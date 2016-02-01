@@ -971,16 +971,12 @@ class virtual smt_lib_2_0 =
 				if i < len then begin
 					begin
 						match v.[i] with
+						| 'a'..'z' | 'A'..'Z' | '0'..'9' | '_' -> x#pr_c v.[i]
+						| ' '	-> x#pr "<s>"
 						| '\''	-> x#pr "<q>"
 						| '<'	-> x#pr "<gt>"
-						| '#'	-> x#pr "<s>"
-						| ':'	-> x#pr "<col>"
-						| '\\'	-> x#pr "<bs>"
-						| '.'	-> x#pr "<dot>"
-						| '/'	-> x#pr "<sl>"
-						| '{'	-> x#pr "<bl>"
-						| '}'  -> x#pr "<br>"
-						| c	-> x#pr_c c
+						| '>'	-> x#pr "<lt>"
+						| c		-> x#pr_c '<'; x#pr (Printf.sprintf "%X" (Char.code c)); x#pr_c '>'
 						end;
 					sub (i+1);
 				end

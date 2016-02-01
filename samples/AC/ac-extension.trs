@@ -1,0 +1,7 @@
+(VAR x)
+(THEORY (AC +))
+(RULES
+	p(s(x)) -> x
+	f(x) -> +(s(x),p(x))
+	+(a,a) -> s(f(a))
+)

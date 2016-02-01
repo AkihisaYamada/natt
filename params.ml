@@ -257,7 +257,7 @@ type params_type =
 
 let params =
 {
-	mode = MODE_dp;
+	mode = MODE_order;
 	file = "";
 	sort_scc = SORT_asc;
 	uncurry = false;
@@ -611,6 +611,7 @@ while !i < argc do
 			params.uncurry <- true;
 		| "EDG" ->
 			default := false;
+			params.mode <- MODE_dp;
 			if p.dp then err "'EDG' cannot be applied twice!";
 			apply_edg ();
 		| "LOOP" ->
@@ -667,6 +668,7 @@ while !i < argc do
 done;
 if !default then begin
 	(* the default strategy *)
+	params.mode <- MODE_dp;
 	apply_polo ();
 	!pp.sc_mode <- W_bool;
 	params.uncurry <- true;

@@ -36,17 +36,21 @@ class t =
 			| Node(Var,xname,[]) -> (try x#find xname with Not_found -> s)
 			| Node(fty,fname,ss) -> Node(fty, fname, List.map x#subst ss)
 		method output os =
-			let iterer xname s =
-				output_string os "    ";
-				output_string os xname;
-				output_string os " := ";
-				output_term os s;
-				output_string os "\n";
-			in
-			output_string os "[\n";
-			Hashtbl.iter iterer table;
-			output_string os "]\n";
-			flush os;
+			if Hashtbl.length table = 0 then begin
+				output_string os "[ ]\n";
+			end else begin
+				let iterer xname s =
+					output_string os "    ";
+					output_string os xname;
+					output_string os " := ";
+					output_term os s;
+					output_string os "\n";
+				in
+				output_string os "[\n";
+				Hashtbl.iter iterer table;
+				output_string os "]\n";
+				flush os;
+			end;
 	end;;
 
 let singleton xname s = let ret = new t in ret#replace xname s; ret

@@ -1,3 +1,0 @@
-#!/bin/sh
-xsltproc "${0%/*}/xtc2tpdb.xml" "$1" | ${0%/*}/NaTT.exe 2>stderr.txt && cat stderr.txt
-rm -f stderr.txt
