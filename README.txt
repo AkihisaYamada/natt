@@ -2,13 +2,16 @@
   Welcome to Nagoya Termination Tool (NaTT)
 =============================================
 
-This is a release of NaTT ver.1.3.
+This is a release of NaTT ver.1.4.
 
 
 ---- Installation ----
 
 To compile NaTT, the third-party library ``ocamlgraph'' has to be installed:
 http://ocamlgraph.lri.fr/
+When compiling it, it seems that you want to do
+``sudo gmake install-findlib''
+in order for ``ocamlfind'' to work.
 
 Then please just ``make''.
 

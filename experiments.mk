@@ -19,7 +19,7 @@ L=\
 	${MK_PROOF};\
 	${TOOL} -p:"$@/proofs" ${TRS} ${PRE}
 
-R=${POST} > results.txt
+R=${POST} > $@/results.txt
 
 #
 # existing methods
