@@ -21,6 +21,7 @@ exception Unknown
 exception Nonterm
 exception Unsound of string
 exception Internal of string
+exception No_support of string
 
 let rec intlist m n = if m > n then [] else m :: intlist (m+1) n
 

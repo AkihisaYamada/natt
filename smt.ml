@@ -1,4 +1,5 @@
-open Params;;
+open Util
+open Params
 
 type ty = Nat | Int | Real | Bool | Prod of ty * ty
 
@@ -68,7 +69,6 @@ and dec =
 exception Inconsistent
 exception Internal of string
 exception Invalid_formula of string
-exception No_support
 exception Response of string * exp
 
 let rec is_simple =
@@ -733,7 +733,7 @@ let prerr_exp =
 			inherit Proc.printer
 			inherit Proc.stderr_outputter
 			method pr_v = prerr_string
-			method pr_ds = raise No_support
+			method pr_ds = raise (No_support "SMT")
 		end
 	)#pr_e
 

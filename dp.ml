@@ -3,86 +3,141 @@ open Term
 open Trs
 open Params
 
-let mark_name fname = "# "^fname
+let mark_name fname = "# " ^ fname
+
+let mark_default (Node(fty,fname,ss)) = Node(fty, mark_name fname, ss)
+
+let mark_KT98 =
+	let rec sub fname (Node(fty,gname,ss) as s) =
+		if fname = gname then Node(fty, mark_name fname, List.map (sub fname) ss) else s
+	in
+	fun (Node(fty,fname,ss) as s) ->
+		match fty with
+		| Fun -> mark_default s
+		| Th "AC" -> Node(fty, mark_name fname, List.map (sub fname) ss)
+		| _ -> raise (No_support "theory")
+
+let mark_guard (Node(fty,fname,ss) as s) =
+	match fty with
+	| Fun -> mark_default s
+	| Th _ -> Node(Fun, mark_name fname, [s])
+	| _ -> raise (No_support "theory")
+
+let mark_ac =
+	match params.ac_mark_mode with
+	| AC_unmark -> fun x -> x
+	| AC_mark -> if params.acdp_mode = ACDP_KT98 then mark_KT98 else mark_default
+	| AC_guard -> mark_guard
+
 let mark (Node(fty,fname,ss) as s) =
-	if fty = Th "AC" then
-		match params.ac_mark_mode with
-		| AC_unmark -> s
-		| AC_mark -> Node(fty, mark_name fname, ss)
-		| AC_guard -> Node(Fun, mark_name fname, [s])
-	else
-		Node(fty, mark_name fname, ss)
+	if fty = Fun then mark_default s else mark_ac s
+
 
 let make_dp_table (trs:Trs.t) minimal =
 	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
-	let flag = ref false in
 	while
 		trs#fold_eqs (fun i (l,r) ret ->
 			if duplicating l r || not(trs#const_term r) then (
 				trs#remove_eq i;
-				trs#add_rule_extra l r WeakRule;
+				trs#add_rule_extra l r MediumRule;
 				true)
 			else ret
 		) false do () done;
 	(* minimality can be assumed if all weak rules are size preserving *)
 	minimal := trs#for_all_eq (fun i (l,r) -> size l >= size r);
+
+	(* Main process *)
 	let dp_table = Hashtbl.create 256 in
 	let cnt = ref 0 in
 	let add_dp l r strength =
 		cnt := !cnt + 1;
 		Hashtbl.add dp_table (!cnt) (l,r,strength);
 	in
+	
+	(* Adding marked symbols *)
+	let add_marked_symbol_default fname finfo =
+		let minfo = trs#get_sym (mark_name fname) in
+		minfo.symtype <- finfo.symtype;
+		minfo.arity <- finfo.arity;
+	in
+	let add_marked_symbol_ac =
+		match params.ac_mark_mode with
+		| AC_unmark -> fun _ _ -> ()
+		| AC_mark -> add_marked_symbol_default
+		| AC_guard -> fun fname _ ->
+			let minfo = trs#get_sym (mark_name fname) in
+			minfo.symtype <- Fun;
+			minfo.arity <- Arity 1;
+	in
 	let add_marked_symbol fname finfo =
 		if trs#defines fname then begin
-			if finfo.symtype = Th "AC" then
-				match params.ac_mark_mode with
-				| AC_unmark -> ()
-				| AC_mark ->
-					let mname = mark_name fname in
-					let minfo = trs#get_sym mname in
-					minfo.symtype <- finfo.symtype;
-					minfo.arity <- finfo.arity;
-					begin
-						let u s t = Node(Th "AC", fname, [s;t]) in
-						let m s t = Node(Th "AC", mname, [s;t]) in
-						let x = var "_1" in
-						let y = var "_2" in
-						let z = var "_3" in
-						match params.acdp_mode with
-						| ACDP_GK01 -> trs#add_eq (m (u x y) z) (m x (u y z));
-						| _ -> trs#add_eq (m (m x y) z) (m (u x y) z);
-					end;
-				| AC_guard ->
-					let minfo = trs#get_sym (mark_name fname) in
-					minfo.symtype <- Fun;
-					minfo.arity <- Arity 1;
-			else
-			let minfo = trs#get_sym (mark_name fname) in
-			minfo.symtype <- finfo.symtype;
-			minfo.arity <- finfo.arity;
+			if finfo.symtype = Fun then add_marked_symbol_default fname finfo
+			else add_marked_symbol_ac fname finfo
 		end;
 	in
 	Hashtbl.iter add_marked_symbol trs#get_table;
-	let rec sub s strength (Node(gty,gname,ts) as t) =
+
+	(* Generating dependency pairs *)
+	let rec generate_dp_sub s strength (Node(gty,gname,ts) as t) =
 		if trs#defines gname && not (is_subterm t s) then begin
 			add_dp s (mark t) strength;
 		end;
-		List.iter (sub s strength) ts;
+		List.iter (generate_dp_sub s strength) ts;
 	in
-	let ext_ac fty fname t = Node(fty,fname,[t; var "_1"]) in
-	let iterer _ (Node(fty,fname,_) as l, r, strength) =
-		if fty = Th "AC" && params.acdp_mode <> ACDP_new then begin
-			let xl = ext_ac fty fname l in
-			let xr = ext_ac fty fname r in
-			if params.acdp_mode = ACDP_KT98 then begin
-				add_dp (mark xl) (mark xr) strength;
-			end else begin
-				sub (mark xl) strength xr;
+	let generate_dp_default _ (Node(fty,fname,_) as l, r, strength) =
+		generate_dp_sub (mark l) strength r
+	in
+	let ext_ac fty fname t = Node(fty, fname, [t; var "_1"]) in
+	let generate_dp =
+		match params.acdp_mode with
+		| ACDP_new -> generate_dp_default
+		| ACDP_KT98 ->
+			fun i (Node(fty,fname,_) as l, r, strength) ->
+				if fty = Th "AC" then begin
+					let xl = ext_ac fty fname l in
+					let xr = ext_ac fty fname r in
+					add_dp (mark xl) (mark xr) strength;
+				end;
+				generate_dp_default i (l,r,strength);
+		| _ ->
+			fun i (Node(fty,fname,_) as l, r, strength) ->
+				if fty = Th "AC" then begin
+					let xl = ext_ac fty fname l in
+					let xr = ext_ac fty fname r in
+					generate_dp_default i (xl, xr, strength);
+					minimal := false; (* Minimality cannot be assumed *)
+				end;
+	in
+	trs#iter_rules_extra generate_dp;
+
+	(* Additional rules for AC *)
+	if params.ac_mark_mode = AC_mark then begin
+		let ac_mark_handle fname finfo =
+			if finfo.symtype = Th "AC" && trs#defines fname then begin
+				let u s t = Node(finfo.symtype, fname, [s;t]) in
+				let m s t = Node(Fun, mark_name fname, [s;t]) in
+				let x = var "_1" in
+				let y = var "_2" in
+				let z = var "_3" in
+				match params.acdp_mode with
+				| ACDP_KT98 ->
+					trs#add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
+					trs#add_eq (m (u x y) z) (m (m x y) z);
+					trs#add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
+				| ACDP_GK01 ->
+					trs#add_eq (m (u x y) z) (m x (u y z));
+					trs#add_eq (m x (u y z)) (m (u x y) z);
+				| ACDP_new ->
+					add_dp (m (u x y) z) (m x (u y z)) WeakRule;
+					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+					add_dp (m (u x y) z) (m y z) WeakRule;
+					add_dp (m x (u y z)) (m x y) WeakRule;
 			end;
-		end;
-		sub (mark l) strength r;
-	in
-	trs#iter_rules_extra iterer;
+		in
+		Hashtbl.iter ac_mark_handle trs#get_table;
+	end;
+
+	(* Return *)
 	dp_table
 
 let edged trs (_,r,_) (l,_,_) = trs#estimate_edge r l
@@ -145,4 +200,5 @@ class dg trs =
 		method get_dps = Hashtbl.fold (fun i (l,r,_) ps -> (i,(l,r))::ps) dp_table []
 		method output_dps os = output_tbl os output_rule "   #" dp_table
 		method is_strict i = let (_,_,s) = Hashtbl.find dp_table i in s = StrictRule
+		method is_weak i = let (_,_,s) = Hashtbl.find dp_table i in s = WeakRule
 	end;;

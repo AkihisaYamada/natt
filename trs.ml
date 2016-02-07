@@ -4,7 +4,7 @@ open Subst
 
 
 type arity = Unknown | Arity of int
-type strength = StrictRule | WeakRule
+type strength = StrictRule | MediumRule | WeakRule
 
 exception ExistsConditionalRule
 exception ExistsEquation
@@ -44,10 +44,11 @@ let output_tbl os output prefix ruletbl =
 		output_string os (string_of_int i);
 		output_string os ": ";
 		output os (l,r);
-		if strength = WeakRule then
-			output_string os "\t[relative]\n"
-		else
-			output_char os '\n';
+		begin match strength with
+			| WeakRule -> output_string os "\t[weak]\n"
+			| MediumRule -> output_string os "\t[medium]\n"
+			| StrictRule -> output_char os '\n'
+		end;
 		flush os;
 	) (List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i rule l -> (i,rule)::l) ruletbl []))
 

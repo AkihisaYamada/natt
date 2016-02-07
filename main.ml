@@ -228,19 +228,10 @@ let prove_termination (trs:Trs.t) =
 			in
 	
 			let remove_strict sccref =
-				problem
-				(fun _ ->
-					let folder i abbr = abbr#add i in
-					prerr_string "  SCC {";
-					(IntSet.fold folder !sccref (new Abbrev.for_int stderr " #"))#close;
-					prerr_string " }\n    ";
-				);
-	
 				let (usables,_) = static_usable_rules trs dg !sccref in
-	
 				List.exists (fun proc -> proc#reduce usables sccref) proc_list
 			in
-	
+
 			let rec loop () =
 				comment (fun _ -> prerr_string "Number of SCCs: "; prerr_int !nsccs; prerr_newline (););
 				match !sccs with
@@ -248,19 +239,32 @@ let prove_termination (trs:Trs.t) =
 					cpf (fun os -> output_string os "</proof>";);
 					if !given_up then raise Unknown else raise Success
 				| scc::rest ->
-					remove_unusable !sccs;
-					let sccref = ref scc in
-					if remove_strict sccref then begin
-						let subsccs = scc_sorter (dg#get_subsccs !sccref) in
-						sccs := subsccs @ rest;
-						nsccs := !nsccs - 1 + List.length subsccs;
+					problem
+					(fun _ ->
+						let folder i abbr = abbr#add i in
+						prerr_string "  SCC {";
+						(IntSet.fold folder scc (new Abbrev.for_int stderr " #"))#close;
+						prerr_string " }\n    ";
+					);
+					if IntSet.for_all dg#is_weak scc then begin
+						comment (fun _ -> prerr_endline "only weak rules.");
+						sccs := rest;
 						loop ();
 					end else begin
-						comment
-						(fun _ ->
-							prerr_endline "failed.";
-						);
-						Nonterm.find_loop params.max_loop trs dg scc;
+						remove_unusable !sccs;
+						let sccref = ref scc in
+						if remove_strict sccref then begin
+							let subsccs = scc_sorter (dg#get_subsccs !sccref) in
+							sccs := subsccs @ rest;
+							nsccs := !nsccs - 1 + List.length subsccs;
+							loop ();
+						end else begin
+							comment
+							(fun _ ->
+								prerr_endline "failed.";
+							);
+							Nonterm.find_loop params.max_loop trs dg scc;
+						end
 					end
 			in
 			loop ();
@@ -427,7 +431,7 @@ begin
 		prerr_endline "':";
 		Smt.prerr_exp e;
 		prerr_newline ();
-	| Wpo.No_support(s) ->
+	| No_support(s) ->
 		prerr_newline ();
 		prerr_string "Not supported: ";
 		prerr_endline s;

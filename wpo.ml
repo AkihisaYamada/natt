@@ -6,7 +6,6 @@ open Preorder
 open Params
 
 exception Continue
-exception No_support of string
 
 let k_comb x _ = x
 let supply_index v i = v ^ "_" ^ string_of_int i
