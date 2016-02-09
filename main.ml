@@ -74,6 +74,164 @@ let relative_test (trs:Trs.t) =
 		) else false
 	);;
 
+(* extra variable test *)
+let extra_test trs =
+	let iterer i (l,r) =
+		let lvars = varlist l in
+		let rvars = varlist r in
+		if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
+		begin
+			proof
+			(fun _ ->
+				prerr_string "Extra variable in rule ";
+				prerr_int i;
+				prerr_endline ".";
+			);
+			raise Nonterm;
+		end;
+	in
+	trs#iter_rules iterer;;
+
+(* remove trivial relative rules *)
+let clean_eqs trs =
+	let iterer i (l,r) =
+		if l = r then begin
+			proof (fun _ ->
+				prerr_string "Removing trivial relative rule e";
+				prerr_int i;
+				prerr_endline ".";
+			);
+			trs#remove_eq i;
+		end;
+	in
+	trs#iter_eqs iterer;;
+
+
+(* rule removal processor *)
+let dummy_dg = new Dp.dg (new Trs.t)
+
+let rule_remove trs =
+	if Array.length params.orders_removal > 0 then begin
+		let proc_list =
+			let folder p procs =
+				new Wpo.processor p trs dummy_dg :: procs
+			in
+			Array.fold_right folder params.orders_removal []
+		in
+		let remove_strict rules =
+			List.exists (fun proc -> proc#direct rules) proc_list
+		in
+		let rec loop () =
+			let rules = trs#fold_rules (fun i _ is -> i::is) [] in
+			comment (fun _ ->
+				prerr_string "Number of Rules: ";
+				prerr_int trs#get_size;
+				prerr_newline ();
+			);
+			if trs#get_size = 0 then raise Success
+			else if remove_strict rules then begin
+				loop ();
+			end else begin
+				comment (fun _ -> prerr_endline " failed.");
+			end;
+		in
+		loop ();
+	end;;
+
+(* reduction pair processor *)
+let dp_remove trs dg =
+	let sccs = ref dg#get_sccs in
+	let remove_unusable () =
+		let init = ref true in
+		let used_dpset = List.fold_left IntSet.union IntSet.empty !sccs in
+		let curr_len = IntSet.cardinal used_dpset in
+		if !init || curr_len < dg#get_size then
+		begin
+			debug2 (fun _ -> prerr_string "Removing unusable DPs:");
+			init := false;
+			(* removing unrelated DPs *)
+			let dp_remover i _ =
+				if not (IntSet.mem i used_dpset) then
+				begin
+					debug2 (fun _ -> prerr_string " #"; prerr_int i;);
+					dg#remove_dp i;
+				end;
+			in
+			dg#iter_dps dp_remover;
+			debug2 (fun _ -> prerr_string "\nRemoving unusable rules:");
+			let (_,unusables) = static_usable_rules trs dg used_dpset in
+			let rule_remover i =
+				debug2 (fun _ -> prerr_string " "; prerr_int i;);
+				trs#remove_rule i;
+			in
+			List.iter rule_remover unusables;
+			debug2 (fun _ -> prerr_newline ());
+		end;
+	in
+	let scc_sorter =
+		let scc_size scc =
+			IntSet.fold (fun i r -> dg#get_dp_size i + r) scc 0
+		in
+		match params.sort_scc with
+		| SORT_asc ->
+			List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
+		| SORT_desc ->
+			List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
+		| SORT_none ->
+			fun sccs -> sccs
+	in
+	sccs := scc_sorter !sccs;
+	let given_up = ref false in
+	let proc_list =
+		Array.fold_right
+		(fun p procs ->
+			p.usable <- p.usable && dg#minimal;
+			new Wpo.processor p trs dg :: procs
+		)
+		params.orders_dp []
+	in
+	let remove_strict sccref =
+		let (usables,_) = static_usable_rules trs dg !sccref in
+		List.exists (fun proc -> proc#reduce usables sccref) proc_list
+	in
+	let rec loop () =
+		comment (fun _ ->
+			prerr_string "Number of SCCs: ";
+			prerr_int (List.length !sccs);
+			prerr_newline (););
+		match !sccs with
+		| [] ->
+			cpf (fun os -> output_string os "</proof>";);
+			if !given_up then raise Unknown else raise Success
+		| scc::rest ->
+			problem
+			(fun _ ->
+				let folder i abbr = abbr#add i in
+				prerr_string "  SCC {";
+				(IntSet.fold folder scc (new Abbrev.for_int stderr " #"))#close;
+				prerr_string " }\n    ";
+			);
+			if IntSet.for_all dg#is_weak scc then begin
+				comment (fun _ -> prerr_endline "only weak rules.");
+				sccs := rest;
+				loop ();
+			end else begin
+				remove_unusable ();
+				let sccref = ref scc in
+				if remove_strict sccref then begin
+					sccs := scc_sorter (dg#get_subsccs !sccref) @ rest;
+					loop ();
+				end else begin
+					comment
+					(fun _ ->
+						prerr_endline "failed.";
+					);
+					Nonterm.find_loop params.max_loop trs dg scc;
+				end
+			end
+	in
+	loop ();;
+
 
 let prove_termination (trs:Trs.t) =
 	let ret = try
@@ -94,183 +252,39 @@ let prove_termination (trs:Trs.t) =
  <trsTerminationProof>
 "
 		);
+		extra_test trs;
 
-		let extra_test i (l,r) =
-			let lvars = varlist l in
-			let rvars = varlist r in
-			if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
-			begin
-				proof
-				(fun _ ->
-					prerr_string "Extra variable in rule ";
-					prerr_int i;
-					prerr_endline ".";
-				);
-				raise Nonterm;
-			end;
-		in
-		trs#iter_rules extra_test;
+		clean_eqs trs;
 
-		let clean_eq i (l,r) =
-			if l = r then begin
-				proof (fun _ ->
-					prerr_string "Removing trivial relative rule e";
-					prerr_int i;
-					prerr_endline ".";
-				);
-				trs#remove_eq i;
-			end;
-		in
-		trs#iter_eqs clean_eq;
+		rule_remove trs;
 
-		let ordercount = Array.length params.orders_removal in
-
-		let flag = ref false in
-		let init_dg = new Dp.dg (new Trs.t) in
-		let rule_remove_loop () =
-			if ordercount > 0 then begin
-				let proc_list =
-					let folder p procs =
-						new Wpo.processor p trs init_dg :: procs
-					in
-					Array.fold_right folder params.orders_removal []
-				in
-				let remove_strict rules =
-					List.exists (fun proc -> proc#direct rules) proc_list
-				in
-				let rec loop () =
-					let rules = trs#fold_rules (fun i _ is -> i::is) [] in
-					comment (fun _ ->
-						prerr_string "Number of Rules: ";
-						prerr_int trs#get_size;
-						prerr_newline ();
-					);
-					if trs#get_size = 0 then raise Success
-					else if remove_strict rules then begin
-						flag := true;
-						loop ();
-					end else begin
-						comment (fun _ -> prerr_endline " failed.");
-					end;
-				in
-				loop ();
-			end;
-		in
-		rule_remove_loop ();
-
-		if uncurry trs init_dg then rule_remove_loop ();
+		if uncurry trs dummy_dg then rule_remove trs;
 
 		if params.mode = MODE_order then raise Unknown;
 		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
 		(* making dependency pairs *)
 		let dg = new Dp.dg trs in
+		dg#init;
 		problem (fun _ ->
 			prerr_endline "Dependency Pairs:";
 			dg#output_dps stderr;
 		);
 
-		let remove_unusable =
-			let init = ref true in
-			fun sccs ->
-				let used_dpset = List.fold_left IntSet.union IntSet.empty sccs in
-				let curr_len = IntSet.cardinal used_dpset in
-				if !init || curr_len < dg#get_size then
-				begin
-					debug2 (fun _ -> prerr_string "Removing unusable DPs:");
-					init := false;
-					(* removing unrelated DPs *)
-					let dp_remover i _ =
-						if not (IntSet.mem i used_dpset) then
-						begin
-							debug2 (fun _ -> prerr_string " #"; prerr_int i;);
-							dg#remove_dp i;
-						end;
-					in
-					dg#iter_dps dp_remover;
-					debug2 (fun _ -> prerr_string "\nRemoving unusable rules:");
-					let (_,unusables) = static_usable_rules trs dg used_dpset in
-					let rule_remover i =
-						debug2 (fun _ -> prerr_string " "; prerr_int i;);
-						trs#remove_rule i;
-					in
-					List.iter rule_remover unusables;
-					debug2 (fun _ -> prerr_newline ());
-				end;
-		in
-	
-		let scc_sorter =
-			let scc_size scc =
-				IntSet.fold (fun i r -> dg#get_dp_size i + r) scc 0
-			in
-			match params.sort_scc with
-			| SORT_asc ->
-				List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
-			| SORT_desc ->
-				List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
-			| SORT_none ->
-				fun sccs -> sccs
-		in
-	
-		let sccs = ref (scc_sorter dg#get_sccs) in
-		let nsccs = ref (List.length !sccs) in
-		let dp_remove_loop () =
-	
-			let given_up = ref false in
-	
-			let proc_list =
-				Array.fold_right
-				(fun p procs ->
-					p.usable <- dg#minimal;
-					new Wpo.processor p trs dg :: procs
-				)
-				params.orders_dp []
-			in
-	
-			let remove_strict sccref =
-				let (usables,_) = static_usable_rules trs dg !sccref in
-				List.exists (fun proc -> proc#reduce usables sccref) proc_list
-			in
+		if params.acdp_mode = ACDP_new then begin
+			try dp_remove trs dg with
+			| Success ->
+				let dg = new Dp.dg trs in
+				dg#init_ac_ext;
+				problem (fun _ ->
+					prerr_endline "AC Extensions:";
+					dg#output_dps stderr;
+				);
+				dp_remove trs dg;
+		end else begin
+			dp_remove trs dg;
+		end;
 
-			let rec loop () =
-				comment (fun _ -> prerr_string "Number of SCCs: "; prerr_int !nsccs; prerr_newline (););
-				match !sccs with
-				| [] ->
-					cpf (fun os -> output_string os "</proof>";);
-					if !given_up then raise Unknown else raise Success
-				| scc::rest ->
-					problem
-					(fun _ ->
-						let folder i abbr = abbr#add i in
-						prerr_string "  SCC {";
-						(IntSet.fold folder scc (new Abbrev.for_int stderr " #"))#close;
-						prerr_string " }\n    ";
-					);
-					if IntSet.for_all dg#is_weak scc then begin
-						comment (fun _ -> prerr_endline "only weak rules.");
-						sccs := rest;
-						loop ();
-					end else begin
-						remove_unusable !sccs;
-						let sccref = ref scc in
-						if remove_strict sccref then begin
-							let subsccs = scc_sorter (dg#get_subsccs !sccref) in
-							sccs := subsccs @ rest;
-							nsccs := !nsccs - 1 + List.length subsccs;
-							loop ();
-						end else begin
-							comment
-							(fun _ ->
-								prerr_endline "failed.";
-							);
-							Nonterm.find_loop params.max_loop trs dg scc;
-						end
-					end
-			in
-			loop ();
-		in
-		dp_remove_loop ();
-	
 		raise Unknown;
 	with
 	| Success -> YES

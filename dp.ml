@@ -29,14 +29,19 @@ let mark_guard (Node(fty,fname,ss) as s) =
 let mark_ac =
 	match params.ac_mark_mode with
 	| AC_unmark -> fun x -> x
-	| AC_mark -> if params.acdp_mode = ACDP_KT98 then mark_KT98 else rename_root mark
+	| AC_mark ->
+		if params.acdp_mode = ACDP_KT98 then mark_KT98
+		else fun (Node(fty,fname,ss)) -> Node(Fun, mark fname, ss)
 	| AC_guard -> mark_guard
 
 let mark_term (Node(fty,fname,ss) as s) =
 	if fty = Fun then rename_root mark s else mark_ac s
 
 
-let make_dp_table (trs:Trs.t) minimal =
+let ext_ac fty fname t = Node(fty, fname, [t; var "_1"])
+
+
+let make_dp_table (trs:Trs.t) minimal dp_table =
 	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
 	while
 		trs#fold_eqs (fun i (l,r) ret ->
@@ -50,7 +55,6 @@ let make_dp_table (trs:Trs.t) minimal =
 	minimal := trs#for_all_eq (fun i (l,r) -> size l >= size r);
 
 	(* Main process *)
-	let dp_table = Hashtbl.create 256 in
 	let cnt = ref 0 in
 	let add_dp l r strength =
 		cnt := !cnt + 1;
@@ -78,12 +82,6 @@ let make_dp_table (trs:Trs.t) minimal =
 				add_marked_symbol_default fname finfo;
 			end else begin
 				add_marked_symbol_ac fname finfo;
-				if params.acdp_mode = ACDP_new then begin
-					(* extensions have a different mark *)
-					let minfo = trs#get_sym (mark2 fname) in
-					minfo.symtype <- if params.ac_mark_mode = AC_mark then Fun else finfo.symtype;
-					minfo.arity <- finfo.arity;
-				end;
 			end;
 		end;
 	in
@@ -99,70 +97,94 @@ let make_dp_table (trs:Trs.t) minimal =
 	let generate_dp_default _ (Node(fty,fname,_) as l, r, strength) =
 		generate_dp_sub (mark_term l) strength r
 	in
-	let ext_ac fty fname t = Node(fty, fname, [t; var "_1"]) in
 	let generate_dp =
 		match params.acdp_mode with
-		| ACDP_new ->
-			fun i (Node(fty,fname,_) as l, r, strength) ->
-				if fty = Th "AC" then begin
-					let xl = ext_ac fty fname l in
-					let xr = ext_ac fty fname r in
-					add_dp (rename_root mark2 xl) (rename_root mark2 xr) strength;
-				end;
-				generate_dp_default i (l,r,strength);
+		| ACDP_new -> generate_dp_default
 		| ACDP_KT98 ->
 			fun i (Node(fty,fname,_) as l, r, strength) ->
+				generate_dp_default i (l,r,strength);
 				if fty = Th "AC" then begin
 					let xl = ext_ac fty fname l in
 					let xr = ext_ac fty fname r in
 					add_dp (mark_term xl) (mark_term xr) strength;
 				end;
-				generate_dp_default i (l,r,strength);
 		| _ ->
 			fun i (Node(fty,fname,_) as l, r, strength) ->
 				if fty = Th "AC" then begin
 					let xl = ext_ac fty fname l in
 					let xr = ext_ac fty fname r in
 					generate_dp_default i (xl, xr, strength);
-					minimal := false; (* Minimality cannot be assumed *)
+				end else begin
+					generate_dp_default i (l,r,strength);
 				end;
 	in
 	trs#iter_rules_extra generate_dp;
 
 	(* Additional rules for AC *)
-	if params.ac_mark_mode = AC_mark then begin
-		let ac_mark_handle fname finfo =
-			if finfo.symtype = Th "AC" && trs#defines fname then begin
-				let u s t = Node(finfo.symtype, fname, [s;t]) in
-				let m s t = Node(Fun, mark fname, [s;t]) in
-				let x = var "_1" in
-				let y = var "_2" in
-				let z = var "_3" in
-				match params.acdp_mode with
-				| ACDP_KT98 ->
-					trs#add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
-					trs#add_eq (m (u x y) z) (m (m x y) z);
-					trs#add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
-				| ACDP_GK01 ->
-					trs#add_eq (m (u x y) z) (m x (u y z));
-					trs#add_eq (m x (u y z)) (m (u x y) z);
-				| ACDP_new ->
-					add_dp (m (u x y) z) (m x (u y z)) WeakRule;
-					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
-					add_dp (m (u x y) z) (m y z) WeakRule;
-					add_dp (m x (u y z)) (m x y) WeakRule;
-					let n s t = Node(Fun, mark2 fname, [s;t]) in
-					add_dp (n (u x y) z) (n x (u y z)) WeakRule;
-					add_dp (n x (u y z)) (n (u x y) z) WeakRule;
-					add_dp (n (u x y) z) (n y z) WeakRule;
-					add_dp (n x (u y z)) (n x y) WeakRule;
-			end;
-		in
-		Hashtbl.iter ac_mark_handle trs#get_table;
-	end;
+	let ac_mark_handle fname finfo =
+		if finfo.symtype = Th "AC" && trs#defines fname then begin
+			let u s t = Node(finfo.symtype, fname, [s;t]) in
+			let m =
+				if params.ac_mark_mode = AC_mark then fun s t -> rename_root mark (u s t)
+				else u
+			in
+			let x = var "_1" in
+			let y = var "_2" in
+			let z = var "_3" in
+			match params.acdp_mode with
+			| ACDP_KT98 ->
+				trs#add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
+				trs#add_eq (m (u x y) z) (m (m x y) z);
+				trs#add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
+			| ACDP_GK01 ->
+				trs#add_eq (m (u x y) z) (m x (u y z));
+				trs#add_eq (m x (u y z)) (m (u x y) z);
+				minimal := false; (* Minimality cannot be assumed *)
+			| ACDP_new ->
+				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
+				add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+				add_dp (m (u x y) z) (m y z) WeakRule;
+				add_dp (m x (u y z)) (m x y) WeakRule;
+		end;
+	in
+	Hashtbl.iter ac_mark_handle trs#get_table;;
 
-	(* Return *)
-	dp_table
+
+(* For the new AC-DP *)
+let make_ac_ext (trs:Trs.t) dp_table =
+	let cnt = ref 0 in
+	let add_dp l r strength =
+		cnt := !cnt + 1;
+		Hashtbl.add dp_table (!cnt) (l,r,strength);
+	in
+	let generate_dp i (Node(fty,fname,_) as l, r, strength) =
+		if fty = Th "AC" then begin
+			let xl = ext_ac fty fname l in
+			let xr = ext_ac fty fname r in
+			add_dp (mark_term xl) (mark_term xr) strength;
+		end;
+	in
+	trs#iter_rules_extra generate_dp;
+	let ac_mark_handle fname finfo =
+		if finfo.symtype = Th "AC" then begin
+			let u s t = Node(finfo.symtype, fname, [s;t]) in
+			let m =
+				if params.ac_mark_mode = AC_mark then fun s t -> rename_root mark (u s t)
+				else u
+			in
+			let x = var "_1" in
+			let y = var "_2" in
+			let z = var "_3" in
+			if params.ac_mark_mode = AC_mark then begin
+				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
+				add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+			end;
+			add_dp (m (u x y) z) (m y z) WeakRule;
+			add_dp (m x (u y z)) (m x y) WeakRule;
+		end;
+	in
+	Hashtbl.iter ac_mark_handle trs#get_table;;
+
 
 let edged trs (_,r,_) (l,_,_) = trs#estimate_edge r l
 
@@ -177,10 +199,10 @@ module SubDG =
 		let fold_succ f (g,vs) v a =
 			DG.fold_succ (fun v2 b -> if IntSet.mem v2 vs then f v2 b else b) g v a
 	end
+
 module SubComponents = Graph.Components.Make(SubDG)
 
-let make_dg trs dp_table =
-	let dg = DG.create () in
+let make_dg trs dp_table dg =
 	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 	Hashtbl.iter
 	(fun i1 dp1 ->
@@ -188,8 +210,7 @@ let make_dg trs dp_table =
 		(fun i2 dp2 -> if edged trs dp1 dp2 then DG.add_edge dg i1 i2)
 		dp_table
 	)
-	dp_table;
-	dg
+	dp_table;;
 
 let notsingle dg =
 	function
@@ -203,14 +224,14 @@ let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
 class dg trs =
-	let min = ref true in
-	let init_dp_table = make_dp_table trs min in
-	let init_dg = make_dg trs init_dp_table in
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
-		val dp_table = init_dp_table
-		val dg = init_dg
+		val min = ref true
+		val dp_table = Hashtbl.create 256
+		val dg = DG.create ()
+		method init = make_dp_table trs min dp_table; make_dg trs dp_table dg;
+		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs dp_table dg;
 		method minimal = !min
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
 		method replace_dp i l r = Hashtbl.replace dp_table i (l,r,StrictRule);
