@@ -136,7 +136,22 @@ let local_flat fname =
 	in
 	sub []
 
+let escape c = "\x1b" ^ String.make 1 c
+
 (* printers *)
+let output_name os s =
+	let n = String.length s in
+	let rec sub i =
+		if i < n then begin
+			match s.[i] with
+			| '\\' -> output_string os "\\\\"; sub (i+1);
+			| '#' -> output_string os "\\#"; sub (i+1);
+			| '\x1b' -> output_char os s.[i+1]; sub (i+2);
+			| c -> output_char os c; sub (i+1);
+		end;
+	in
+	sub 0
+
 let rec output_term os =
 	let rec sub =
 		function
@@ -144,7 +159,7 @@ let rec output_term os =
 		| t::ts -> output_string os ","; output_term os t; sub ts
 	in
 	fun (Node(fty,fname,ts)) ->
-		output_string os fname;
+		output_name os fname;
 		match ts with
 		| []	-> if fty <> Var then output_string os "()";
 		| t::ts	-> output_string os "("; output_term os t; sub ts

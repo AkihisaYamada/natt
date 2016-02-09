@@ -3,34 +3,37 @@ open Term
 open Trs
 open Params
 
-let mark_name fname = "# " ^ fname
+let mark fname = escape '#' ^ fname
 
-let mark_default (Node(fty,fname,ss)) = Node(fty, mark_name fname, ss)
+let mark2 fname = escape '#' ^ escape '#' ^ fname
+
+let rename_root renamer (Node(fty,fname,ss)) = Node(fty, renamer fname, ss)
 
 let mark_KT98 =
 	let rec sub fname (Node(fty,gname,ss) as s) =
-		if fname = gname then Node(fty, mark_name fname, List.map (sub fname) ss) else s
+		if fname = gname then
+			Node(fty, mark fname, List.map (sub fname) ss) else s
 	in
 	fun (Node(fty,fname,ss) as s) ->
 		match fty with
-		| Fun -> mark_default s
-		| Th "AC" -> Node(fty, mark_name fname, List.map (sub fname) ss)
+		| Fun -> rename_root mark s
+		| Th "AC" -> Node(fty, mark fname, List.map (sub fname) ss)
 		| _ -> raise (No_support "theory")
 
 let mark_guard (Node(fty,fname,ss) as s) =
 	match fty with
-	| Fun -> mark_default s
-	| Th _ -> Node(Fun, mark_name fname, [s])
+	| Fun -> rename_root mark s
+	| Th _ -> Node(Fun, mark fname, [s])
 	| _ -> raise (No_support "theory")
 
 let mark_ac =
 	match params.ac_mark_mode with
 	| AC_unmark -> fun x -> x
-	| AC_mark -> if params.acdp_mode = ACDP_KT98 then mark_KT98 else mark_default
+	| AC_mark -> if params.acdp_mode = ACDP_KT98 then mark_KT98 else rename_root mark
 	| AC_guard -> mark_guard
 
-let mark (Node(fty,fname,ss) as s) =
-	if fty = Fun then mark_default s else mark_ac s
+let mark_term (Node(fty,fname,ss) as s) =
+	if fty = Fun then rename_root mark s else mark_ac s
 
 
 let make_dp_table (trs:Trs.t) minimal =
@@ -56,7 +59,7 @@ let make_dp_table (trs:Trs.t) minimal =
 	
 	(* Adding marked symbols *)
 	let add_marked_symbol_default fname finfo =
-		let minfo = trs#get_sym (mark_name fname) in
+		let minfo = trs#get_sym (mark fname) in
 		minfo.symtype <- finfo.symtype;
 		minfo.arity <- finfo.arity;
 	in
@@ -65,14 +68,23 @@ let make_dp_table (trs:Trs.t) minimal =
 		| AC_unmark -> fun _ _ -> ()
 		| AC_mark -> add_marked_symbol_default
 		| AC_guard -> fun fname _ ->
-			let minfo = trs#get_sym (mark_name fname) in
+			let minfo = trs#get_sym (mark fname) in
 			minfo.symtype <- Fun;
 			minfo.arity <- Arity 1;
 	in
 	let add_marked_symbol fname finfo =
 		if trs#defines fname then begin
-			if finfo.symtype = Fun then add_marked_symbol_default fname finfo
-			else add_marked_symbol_ac fname finfo
+			if finfo.symtype = Fun then begin
+				add_marked_symbol_default fname finfo;
+			end else begin
+				add_marked_symbol_ac fname finfo;
+				if params.acdp_mode = ACDP_new then begin
+					(* extensions have a different mark *)
+					let minfo = trs#get_sym (mark2 fname) in
+					minfo.symtype <- finfo.symtype;
+					minfo.arity <- finfo.arity;
+				end;
+			end;
 		end;
 	in
 	Hashtbl.iter add_marked_symbol trs#get_table;
@@ -80,23 +92,30 @@ let make_dp_table (trs:Trs.t) minimal =
 	(* Generating dependency pairs *)
 	let rec generate_dp_sub s strength (Node(gty,gname,ts) as t) =
 		if trs#defines gname && not (is_subterm t s) then begin
-			add_dp s (mark t) strength;
+			add_dp s (mark_term t) strength;
 		end;
 		List.iter (generate_dp_sub s strength) ts;
 	in
 	let generate_dp_default _ (Node(fty,fname,_) as l, r, strength) =
-		generate_dp_sub (mark l) strength r
+		generate_dp_sub (mark_term l) strength r
 	in
 	let ext_ac fty fname t = Node(fty, fname, [t; var "_1"]) in
 	let generate_dp =
 		match params.acdp_mode with
-		| ACDP_new -> generate_dp_default
+		| ACDP_new ->
+			fun i (Node(fty,fname,_) as l, r, strength) ->
+				if fty = Th "AC" then begin
+					let xl = ext_ac fty fname l in
+					let xr = ext_ac fty fname r in
+					add_dp (rename_root mark2 xl) (rename_root mark2 xr) strength;
+				end;
+				generate_dp_default i (l,r,strength);
 		| ACDP_KT98 ->
 			fun i (Node(fty,fname,_) as l, r, strength) ->
 				if fty = Th "AC" then begin
 					let xl = ext_ac fty fname l in
 					let xr = ext_ac fty fname r in
-					add_dp (mark xl) (mark xr) strength;
+					add_dp (mark_term xl) (mark_term xr) strength;
 				end;
 				generate_dp_default i (l,r,strength);
 		| _ ->
@@ -115,7 +134,7 @@ let make_dp_table (trs:Trs.t) minimal =
 		let ac_mark_handle fname finfo =
 			if finfo.symtype = Th "AC" && trs#defines fname then begin
 				let u s t = Node(finfo.symtype, fname, [s;t]) in
-				let m s t = Node(Fun, mark_name fname, [s;t]) in
+				let m s t = Node(Fun, mark fname, [s;t]) in
 				let x = var "_1" in
 				let y = var "_2" in
 				let z = var "_3" in
@@ -132,6 +151,11 @@ let make_dp_table (trs:Trs.t) minimal =
 					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
 					add_dp (m (u x y) z) (m y z) WeakRule;
 					add_dp (m x (u y z)) (m x y) WeakRule;
+					let n s t = Node(Fun, mark2 fname, [s;t]) in
+					add_dp (n (u x y) z) (n x (u y z)) WeakRule;
+					add_dp (n x (u y z)) (n (u x y) z) WeakRule;
+					add_dp (n (u x y) z) (n y z) WeakRule;
+					add_dp (n x (u y z)) (n x y) WeakRule;
 			end;
 		in
 		Hashtbl.iter ac_mark_handle trs#get_table;
