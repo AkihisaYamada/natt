@@ -37,20 +37,21 @@ let var_finfo =
 	equated_by = Rules.empty;
 }
 
+let output_tbl_index os output prefix (i,(l,r,strength)) =
+	output_string os prefix;
+	output_string os (string_of_int i);
+	output_string os ": ";
+	output os (l,r);
+	begin match strength with
+		| WeakRule -> output_string os "\t[weak]\n"
+		| MediumRule -> output_string os "\t[medium]\n"
+		| StrictRule -> output_char os '\n'
+	end;
+	flush os;;
+
 let output_tbl os output prefix ruletbl =
-	List.iter
-	(fun (i,(l,r,strength)) ->
-		output_string os prefix;
-		output_string os (string_of_int i);
-		output_string os ": ";
-		output os (l,r);
-		begin match strength with
-			| WeakRule -> output_string os "\t[weak]\n"
-			| MediumRule -> output_string os "\t[medium]\n"
-			| StrictRule -> output_char os '\n'
-		end;
-		flush os;
-	) (List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i rule l -> (i,rule)::l) ruletbl []))
+	List.iter (output_tbl_index os output prefix)
+	(List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i rule l -> (i,rule)::l) ruletbl []))
 
 let hashtbl_exists test hashtbl =
 	try
@@ -80,6 +81,7 @@ class t =
 		method get_table = sym_table
 		method get_size = Hashtbl.length rule_table
 		method get_eqsize = Hashtbl.length eq_table
+		method get_last_eq_id = eq_cnt
 		method get_ths = ths
 		method get_defsyms = defsyms
 (* methods for symbols *)
@@ -238,6 +240,8 @@ class t =
 			output_tbl os output_rule "    " rule_table;
 		method output_eqs os =
 			output_tbl os output_eq "   e" eq_table;
+		method output_last_eq os =
+			output_tbl_index os output_eq "   e" (eq_cnt, Hashtbl.find eq_table eq_cnt);
 		method output os =
 			x#output_ths os;
 			x#output_rules os;

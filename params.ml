@@ -249,6 +249,7 @@ type params_type =
 	mutable problem : bool;
 	mutable cpf : bool;
 	mutable proof : bool;
+	mutable log : bool;
 	mutable debug : bool;
 	mutable debug2 : bool;
 	mutable tmpvar : bool;
@@ -273,6 +274,7 @@ let params =
 	problem = true;
 	cpf = false;
 	proof = true;
+	log = false;
 	debug = false;
 	debug2 = false;
 	tmpvar = true;
@@ -436,8 +438,9 @@ while !i < argc do
 			params.comment <- v > 0;
 			params.problem <- v > 1;
 			params.proof <- v > 2;
-			params.debug <- v > 3;
-			params.debug2 <- v > 4;
+			params.log <- v > 3;
+			params.debug <- v > 4;
+			params.debug2 <- v > 5;
 		| "x", None ->
 			params.warning <- false;
 			params.comment <- false;
@@ -708,5 +711,6 @@ let comment = guard params.comment stderr
 let problem = guard params.problem stderr
 let cpf = guard params.cpf stdout
 let proof = guard params.proof stderr
+let log = guard params.log stderr
 let debug = guard params.debug stderr
 let debug2 = guard params.debug2 stderr

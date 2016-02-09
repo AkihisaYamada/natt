@@ -40,6 +40,33 @@ let mark_term (Node(fty,fname,ss) as s) =
 
 let ext_ac fty fname t = Node(fty, fname, [t; var "_1"])
 
+(* Adding marked symbols *)
+
+let add_marked_symbol_default trs fname finfo =
+	let minfo = trs#get_sym (mark fname) in
+	minfo.symtype <- finfo.symtype;
+	minfo.arity <- finfo.arity;;
+
+let add_marked_symbol_ac =
+	match params.ac_mark_mode with
+	| AC_unmark -> fun _ _ _ -> ()
+	| AC_mark -> add_marked_symbol_default
+	| AC_guard -> fun trs fname _ ->
+		let minfo = trs#get_sym (mark fname) in
+		minfo.symtype <- Fun;
+		minfo.arity <- Arity 1;;
+
+let add_marked_symbols trs =
+	let iterer fname finfo =
+		if trs#defines fname then begin
+			if finfo.symtype = Fun then begin
+				add_marked_symbol_default trs fname finfo;
+			end else begin
+				add_marked_symbol_ac trs fname finfo;
+			end;
+		end;
+	in
+	Hashtbl.iter iterer trs#get_table;;
 
 let make_dp_table (trs:Trs.t) minimal dp_table =
 	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
@@ -61,31 +88,7 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 		Hashtbl.add dp_table (!cnt) (l,r,strength);
 	in
 	
-	(* Adding marked symbols *)
-	let add_marked_symbol_default fname finfo =
-		let minfo = trs#get_sym (mark fname) in
-		minfo.symtype <- finfo.symtype;
-		minfo.arity <- finfo.arity;
-	in
-	let add_marked_symbol_ac =
-		match params.ac_mark_mode with
-		| AC_unmark -> fun _ _ -> ()
-		| AC_mark -> add_marked_symbol_default
-		| AC_guard -> fun fname _ ->
-			let minfo = trs#get_sym (mark fname) in
-			minfo.symtype <- Fun;
-			minfo.arity <- Arity 1;
-	in
-	let add_marked_symbol fname finfo =
-		if trs#defines fname then begin
-			if finfo.symtype = Fun then begin
-				add_marked_symbol_default fname finfo;
-			end else begin
-				add_marked_symbol_ac fname finfo;
-			end;
-		end;
-	in
-	Hashtbl.iter add_marked_symbol trs#get_table;
+	add_marked_symbols trs;
 
 	(* Generating dependency pairs *)
 	let rec generate_dp_sub s strength (Node(gty,gname,ts) as t) =
@@ -110,17 +113,20 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 				end;
 		| _ ->
 			fun i (Node(fty,fname,_) as l, r, strength) ->
+				generate_dp_default i (l,r,strength);
 				if fty = Th "AC" then begin
 					let xl = ext_ac fty fname l in
 					let xr = ext_ac fty fname r in
 					generate_dp_default i (xl, xr, strength);
-				end else begin
-					generate_dp_default i (l,r,strength);
 				end;
 	in
 	trs#iter_rules_extra generate_dp;
 
 	(* Additional rules for AC *)
+	let add_eq s t =
+		trs#add_eq s t;
+		problem (fun os -> trs#output_last_eq os);
+	in
 	let ac_mark_handle fname finfo =
 		if finfo.symtype = Th "AC" && trs#defines fname then begin
 			let u s t = Node(finfo.symtype, fname, [s;t]) in
@@ -133,12 +139,12 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 			let z = var "_3" in
 			match params.acdp_mode with
 			| ACDP_KT98 ->
-				trs#add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
-				trs#add_eq (m (u x y) z) (m (m x y) z);
-				trs#add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
+				add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
+				add_eq (m (u x y) z) (m (m x y) z);
+				add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
 			| ACDP_GK01 ->
-				trs#add_eq (m (u x y) z) (m x (u y z));
-				trs#add_eq (m x (u y z)) (m (u x y) z);
+				add_eq (m (u x y) z) (m x (u y z));
+				add_eq (m x (u y z)) (m (u x y) z);
 				minimal := false; (* Minimality cannot be assumed *)
 			| ACDP_new ->
 				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
@@ -151,6 +157,14 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 
 
 (* For the new AC-DP *)
+let add_marked_symbols_ac trs =
+	let iterer fname finfo =
+		if finfo.symtype <> Fun && trs#defines fname then begin
+			add_marked_symbol_ac trs fname finfo;
+		end;
+	in
+	Hashtbl.iter iterer trs#get_table;;
+
 let make_ac_ext (trs:Trs.t) dp_table =
 	let cnt = ref 0 in
 	let add_dp l r strength =
@@ -183,7 +197,8 @@ let make_ac_ext (trs:Trs.t) dp_table =
 			add_dp (m x (u y z)) (m x y) WeakRule;
 		end;
 	in
-	Hashtbl.iter ac_mark_handle trs#get_table;;
+	Hashtbl.iter ac_mark_handle trs#get_table;
+	add_marked_symbols_ac trs;;
 
 
 let edged trs (_,r,_) (l,_,_) = trs#estimate_edge r l

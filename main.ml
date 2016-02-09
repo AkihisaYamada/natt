@@ -74,6 +74,18 @@ let relative_test (trs:Trs.t) =
 		) else false
 	);;
 
+let theory_test trs =
+	let ths = trs#get_ths in
+	if StrSet.is_empty ths then false
+	else
+		let ths = StrSet.remove "C" ths in
+		let ths = StrSet.remove "AC" ths in
+		if StrSet.is_empty ths then true
+		else (
+			warning (fun _ -> prerr_endline ("Unacceptable theories: " ^ StrSet.fold (^) ths ""));
+			raise Unknown
+		)
+
 (* extra variable test *)
 let extra_test trs =
 	let iterer i (l,r) =
@@ -147,25 +159,27 @@ let dp_remove trs dg =
 		let curr_len = IntSet.cardinal used_dpset in
 		if !init || curr_len < dg#get_size then
 		begin
-			debug2 (fun _ -> prerr_string "Removing unusable DPs:");
+			log (fun _ -> prerr_string "Removing unrelated DPs: {");
 			init := false;
-			(* removing unrelated DPs *)
 			let dp_remover i _ =
 				if not (IntSet.mem i used_dpset) then
 				begin
-					debug2 (fun _ -> prerr_string " #"; prerr_int i;);
+					log (fun _ -> prerr_string " #"; prerr_int i;);
 					dg#remove_dp i;
 				end;
 			in
 			dg#iter_dps dp_remover;
-			debug2 (fun _ -> prerr_string "\nRemoving unusable rules:");
+			log (fun _ -> prerr_endline " }");
+(*
+			log (fun _ -> prerr_string "Removing unusable rules: {");
 			let (_,unusables) = static_usable_rules trs dg used_dpset in
 			let rule_remover i =
-				debug2 (fun _ -> prerr_string " "; prerr_int i;);
+				log (fun _ -> prerr_string " "; prerr_int i;);
 				trs#remove_rule i;
 			in
 			List.iter rule_remover unusables;
-			debug2 (fun _ -> prerr_newline ());
+			log (fun _ -> prerr_endline " }");
+*)
 		end;
 	in
 	let scc_sorter =
@@ -199,6 +213,7 @@ let dp_remove trs dg =
 			prerr_string "Number of SCCs: ";
 			prerr_int (List.length !sccs);
 			prerr_newline (););
+		remove_unusable ();
 		match !sccs with
 		| [] ->
 			cpf (fun os -> output_string os "</proof>";);
@@ -216,7 +231,6 @@ let dp_remove trs dg =
 				sccs := rest;
 				loop ();
 			end else begin
-				remove_unusable ();
 				let sccref = ref scc in
 				if remove_strict sccref then begin
 					sccs := scc_sorter (dg#get_subsccs !sccref) @ rest;
@@ -234,24 +248,26 @@ let dp_remove trs dg =
 
 
 let prove_termination (trs:Trs.t) =
-	let ret = try
-		problem (fun os ->
-			output_string os "Input TRS:\n";
-			trs#output os;
-		);
-		cpf (fun os ->
-			output_string os "<input>
- <trsInput>
-";
-			trs#output_xml os;
-			output_string os 
+	problem (fun os ->
+		output_string os "Input TRS:\n";
+		trs#output os;
+	);
+	cpf (fun os ->
+		output_string os "<input>\n <trsInput>\n";
+		trs#output_xml os;
+		output_string os 
 " </trsInput>
 </input>
 <cpfVersion>2.2</cpfVersion>
 <proof>
  <trsTerminationProof>
 "
-		);
+	);
+
+	let ret = try
+
+		let theoried = theory_test trs in
+
 		extra_test trs;
 
 		clean_eqs trs;
@@ -263,6 +279,19 @@ let prove_termination (trs:Trs.t) =
 		if params.mode = MODE_order then raise Unknown;
 		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
+		if theoried && params.acdp_mode = ACDP_new then begin
+			try let dg = new Dp.dg trs in
+				dg#init_ac_ext;
+				problem (fun _ ->
+					prerr_endline "AC Extensions:";
+					dg#output_dps stderr;
+				);
+				dp_remove trs dg;
+				raise Unknown;
+			with
+			| Success -> ()
+		end;
+
 		(* making dependency pairs *)
 		let dg = new Dp.dg trs in
 		dg#init;
@@ -270,20 +299,7 @@ let prove_termination (trs:Trs.t) =
 			prerr_endline "Dependency Pairs:";
 			dg#output_dps stderr;
 		);
-
-		if params.acdp_mode = ACDP_new then begin
-			try dp_remove trs dg with
-			| Success ->
-				let dg = new Dp.dg trs in
-				dg#init_ac_ext;
-				problem (fun _ ->
-					prerr_endline "AC Extensions:";
-					dg#output_dps stderr;
-				);
-				dp_remove trs dg;
-		end else begin
-			dp_remove trs dg;
-		end;
+		dp_remove trs dg;
 
 		raise Unknown;
 	with
@@ -317,14 +333,6 @@ class main =
 		val trs = new Trs.t
 
 		method no_ac = not(StrSet.mem "AC" trs#get_ths)
-
-		method theory_test =
-(*			if trs#get_eqsize > 0 then
-				err "Has equations";
-*)			let rest = StrSet.remove "C" trs#get_ths in
-			let rest = StrSet.remove "AC" rest in
-			if not (StrSet.is_empty rest) then
-				err ("Unacceptable theories: " ^ StrSet.fold (^) rest "")
 
 		method duplicating =
 			trs#exists_rule (fun _ (l,r) -> dupvarlist l r <> [])
@@ -393,7 +401,6 @@ class main =
 			| MODE_relative_test ->
 				if relative_test trs then exit 1;
 			| _ ->
-				x#theory_test;
 				Array.iter
 					(fun p ->
 						if not p.remove_all && nonmonotone p then
