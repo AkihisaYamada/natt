@@ -81,7 +81,7 @@ let make_dp_table (trs:Trs.t) minimal =
 				if params.acdp_mode = ACDP_new then begin
 					(* extensions have a different mark *)
 					let minfo = trs#get_sym (mark2 fname) in
-					minfo.symtype <- finfo.symtype;
+					minfo.symtype <- if params.ac_mark_mode = AC_mark then Fun else finfo.symtype;
 					minfo.arity <- finfo.arity;
 				end;
 			end;
