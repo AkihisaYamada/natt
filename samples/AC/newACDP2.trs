@@ -1,7 +1,7 @@
 (VAR x)
 (THEORY (AC +))
 (RULES
-	p(s(x)) -> x
+	b(x,y) -> x
 	+(a,s(x)) -> +(a,p(s(x)))
-	+(a,p(s(x))) -> b(p(p(s(s(+(a,x))))))
+	+(a,p(s(x))) -> b(x,p(s(s(+(a,p(x))))))
 )

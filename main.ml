@@ -281,26 +281,30 @@ let prove_termination (trs:Trs.t) =
 
 		if theoried && params.acdp_mode = ACDP_new then begin
 			try let dg = new Dp.dg trs in
+				dg#init;
+				problem (fun _ ->
+					prerr_endline "Dependency Pairs:";
+					dg#output_dps stderr;
+				);
+				dp_remove trs dg;
+			with
+			| Success ->
+				let dg = new Dp.dg trs in
 				dg#init_ac_ext;
 				problem (fun _ ->
 					prerr_endline "AC Extensions:";
 					dg#output_dps stderr;
 				);
 				dp_remove trs dg;
-				raise Unknown;
-			with
-			| Success -> ()
+		end else begin
+			let dg = new Dp.dg trs in
+			dg#init;
+			problem (fun _ ->
+				prerr_endline "Dependency Pairs:";
+				dg#output_dps stderr;
+			);
+			dp_remove trs dg;
 		end;
-
-		(* making dependency pairs *)
-		let dg = new Dp.dg trs in
-		dg#init;
-		problem (fun _ ->
-			prerr_endline "Dependency Pairs:";
-			dg#output_dps stderr;
-		);
-		dp_remove trs dg;
-
 		raise Unknown;
 	with
 	| Success -> YES

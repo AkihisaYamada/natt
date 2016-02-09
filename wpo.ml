@@ -134,13 +134,13 @@ class processor p (trs:Trs.t) dg =
 
 	(*** Usable rules ***)
 	let usable =
-		if p.usable then
+		if p.dp && p.usable then
 			fun i -> EV(usable_v i)
 		else
 			fun _ -> LB true
 	in
 	let usable_w =
-		if p.usable_w then
+		if p.dp && p.usable_w then
 			fun i -> EV(usable_w_v i)
 		else
 			usable
@@ -1361,7 +1361,7 @@ class processor p (trs:Trs.t) dg =
 	let output_proof =
 		let prerr_perm fname finfo =
 			prerr_string "sigma(";
-			prerr_string fname;
+			output_name stderr fname;
 			prerr_string ") = ";
 			let punct = ref "" in
 			let rbr =
@@ -1391,7 +1391,7 @@ class processor p (trs:Trs.t) dg =
 			in
 			fun fname finfo ->
 				prerr_string "I(";
-				prerr_string fname;
+				output_name stderr fname;
 				prerr_string ") = ";
 				let n = finfo.arity in
 				let sc =
@@ -1496,9 +1496,9 @@ class processor p (trs:Trs.t) dg =
 						function
 						| [] -> ()
 						| (fname,_)::[] ->
-							prerr_string fname;
+							output_name stderr fname;
 						| (fname,i)::(gname,j)::ps ->
-							prerr_string fname;
+							output_name stderr fname;
 							if i = j then prerr_string equiv else prerr_string " > ";
 							sub ((gname,j)::ps)
 					in
@@ -1519,7 +1519,7 @@ class processor p (trs:Trs.t) dg =
 					prerr_newline ();
 		in
 		let prerr_usable =
-			if p.usable then
+			if p.dp && p.usable then
 				let folder abbr (i,_) =
 					if solver#get_bool (usable i) then
 						abbr#add i
@@ -1533,7 +1533,7 @@ class processor p (trs:Trs.t) dg =
 				fun () -> ()
 		in
 		let prerr_usable_w =
-			if p.usable_w && p.w_mode <> W_none then
+			if p.dp && p.usable_w && p.w_mode <> W_none then
 				let folder abbr (i,_) =
 					if solver#get_bool (usable_w i) then
 						abbr#add i
@@ -1755,7 +1755,7 @@ class processor p (trs:Trs.t) dg =
 					finfo.arity > 1 &&
 					(p.max_nest = 0 || nest fname <= p.max_nest) &&
 					(
-						debug2 (fun _ -> prerr_char ' '; prerr_string fname;);
+						debug2 (fun _ -> prerr_char ' '; output_name stderr fname;);
 						finfo.max <- true;
 						true
 					)
@@ -1847,29 +1847,31 @@ class processor p (trs:Trs.t) dg =
 					let (WT(_,_,_,lw) as la) = annote l in
 					let (WT(_,_,_,rw) as ra) = annote r in
 
-					if p.remove_all then begin
-						solver#add_assertion (strictly (frame la ra));
-					end else if p.usable_w then begin
-						solver#add_assertion (usable_w i =>^ set_usable argfilt usable_w r);
-						solver#add_assertion (usable i =>^ set_usable permed usable r);
-						let wge, wgt = split (wo lw rw) solver in
-						let wge = solver#refer Bool wge in
-						solver#add_assertion (usable_w i =>^ wge);
-						if wge = LB false then begin
-							solver#add_definition (ge_r_v i) Bool (LB false);
-							solver#add_definition (gt_r_v i) Bool (LB false);
+					if p.dp then begin
+						if p.usable_w then begin
+							solver#add_assertion (usable_w i =>^ set_usable argfilt usable_w r);
+							solver#add_assertion (usable i =>^ set_usable permed usable r);
+							let wge, wgt = split (wo lw rw) solver in
+							let wge = solver#refer Bool wge in
+							solver#add_assertion (usable_w i =>^ wge);
+							if wge = LB false then begin
+								solver#add_definition (ge_r_v i) Bool (LB false);
+								solver#add_definition (gt_r_v i) Bool (LB false);
+							end else begin
+								let (rge,rgt) = split (wpo2 la ra) solver in
+								solver#add_definition (ge_r_v i) Bool (wge &^ rge);
+								solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
+							end;
+						end else if p.usable then begin
+							solver#add_assertion (usable i =>^ set_usable argfilt usable r);
+							solver#add_assertion (usable i =>^ weakly (frame la ra));
 						end else begin
-							let (rge,rgt) = split (wpo2 la ra) solver in
-							solver#add_definition (ge_r_v i) Bool (wge &^ rge);
-							solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
+							solver#add_assertion (weakly (frame la ra));
 						end;
-					end else if p.usable then begin
-						solver#add_assertion (usable i =>^ set_usable argfilt usable r);
-						solver#add_assertion (usable i =>^ weakly (frame la ra));
-					end else if p.dp then begin
-						solver#add_assertion (weakly (frame la ra));
+					end else if p.remove_all then begin
+						solver#add_assertion (strictly (frame la ra));
 					end else begin
-					(* rule removal mode *)
+						(* rule removal mode *)
 						let (ge,gt) = split (frame la ra) solver in
 						solver#add_assertion (usable i =>^ ge);
 						solver#add_definition (gt_r_v i) Bool gt;

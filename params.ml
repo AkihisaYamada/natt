@@ -42,8 +42,8 @@ type ac_mode = (* for AC; how AC arguments are compared first *)
 | AC_weight (* weight $>_W$ *)
 type acdp_mode =
 | ACDP_KT98
-| ACDP_MU98
 | ACDP_GK01
+| ACDP_ALM10
 | ACDP_new
 type ac_mark_mode =
 | AC_unmark
@@ -152,7 +152,7 @@ let order_default =
 	ac_w = true;
 	strict_equal = false;
 	collapse = false;
-	usable = false;
+	usable = true;
 	usable_w = false;
 	refer_w = true;
 	reset_mode = RESET_reset;
@@ -333,7 +333,6 @@ in
 let apply_edg () =
 	dp := true;
 	order_default.dp <- true;
-	order_default.usable <- true;
 	order_default.sc_mode <- W_bool;
 	order_default.collapse <- true;
 	order_default.status_mode <- S_partial;
@@ -404,9 +403,13 @@ while !i < argc do
 		| "-ac", Some s ->
 			begin
 				match s with
-				| "MU98" -> params.acdp_mode <- ACDP_MU98;
+				| "MU98" ->
+					params.acdp_mode <- ACDP_GK01;
+					params.ac_mark_mode <- AC_unmark;
 				| "KT98" -> params.acdp_mode <- ACDP_KT98;
 				| "GK01" -> params.acdp_mode <- ACDP_GK01;
+				| "ALM10" -> params.acdp_mode <- ACDP_ALM10;
+				| "new" -> params.acdp_mode <- ACDP_new;
 				| "u" -> params.ac_mark_mode <- AC_unmark;
 				| "m" -> params.ac_mark_mode <- AC_mark;
 				| "g" -> params.ac_mark_mode <- AC_guard;

@@ -5,8 +5,6 @@ open Params
 
 let mark fname = escape '#' ^ fname
 
-let mark2 fname = escape '#' ^ escape '#' ^ fname
-
 let rename_root renamer (Node(fty,fname,ss)) = Node(fty, renamer fname, ss)
 
 let mark_KT98 =
@@ -17,7 +15,8 @@ let mark_KT98 =
 	fun (Node(fty,fname,ss) as s) ->
 		match fty with
 		| Fun -> rename_root mark s
-		| Th "AC" -> Node(fty, mark fname, List.map (sub fname) ss)
+		| Th "AC" -> Node(Th "C", mark fname, List.map (sub fname) ss)
+		| Th "C" -> rename_root mark s
 		| _ -> raise (No_support "theory")
 
 let mark_guard (Node(fty,fname,ss) as s) =
@@ -31,7 +30,7 @@ let mark_ac =
 	| AC_unmark -> fun x -> x
 	| AC_mark ->
 		if params.acdp_mode = ACDP_KT98 then mark_KT98
-		else fun (Node(fty,fname,ss)) -> Node(Fun, mark fname, ss)
+		else fun (Node(fty,fname,ss)) -> Node(Th "C", mark fname, ss)
 	| AC_guard -> mark_guard
 
 let mark_term (Node(fty,fname,ss) as s) =
@@ -146,6 +145,10 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 				add_eq (m (u x y) z) (m x (u y z));
 				add_eq (m x (u y z)) (m (u x y) z);
 				minimal := false; (* Minimality cannot be assumed *)
+			| ACDP_ALM10 ->
+				add_eq (m (u x y) z) (m x (u y z));
+				add_eq (m x (u y z)) (m (u x y) z);
+				add_eq (m (u x y) z) (m x y);
 			| ACDP_new ->
 				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
 				add_dp (m x (u y z)) (m (u x y) z) WeakRule;

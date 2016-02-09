@@ -1,0 +1,6 @@
+(VAR x y)
+(THEORY (AC +))
+(RULES
+	+(a,b) -> f(+(b,c))
+	+(f(x),c) -> g(+(a,f(x)))
+)
