@@ -141,6 +141,10 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 				add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
 				add_eq (m (u x y) z) (m (m x y) z);
 				add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
+				if params.ac_mark_mode = AC_mark then begin
+					(* AC-deletion property is needed also for marked ones! *)
+					add_eq (m (m x y) z) (m x y);
+				end;
 			| ACDP_GK01 ->
 				add_eq (m (u x y) z) (m x (u y z));
 				add_eq (m x (u y z)) (m (u x y) z);
