@@ -1,0 +1,4 @@
+(THEORY (AC +))
+(RULES
+	+(a,b) -> c(+(a,+(b,b)))
+)

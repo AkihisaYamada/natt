@@ -1,0 +1,8 @@
+(VAR x)
+(THEORY (AC +))
+(RULES
+	c -> +(a,a)
+	+(a,+(a,c)) -> +(+(a,b),c)
+	+(b,c) -> d(+(a,c))
+)
+
