@@ -208,7 +208,6 @@ let make_ac_ext (trs:Trs.t) dp_table =
 	add_marked_symbols_ac trs;;
 
 
-let edged trs (_,r,_) (l,_,_) = trs#estimate_edge r l
 
 module DG = Graph.Imperative.Digraph.Concrete(Int)
 module Components = Graph.Components.Make(DG)
@@ -224,12 +223,25 @@ module SubDG =
 
 module SubComponents = Graph.Components.Make(SubDG)
 
+
+(* Estimated dependency graph *)
+
 let make_dg trs dp_table dg =
+	let edged_KT98 (_,(Node(fty,fname,rs) as r),_) (l,_,_) =
+		if fty = Th "AC" then
+			List.exists (fun t -> trs#estimate_edge t l) (top_ac_subterms r)
+		else trs#estimate_edge r l
+	in
+	let edged =
+		if params.acdp_mode = ACDP_KT98 then edged_KT98
+		else fun (_,r,_) (l,_,_) -> trs#estimate_edge r l
+	in
+
 	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 	Hashtbl.iter
 	(fun i1 dp1 ->
 		Hashtbl.iter
-		(fun i2 dp2 -> if edged trs dp1 dp2 then DG.add_edge dg i1 i2)
+		(fun i2 dp2 -> if edged dp1 dp2 then DG.add_edge dg i1 i2)
 		dp_table
 	)
 	dp_table;;

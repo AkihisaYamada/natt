@@ -69,3 +69,10 @@ let map_prod f =
 	sub2 []
 let list_product lists =
 	List.fold_right (map_prod (fun x xs -> x::xs)) lists [[]]
+
+(* length n sublists *)
+let rec subsequences xs =
+	match xs with
+	| [] -> [[]]
+	| x::xs -> let yss = subsequences xs in List.map (fun ys -> x::ys) yss @ yss
+

@@ -1,3 +1,5 @@
+open Util
+
 type symtype = Var | Fun | Th of string | Special
 type symname= string
 type term = Node of symtype * symname * term list
@@ -135,6 +137,25 @@ let local_flat fname =
 			if fname = gname then sub (sub ss ts) us else sub (t::ss) us
 	in
 	sub []
+
+(* unflat *)
+let fold fty fname =
+	let rec sub ret =
+		function
+		| [] -> ret
+		| s::ss -> sub (Node(fty,fname,[ret;s])) ss
+	in
+	function
+	| [] -> failwith "bug"
+	| s::ss -> sub s ss
+
+(* top-AC subterms, for KT98 *)
+let top_ac_subterms (Node(fty, fname, ss) as s) =
+	if fty = Th "AC" then
+		let args = local_flat fname ss in
+		let subargs = subsequences args in
+		List.map (fold fty fname) (List.filter (fun ts -> List.length ts > 1) subargs)
+	else [s]
 
 let escape c = "\x1b" ^ String.make 1 c
 
