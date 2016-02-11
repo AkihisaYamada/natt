@@ -27,6 +27,7 @@ type finfo =
 	mutable arity : arity;
 	mutable defined_by : Rules.t;
 	mutable equated_by : Rules.t;
+	mutable stable : bool;
 }
 
 let var_finfo =
@@ -35,6 +36,7 @@ let var_finfo =
 	arity = Unknown;
 	defined_by = Rules.empty;
 	equated_by = Rules.empty;
+	stable = false;
 }
 
 let output_tbl_index os output prefix (i,(l,r,strength)) =
@@ -76,7 +78,6 @@ class t =
 		val mutable eq_cnt = 0
 		val mutable ths = Ths.empty(* the set of used built-in theories *)
 		val mutable defsyms = Syms.empty
-		val mutable sym_path_opt = None
 (* information retrieval *)
 		method get_table = sym_table
 		method get_size = Hashtbl.length rule_table
@@ -92,6 +93,7 @@ class t =
 					arity = Unknown;
 					defined_by = Rules.empty;
 					equated_by = Rules.empty;
+					stable = true;
 				}
 			in
 			Hashtbl.add sym_table fname finfo;
@@ -106,10 +108,9 @@ class t =
 		method defines fname =
 			try not (Rules.is_empty (Hashtbl.find sym_table fname).defined_by)
 			with Not_found -> false
-		method define fname i =
-			let finfo = x#get_sym fname in
-			defsyms <- Syms.add fname defsyms;
-			finfo.defined_by <- Rules.add i finfo.defined_by;
+		method stable fname =
+			try (Hashtbl.find sym_table fname).stable
+			with Not_found -> true
 		method undefine fname i =
 			let finfo = x#get_sym fname in
 			finfo.defined_by <- Rules.remove i finfo.defined_by;
@@ -129,6 +130,7 @@ class t =
 				defsyms <- Syms.remove fname defsyms;
 		method const_term (Node(fty,fname,ss)) =
 			(fty = Var || not(x#defines fname)) && List.for_all x#const_term ss
+		val mutable sym_path_opt = None
 		method trans_sym fname gname =
 			let p =
 				match sym_path_opt with
@@ -157,22 +159,23 @@ class t =
 		method fold_eqs :
 			'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
 			fun f a -> Hashtbl.fold (fun i (l,r,_) aa -> f i (l,r) aa) eq_table a
-		method add_rule (Node(_,fname,_) as l) r =
+		method add_rule_extra (Node(_,fname,_) as l) (Node(gty,gname,_) as r) s =
 			rule_cnt <- rule_cnt + 1;
-			x#define fname rule_cnt;
-			Hashtbl.add rule_table rule_cnt (l,r,StrictRule);
-		method add_rule_extra (Node(_,fname,_) as l) r s =
-			rule_cnt <- rule_cnt + 1;
-			x#define fname rule_cnt;
+			defsyms <- Syms.add fname defsyms;
 			Hashtbl.add rule_table rule_cnt (l,r,s);
+			let finfo = x#get_sym fname in
+			finfo.defined_by <- Rules.add rule_cnt finfo.defined_by;
+			finfo.stable <- finfo.stable && fname = gname;
+		method add_rule l r = x#add_rule_extra l r StrictRule;
 		method add_eq (Node(_,fname,_) as l) r =
 			eq_cnt <- eq_cnt + 1;
 			x#equate fname eq_cnt;
 			Hashtbl.add eq_table eq_cnt (l,r,WeakRule);
-		method replace_rule i (Node(_,fname,_) as l) r =
-			let (Node(_,gname,_),_,strength) = Hashtbl.find rule_table i in
-			x#undefine gname i;
-			x#define fname i;
+		method replace_rule i (Node(_,fname,_) as l) (Node(_,gname,_) as r) =
+			let (Node(_,hname,_),_,strength) = Hashtbl.find rule_table i in
+			x#undefine hname i;
+			let finfo = x#get_sym fname in
+			finfo.stable <- finfo.stable && fname = gname;
 			Hashtbl.replace rule_table i (l,r,strength);
 		method replace_eq i (Node(_,fname,_) as l) r =
 			let (Node(_,gname,_),_,strength) = Hashtbl.find eq_table i in
@@ -327,7 +330,7 @@ class t =
 		method estimate_narrow (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 			fty = Var ||
 			gty = Var ||
-			x#is_redex_candidate s (*&& x#trans_sym fname gname*) ||
+			x#is_redex_candidate s && not (x#stable fname)(*&& x#trans_sym fname gname*) ||
 			x#estimate_edge s t
 		method estimate_edge (Node(fty,fname,ss)) (Node(gty,gname,ts)) =
 			fname = gname &&
@@ -351,8 +354,8 @@ class t =
 				let (Node(_,_,ls),_) = x#find_eq i in
 				List.for_all2 x#estimate_narrow ss ls
 			in
-				Rules.exists rtester (x#find_sym fname).defined_by ||
-				Rules.exists etester (x#find_sym fname).equated_by
+			Rules.exists rtester (x#find_sym fname).defined_by ||
+			Rules.exists etester (x#find_sym fname).equated_by
 		method find_matchable (Node(_,fname,_) as s) =
 			let finfo = x#find_sym fname in
 			let folder i ret =

@@ -146,16 +146,22 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 					add_eq (m (m x y) z) (m x y);
 				end;
 			| ACDP_GK01 ->
-				add_eq (m (u x y) z) (m x (u y z));
-				add_eq (m x (u y z)) (m (u x y) z);
+				if params.ac_mark_mode = AC_mark then begin
+					add_eq (m (u x y) z) (m x (u y z));
+					add_eq (m x (u y z)) (m (u x y) z);
+				end;
 				minimal := false; (* Minimality cannot be assumed *)
 			| ACDP_ALM10 ->
-				add_eq (m (u x y) z) (m x (u y z));
-				add_eq (m x (u y z)) (m (u x y) z);
+				if params.ac_mark_mode = AC_mark then begin
+					add_eq (m (u x y) z) (m x (u y z));
+					add_eq (m x (u y z)) (m (u x y) z);
+				end;
 				add_eq (m (u x y) z) (m x y);
 			| ACDP_new ->
-				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
-				add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+				if params.ac_mark_mode = AC_mark then begin
+					add_dp (m (u x y) z) (m x (u y z)) WeakRule;
+					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+				end;
 				add_dp (m (u x y) z) (m y z) WeakRule;
 				add_dp (m x (u y z)) (m x y) WeakRule;
 		end;
@@ -179,7 +185,7 @@ let make_ac_ext (trs:Trs.t) dp_table =
 		Hashtbl.add dp_table (!cnt) (l,r,strength);
 	in
 	let generate_dp i (Node(fty,fname,_) as l, r, strength) =
-		if fty = Th "AC" then begin
+		if strength = StrictRule && fty = Th "AC" then begin
 			let xl = ext_ac fty fname l in
 			let xr = ext_ac fty fname r in
 			add_dp (mark_term xl) (mark_term xr) strength;
@@ -187,7 +193,7 @@ let make_ac_ext (trs:Trs.t) dp_table =
 	in
 	trs#iter_rules_extra generate_dp;
 	let ac_mark_handle fname finfo =
-		if finfo.symtype = Th "AC" then begin
+		if not (Rules.is_empty finfo.defined_by) && finfo.symtype = Th "AC" then begin
 			let u s t = Node(finfo.symtype, fname, [s;t]) in
 			let m =
 				if params.ac_mark_mode = AC_mark then fun s t -> rename_root mark (u s t)
@@ -229,7 +235,7 @@ module SubComponents = Graph.Components.Make(SubDG)
 let make_dg trs dp_table dg =
 	let edged_KT98 (_,(Node(fty,fname,rs) as r),_) (l,_,_) =
 		if fty = Th "AC" then
-			List.exists (fun t -> trs#estimate_edge t l) (top_ac_subterms r)
+			List.exists (fun r' -> trs#estimate_edge r' l) (top_ac_subterms r)
 		else trs#estimate_edge r l
 	in
 	let edged =
