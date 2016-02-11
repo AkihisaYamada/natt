@@ -5,7 +5,10 @@ open Params
 
 let mark fname = escape '#' ^ fname
 
-let rename_root renamer (Node(fty,fname,ss)) = Node(fty, renamer fname, ss)
+let mark_root (Node(fty,fname,ss)) =
+	match fty with
+	| Th "AC" -> Node(Th "C", mark fname, ss)
+	| _ -> Node(fty, mark fname, ss)
 
 let mark_KT98 =
 	let rec sub fname (Node(fty,gname,ss) as s) =
@@ -14,14 +17,12 @@ let mark_KT98 =
 	in
 	fun (Node(fty,fname,ss) as s) ->
 		match fty with
-		| Fun -> rename_root mark s
-		| Th "AC" -> Node(Th "C", mark fname, List.map (sub fname) ss)
-		| Th "C" -> rename_root mark s
-		| _ -> raise (No_support "theory")
+		| Th "AC" -> mark_root (Node(fty, fname, List.map (sub fname) ss))
+		| _ -> mark_root s
 
 let mark_guard (Node(fty,fname,ss) as s) =
 	match fty with
-	| Fun -> rename_root mark s
+	| Fun -> mark_root s
 	| Th _ -> Node(Fun, mark fname, [s])
 	| _ -> raise (No_support "theory")
 
@@ -30,11 +31,11 @@ let mark_ac =
 	| AC_unmark -> fun x -> x
 	| AC_mark ->
 		if params.acdp_mode = ACDP_KT98 then mark_KT98
-		else fun (Node(fty,fname,ss)) -> Node(Th "C", mark fname, ss)
+		else mark_root
 	| AC_guard -> mark_guard
 
 let mark_term (Node(fty,fname,ss) as s) =
-	if fty = Fun then rename_root mark s else mark_ac s
+	if fty = Fun then mark_root s else mark_ac s
 
 
 let ext_ac fty fname t = Node(fty, fname, [t; var "_1"])
@@ -49,7 +50,10 @@ let add_marked_symbol_default trs fname finfo =
 let add_marked_symbol_ac =
 	match params.ac_mark_mode with
 	| AC_unmark -> fun _ _ _ -> ()
-	| AC_mark -> add_marked_symbol_default
+	| AC_mark -> fun trs fname finfo ->
+		let minfo = trs#get_sym (mark fname) in
+		minfo.symtype <- Th "C";
+		minfo.arity <- finfo.arity;
 	| AC_guard -> fun trs fname _ ->
 		let minfo = trs#get_sym (mark fname) in
 		minfo.symtype <- Fun;
@@ -130,7 +134,8 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 		if finfo.symtype = Th "AC" && trs#defines fname then begin
 			let u s t = Node(finfo.symtype, fname, [s;t]) in
 			let m =
-				if params.ac_mark_mode = AC_mark then fun s t -> rename_root mark (u s t)
+				if params.ac_mark_mode = AC_mark then
+					fun s t -> mark_root (u s t)
 				else u
 			in
 			let x = var "_1" in
@@ -148,23 +153,23 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 			| ACDP_GK01 ->
 				if params.ac_mark_mode = AC_mark then begin
 					add_eq (m (u x y) z) (m x (u y z));
-					add_eq (m x (u y z)) (m (u x y) z);
-				end;
+(*					add_eq (m x (u y z)) (m (u x y) z);
+*)				end;
 				minimal := false; (* Minimality cannot be assumed *)
 			| ACDP_ALM10 ->
 				if params.ac_mark_mode = AC_mark then begin
 					add_eq (m (u x y) z) (m x (u y z));
-					add_eq (m x (u y z)) (m (u x y) z);
-				end;
+(*					add_eq (m x (u y z)) (m (u x y) z);
+*)				end;
 				add_eq (m (u x y) z) (m x y);
 			| ACDP_new ->
 				if params.ac_mark_mode = AC_mark then begin
 					add_dp (m (u x y) z) (m x (u y z)) WeakRule;
-					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
-				end;
+(*					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+*)				end;
 				add_dp (m (u x y) z) (m y z) WeakRule;
-				add_dp (m x (u y z)) (m x y) WeakRule;
-		end;
+(*				add_dp (m x (u y z)) (m x y) WeakRule;
+*)		end;
 	in
 	Hashtbl.iter ac_mark_handle trs#get_table;;
 
@@ -196,7 +201,7 @@ let make_ac_ext (trs:Trs.t) dp_table =
 		if not (Rules.is_empty finfo.defined_by) && finfo.symtype = Th "AC" then begin
 			let u s t = Node(finfo.symtype, fname, [s;t]) in
 			let m =
-				if params.ac_mark_mode = AC_mark then fun s t -> rename_root mark (u s t)
+				if params.ac_mark_mode = AC_mark then fun s t -> mark_root (u s t)
 				else u
 			in
 			let x = var "_1" in
@@ -204,11 +209,11 @@ let make_ac_ext (trs:Trs.t) dp_table =
 			let z = var "_3" in
 			if params.ac_mark_mode = AC_mark then begin
 				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
-				add_dp (m x (u y z)) (m (u x y) z) WeakRule;
-			end;
+(*				add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+*)			end;
 			add_dp (m (u x y) z) (m y z) WeakRule;
-			add_dp (m x (u y z)) (m x y) WeakRule;
-		end;
+(*			add_dp (m x (u y z)) (m x y) WeakRule;
+*)		end;
 	in
 	Hashtbl.iter ac_mark_handle trs#get_table;
 	add_marked_symbols_ac trs;;
@@ -242,7 +247,7 @@ let make_dg trs dp_table dg =
 		if params.acdp_mode = ACDP_KT98 then edged_KT98
 		else fun (_,r,_) (l,_,_) -> trs#estimate_edge r l
 	in
-
+	trs#init_sym_graph;
 	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 	Hashtbl.iter
 	(fun i1 dp1 ->
@@ -286,4 +291,11 @@ class dg trs =
 		method output_dps os = output_tbl os output_rule "   #" dp_table
 		method is_strict i = let (_,_,s) = Hashtbl.find dp_table i in s = StrictRule
 		method is_weak i = let (_,_,s) = Hashtbl.find dp_table i in s = WeakRule
+		method iter_edges f = DG.iter_edges f dg
+		method output os =
+			output_string os "Edges: {";
+			x#iter_edges (fun i j ->
+				output_string os ("\n   #" ^ string_of_int i ^ " -> #" ^ string_of_int j));
+			output_string os " }\n";
+
 	end;;

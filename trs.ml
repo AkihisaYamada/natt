@@ -19,7 +19,7 @@ module Rules = IntSet
 
 (* symbol transition graph *)
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
-module SymPath = Graph.Path.Check(SymG)
+module SymGoper = Graph.Oper.I(SymG)
 
 type finfo =
 {
@@ -130,19 +130,22 @@ class t =
 				defsyms <- Syms.remove fname defsyms;
 		method const_term (Node(fty,fname,ss)) =
 			(fty = Var || not(x#defines fname)) && List.for_all x#const_term ss
-		val mutable sym_path_opt = None
-		method trans_sym fname gname =
-			let p =
-				match sym_path_opt with
-				| None ->
-					Hashtbl.iter (fun fname _ -> SymG.add_vertex sym_g fname) sym_table;
-					Hashtbl.iter (fun _ (Node(_,fname,_),Node(gty,gname,_),_) ->
-						SymG.add_edge sym_g fname (if gty = Var then "" else gname);
-					) rule_table;
-					SymPath.create sym_g
-				| Some p -> p
+		method init_sym_graph =
+			SymG.add_vertex sym_g ""; (* this vertex represents arbitrary symbol *)
+			let add_sym fname finfo =
+				if finfo.symtype <> Var then begin
+					SymG.add_vertex sym_g fname;
+					SymG.add_edge sym_g "" fname;
+				end;
 			in
-			SymPath.check_path p fname "" || SymPath.check_path p fname gname
+			Hashtbl.iter add_sym sym_table;
+			let add_edge _ (Node(_,fname,_),Node(gty,gname,_),_) =
+				SymG.add_edge sym_g fname (if gty = Var then "" else gname);
+			in
+			Hashtbl.iter add_edge rule_table;
+			SymGoper.add_transitive_closure sym_g;
+
+		method trans_sym fname gname = SymG.mem_edge sym_g fname gname
 (* methods for rules *)
 		method find_rule i = let (l,r,_) = Hashtbl.find rule_table i in (l,r)
 		method find_eq i = let (l,r,_) = Hashtbl.find eq_table i in (l,r)
@@ -330,9 +333,9 @@ class t =
 		method estimate_narrow (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 			fty = Var ||
 			gty = Var ||
-			x#is_redex_candidate s && not (x#stable fname)(*&& x#trans_sym fname gname*) ||
+			x#is_redex_candidate s && x#trans_sym fname gname ||
 			x#estimate_edge s t
-		method estimate_edge (Node(fty,fname,ss)) (Node(gty,gname,ts)) =
+		method estimate_edge (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 			fname = gname &&
 			(	match fty with
 				| Fun -> List.for_all2 x#estimate_narrow ss ts
@@ -341,7 +344,6 @@ class t =
 						| [s1;s2], [t1;t2] ->
 							(x#estimate_narrow s1 t1 && x#estimate_narrow s2 t2) ||
 							(x#estimate_narrow s1 t2 && x#estimate_narrow s2 t1)
-						| _ -> true
 					)
 				| _ -> true
 			)

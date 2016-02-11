@@ -206,7 +206,7 @@ let dp_remove trs dg =
 	in
 	let remove_strict sccref =
 		let (usables,_) = static_usable_rules trs dg !sccref in
-		List.exists (fun proc -> proc#reduce usables sccref) proc_list
+		List.exists (fun proc -> proc#reduce dg usables sccref) proc_list
 	in
 	let rec loop () =
 		comment (fun _ ->
@@ -234,6 +234,7 @@ let dp_remove trs dg =
 				let sccref = ref scc in
 				if remove_strict sccref then begin
 					sccs := scc_sorter (dg#get_subsccs !sccref) @ rest;
+					debug dg#output;
 					loop ();
 				end else begin
 					comment
@@ -286,6 +287,7 @@ let prove_termination (trs:Trs.t) =
 					prerr_endline "Dependency Pairs:";
 					dg#output_dps stderr;
 				);
+				debug dg#output;
 				dp_remove trs dg;
 			with
 			| Success ->

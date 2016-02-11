@@ -1,4 +1,5 @@
 open Util
+open Params
 
 type symtype = Var | Fun | Th of string | Special
 type symname= string
@@ -181,6 +182,10 @@ let rec output_term os =
 	in
 	fun (Node(fty,fname,ts)) ->
 		output_name os fname;
+		debug (fun _ ->
+			match fty with
+			| Th s -> output_string os ("["^s^"]");
+			| _ -> ());
 		match ts with
 		| []	-> if fty <> Var then output_string os "()";
 		| t::ts	-> output_string os "("; output_term os t; sub ts

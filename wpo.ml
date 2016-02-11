@@ -1941,7 +1941,7 @@ class processor p (trs:Trs.t) dg =
 			else
 				x#reset;
 
-		method reduce current_usables sccref =
+		method reduce (dg:Dp.dg) current_usables sccref =
 			comment
 			(fun _ ->
 				prerr_string (name_order p);
