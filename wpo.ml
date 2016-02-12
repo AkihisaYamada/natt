@@ -341,7 +341,7 @@ class processor p (trs:Trs.t) dg =
 			sub 1 ss
 	in
 	let add_usable =
-		if p.remove_all then
+		if not p.dp || not p.usable then
 			fun _ -> ()
 		else
 			fun i ->
@@ -1519,7 +1519,7 @@ class processor p (trs:Trs.t) dg =
 					prerr_newline ();
 		in
 		let prerr_usable =
-			if p.dp && p.usable then
+			if p.dp && p.usable || params.debug then
 				let folder abbr (i,_) =
 					if solver#get_bool (usable i) then
 						abbr#add i
@@ -1683,6 +1683,8 @@ class processor p (trs:Trs.t) dg =
 		val mutable initialized = false
 		val mutable use_scope = p.use_scope
 		val mutable use_scope_last_size = 0
+
+		method using_usable = p.dp && p.usable
 
 		method init current_usables scc =
 			initialized <- true;
