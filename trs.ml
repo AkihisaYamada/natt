@@ -180,6 +180,7 @@ class t =
 			let finfo = x#get_sym fname in
 			finfo.stable <- finfo.stable && fname = gname;
 			Hashtbl.replace rule_table i (l,r,strength);
+			finfo.defined_by <- Rules.add i finfo.defined_by;
 		method replace_eq i (Node(_,fname,_) as l) r =
 			let (Node(_,gname,_),_,strength) = Hashtbl.find eq_table i in
 			x#unequate gname i;

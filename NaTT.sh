@@ -23,7 +23,7 @@ then
 	}
 	finfo()
 	{
-		echo -n "$@: " 1>&2
+		echo -n "$@: "
 	}
 	options="$options $1"
 	shift
@@ -111,15 +111,16 @@ do
 	then
 		out=`eval xsltproc "$dir/xtc2tpdb.xml" "$d$f" | $pre "$@" $options 2> "$log"`
 	else
-		out=`eval $pre "$d$f" "$@" $options 2> "$log"`
+		out=`eval $pre "$@" "$d$f" $options 2> "$log"`
 	fi
+	out=`echo $out | sed -E "s/(\w*).*/\1/;q"`
 	if [ "$out" = "" -o "$out" = "Killed" ]
 	then
 		echo -n "TIMEOUT	"
 	else
 		echo -n "$out	"
 	fi
-	sed -e "/real/s/real[ 	]*//;q" $timefile
+	sed -E "s/real[ 	]*([0-9.]+).+$/\1/;q" $timefile
 	rm -f $timefile
 done
 

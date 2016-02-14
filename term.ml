@@ -41,8 +41,8 @@ let rec term_eq (Node(fty,fname,ss)) (Node(gty,gname,ts)) =
 	else
 		false
 
-let rec is_subterm (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
-	s = t || List.exists (is_subterm s) ts
+let rec is_strict_subterm s (Node(_,_,ts)) = List.exists (is_subterm s) ts
+and is_subterm s t = s = t || is_strict_subterm s t
 
 (* the list of variable occurences in a term *)
 let varlist =

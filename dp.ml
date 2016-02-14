@@ -95,7 +95,7 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 
 	(* Generating dependency pairs *)
 	let rec generate_dp_sub s strength (Node(gty,gname,ts) as t) =
-		if trs#defines gname && not (is_subterm t s) then begin
+		if trs#defines gname && not (is_strict_subterm t s) then begin
 			add_dp s (mark_term t) strength;
 		end;
 		List.iter (generate_dp_sub s strength) ts;

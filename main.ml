@@ -33,6 +33,7 @@ let static_usable_rules (trs:Trs.t) dg used_dpset =
 		trs#fold_rules (fun i _ is -> i::is) [], []
 	)
 
+
 let uncurry =
 	if params.uncurry then
 		fun trs dg ->
@@ -269,9 +270,9 @@ let prove_termination (trs:Trs.t) =
 "
 	);
 
-	let ret = try
+	let theoried = theory_test trs in
 
-		let theoried = theory_test trs in
+	let ret = try
 
 		extra_test trs;
 
@@ -284,36 +285,33 @@ let prove_termination (trs:Trs.t) =
 		if params.mode = MODE_order then raise Unknown;
 		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
-		if theoried && params.acdp_mode = ACDP_new then begin
+		let dg = new Dp.dg trs in
+		dg#init;
+		problem (fun _ ->
+			prerr_endline "Dependency Pairs:";
+			dg#output_dps stderr;
+		);
+		log dg#output;
+
+		dp_remove trs dg;
+		MAYBE
+	with
+	| Success ->
+		if theoried && params.acdp_mode = ACDP_new then
 			try let dg = new Dp.dg trs in
-				dg#init;
-				problem (fun _ ->
-					prerr_endline "Dependency Pairs:";
-					dg#output_dps stderr;
-				);
-				log dg#output;
-				dp_remove trs dg;
-			with
-			| Success ->
-				let dg = new Dp.dg trs in
 				dg#init_ac_ext;
 				problem (fun _ ->
 					prerr_endline "AC Extensions:";
 					dg#output_dps stderr;
 				);
 				dp_remove trs dg;
-		end else begin
-			let dg = new Dp.dg trs in
-			dg#init;
-			problem (fun _ ->
-				prerr_endline "Dependency Pairs:";
-				dg#output_dps stderr;
-			);
-			dp_remove trs dg;
-		end;
-		raise Unknown;
-	with
-	| Success -> YES
+				raise Unknown
+			with
+			| Success -> YES
+			| Unknown -> MAYBE
+			| Nonterm -> NO
+		else
+			YES
 	| Unknown -> MAYBE
 	| Nonterm -> NO
 in

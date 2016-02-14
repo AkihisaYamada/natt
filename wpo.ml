@@ -934,7 +934,8 @@ class processor p (trs:Trs.t) dg =
 		WT(fty, fname, args, ws)
 	in
 
-	let lexperm_extension =
+	(* argument comparison *)
+	let lexperm_compargs =
 		match p.Params.status_mode with
 		| S_empty ->
 			fun _ _ _ _ _ -> weakly_ordered
@@ -966,7 +967,7 @@ class processor p (trs:Trs.t) dg =
 						fun _ _ _ -> not_ordered
 	in
 
-	let statused_extension finfo ginfo order ss ts =
+	let statused_compargs finfo ginfo order ss ts =
 		match ss, ts with
 		| [], []	-> weakly_ordered
 		| [], _		-> Cons(is_quasi_const ginfo, LB false)
@@ -975,7 +976,7 @@ class processor p (trs:Trs.t) dg =
 			Delay
 			(fun context ->
 				let (lge,lgt) =
-					split (lexperm_extension finfo ginfo order ss ts) context
+					split (lexperm_compargs finfo ginfo order ss ts) context
 				in
 				let (mge,mgt) =
 					split (filtered_mset_extension (permed finfo) (permed ginfo) order ss ts) context
@@ -988,186 +989,210 @@ class processor p (trs:Trs.t) dg =
 				)
 			)
 	in
-	(* extension for normal function symbols *)
-	let default_extension =
+	(* compargs for normal function symbols *)
+	let default_compargs =
 		if p.ext_mset then
 			if p.ext_lex then
-				statused_extension
+				statused_compargs
 			else
 				fun finfo ginfo -> filtered_mset_extension (permed finfo) (permed ginfo)
 		else if p.ext_lex then
-			lexperm_extension
+			lexperm_compargs
 		else
 			fun _ _ _ _ _ -> weakly_ordered
 	in
-	(* extension for AC symbols *)
-	let ac_extension =
-		(* Korovin & Voronkov original *)
-		let w_top_order (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
-			if gty = Var then
-				compose (wo sw tw) (Cons(LB(fname = gname), LB false))
-			else if fty = Var then
-				not_ordered
-			else
-				compose (wo sw tw) (compose (spo (lookup fname) (lookup gname)) (Cons(weq sw tw, LB false)))
-		in
-		let w_top_preorder (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
-			if gty = Var then
-				compose (wo sw tw) weakly_ordered
-			else if fty = Var then
-				not_ordered
-			else
-				compose (wo sw tw) (spo (lookup fname) (lookup gname))
-		in
-		let small_head spo hinfo (WT(fty,fname,_,_)) =
-			if fty = Var then LB false else strictly (spo hinfo (lookup fname))
-		in
-		let no_small_head spo hinfo s = smt_not (small_head spo hinfo s) in
-		let delete_variables =
-			let rec sub ss1 =
-				function
-				| []	-> ss1
-				| WT(fty,fname,_,_) as s :: ss ->
-						if fty = Var then
-							sub ss1 ss
-						else
-							sub (s::ss1) ss
-			in
-			sub []
-		in
-		let main =
-			match p.ac_mode with
-			| AC_S90 ->
-				fun _ order ss ts ->
-					let ss, ts = delete_common ss ts in
-					mset_extension order ss ts
-			| AC_rec ->
-				fun finfo order ss ts ->
-					let ss, ts = delete_common ss ts in
-					let nss = List.length ss in
-					let nts = List.length ts in
-					(* variables in ss may not contribute to other than length *)
-					let ss = delete_variables ss in
-					(* for efficiency *)
-					let nxs = List.length ss in
-					let nys = nts in
-					let xa = Array.of_list ss in
-					let ya = Array.of_list ts in
-					let compa = Array.init nxs
-						(fun i -> Array.init nys
-							(fun j -> solver#refer (Prod(Bool,Bool)) (order xa.(i) ya.(j)))
-						)
-					in
-					compose
-					(
-						let ifilter i = no_small_head spo finfo xa.(i-1) in
-						let jfilter j = no_small_head spo finfo ya.(j-1) in
-						filtered_mset_extension_body ifilter jfilter nxs nys compa
-					)
-					(
-						if nss > nts then
-							strictly_ordered
-						else if nss < nts then
-						 	not_ordered
-						else
-							let ifilter i = small_head spo finfo xa.(i-1) in
-							let jfilter j = small_head spo finfo ya.(j-1) in
-							filtered_mset_extension_body ifilter jfilter nxs nys compa
-					)
-			| _ ->
-				fun finfo order ss ts ->
-					let ss, ts = delete_common ss ts in
-					let nss = List.length ss in
-					let nts = List.length ts in
-					(* variables in ss may not contribute to other than length *)
-					let ss = delete_variables ss in
-					let nsh = no_small_head spo finfo in
-					compose
-					(
-						filtered_mset_extension2 nsh nsh
-						(if p.ac_mode = AC_KV03 then w_top_order else w_top_preorder) ss ts
-					)
-					(
-						if nss > nts then
-							strictly_ordered
-						else if nss < nts then
-						 	not_ordered
-						else
-							mset_extension order ss ts
-					)
-		in
-		(*
-		 * $(cw,cs,ts) \in emb_candidates~f~s$ indicates that $f(ts)$ is an
-		 * embedding when $cs \wedge cw$ holds, and is $\pi(f(s))$ when $cw$ holds.
-		 *)
-		let emb_candidates fname =
-			let rec sub ret =
-				function
-				| [] -> ret
-				| t::ss -> sub (sub1 ret t) ss
-			and sub1 pre (WT(gty,gname,ts,_) as t) =
-				if fname = gname then
-					sub pre ts
-				else if gty = Var then
-					let mapper (tcw,tcs,ts') = (tcw,tcs,t::ts') in
-					List.map mapper pre
-				else
-					let ginfo = lookup gname in
-					let p_g = permed ginfo in
-					let afl_g = argfilt_list ginfo in
-					let mapper (tcw, tcs, ts') = (afl_g &^ tcw, tcs, t::ts') in
-					List.map mapper pre @ sub2 pre afl_g p_g 1 ts
-			and sub2 pre afl_g p_g i =
-				function
-				| [] -> []
-				| s::ts ->
-					let p_gi = p_g i in
-					let mapper (tcw,tcs,ts') = (p_gi &^ tcw, afl_g |^ tcs, ts') in
-					sub1 (List.map mapper pre) s @ sub2 pre afl_g p_g (i+1) ts
-			in
-			fun ss -> sub [(LB true, LB false, [])] ss
-		in
-		if p.adm && not p.dp then
-			fun fname gname ->
-				if fname = gname then
-					main
-				else
-					fun _ _ _ _ -> not_ordered
+
+	(* compargs for AC symbols *)
+
+	(* Korovin & Voronkov's original auxiliary order *)
+	let w_top_order (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
+		if gty = Var then
+			compose (wo sw tw) (Cons(LB(fname = gname), LB false))
+		else if fty = Var then
+			not_ordered
 		else
-			fun fname gname ->
-				if fname = gname then
-					(fun finfo order ss ts ->
-						let ss, ts = delete_common ss ts in
-						Delay
-						(fun context ->
-							let sss = List.map (fun (scw,scs,ss') -> (context#refer Bool scw, context#refer Bool scs, ss')) (emb_candidates fname ss) in
-							let tss = emb_candidates fname ts in
-							let ge = context#temp_variable Bool in
-							let gt = context#temp_variable Bool in
-							List.iter
-							(fun (tcw,tcs,ts') ->
-								context#add_assertion
-								(
-									(ge &^ tcw) =>^
-									smt_exists
-									(fun (scw,scs,ss') ->
-										let (ge',gt') = split (main finfo order ss' ts') context in
-										scw &^ ge' &^ 
-										((gt |^ tcs) =>^ (gt' |^ scs))
-									) sss
-								);
-							) tss;
-							Cons(ge, ge &^ gt)
-						)
-					)
-				else
-					fun _ _ _ _ -> not_ordered
+			compose (wo sw tw) (compose (spo (lookup fname) (lookup gname)) (Cons(weq sw tw, LB false)))
 	in
-	(* extensions for f and g *)
-	let extend =
+	(* Corrected KV03 auxiliary order *)
+	let w_top_preorder (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
+		if gty = Var then
+			compose (wo sw tw) weakly_ordered
+		else if fty = Var then
+			not_ordered
+		else
+			compose (wo sw tw) (spo (lookup fname) (lookup gname))
+	in
+	
+	let small_head spo hinfo (WT(fty,fname,_,_)) =
+		if fty = Var then LB false else strictly (spo hinfo (lookup fname))
+	in
+	let no_small_head spo hinfo s = smt_not (small_head spo hinfo s) in
+	let delete_variables =
+		let rec sub ss1 =
+			function
+			| []	-> ss1
+			| WT(fty,_,_,_) as s :: ss ->
+				if fty = Var then sub ss1 ss else sub (s::ss1) ss
+		in
+		sub []
+	in
+	let comparg_ac_S90 _ order ss ts =
+		let ss, ts = delete_common ss ts in
+		mset_extension order ss ts
+	in
+	let comparg_ac_rec finfo order ss ts =
+debug(fun os ->
+output_term os (Node(Fun,"",List.map erase ss));
+output_string os "  >?  ";
+output_term os (Node(Fun,"",List.map erase ts));
+output_string os "\n";
+);
+		let ss, ts = delete_common ss ts in
+		let nss = List.length ss in
+		let nts = List.length ts in
+		(* variables in ss may not contribute to other than length *)
+		let ss = delete_variables ss in
+		(* for efficiency *)
+		let nxs = List.length ss in
+		let nys = nts in
+		let xa = Array.of_list ss in
+		let ya = Array.of_list ts in
+		let compa = Array.init nxs
+			(fun i -> Array.init nys
+				(fun j -> solver#refer (Prod(Bool,Bool)) (order xa.(i) ya.(j)))
+			)
+		in
+		compose
+		(
+			let ifilter i = no_small_head spo finfo xa.(i-1) in
+			let jfilter j = no_small_head spo finfo ya.(j-1) in
+			filtered_mset_extension_body ifilter jfilter nxs nys compa
+		)
+		(
+			if nss > nts then
+				strictly_ordered
+			else if nss < nts then
+			 	not_ordered
+			else
+				let ifilter i = small_head spo finfo xa.(i-1) in
+				let jfilter j = small_head spo finfo ya.(j-1) in
+				filtered_mset_extension_body ifilter jfilter nxs nys compa
+		)
+	in
+	let comparg_ac_KV03 finfo order ss ts =
+		let ss, ts = delete_common ss ts in
+		let nss = List.length ss in
+		let nts = List.length ts in
+		(* variables in ss may not contribute to other than length *)
+		let ss = delete_variables ss in
+		let nsh = no_small_head spo finfo in
+		compose (
+			filtered_mset_extension2 nsh nsh
+			(if p.ac_mode = AC_KV03 then w_top_order else w_top_preorder) ss ts
+		)
+		(
+			if nss > nts then
+				strictly_ordered
+			else if nss < nts then
+			 	not_ordered
+			else
+				mset_extension order ss ts
+		)
+	in
+	let comparg_ac =
+		match p.ac_mode with
+		| AC_S90 -> comparg_ac_S90
+		| AC_rec -> comparg_ac_rec
+		| _ -> comparg_ac_KV03
+	in
+	(*
+	 * $(cw,cs,ts) \in emb_candidates f ss$ indicates that f(ts) is
+	 * a strict embedding of \pi(f(ss)) if cs && cw holds, and
+	 * \pi(f(ss)) iteself if not cs but cw.
+	 *)
+	let emb_candidates fname =
+		let rec sub prefix ret =
+			function
+			| [] -> ret
+			| (WT(gty,gname,ts,_) as t)::ss ->
+			if fname = gname then
+				(* this argument should be flattened *)
+				sub prefix ret (ts@ss)
+			else if gty = Var then
+				(* variables must stay *)
+				let mapper (tcw,tcs,ts') = (tcw,tcs,ts' @ [t]) in
+				sub (prefix @ [t]) (List.map mapper ret) ss
+			else
+				let ginfo = lookup gname in
+				let p_g = permed ginfo in
+				let afl_g = argfilt_list ginfo in
+				let mapper (tcw, tcs, ts') = (tcw, tcs, t::ts') in
+				let ret = List.map mapper ret in
+				(* pop-out an argument *)
+				let ret = sub2 prefix ret afl_g p_g 1 ts in
+				sub (prefix @ [t]) ret ss
+		and sub2 prefix ret afl_g p_g i =
+			function
+			| [] -> ret
+			| u::us ->
+				(* If u survives after argfilter, then it can pop out.
+				   If moreover g survives, then the pop-out is strict embedding.
+				 *)
+				sub2 prefix ((p_g i, afl_g, prefix @ [u])::ret) afl_g p_g (i+1) us
+		in
+		sub [] []
+	in
+
+	let rec ac_rpo_compargs fname finfo ss ts order =
+		if ss = ts then
+			weakly_ordered
+		else Delay (fun context ->
+			let mapper (scw,scs,ss') =
+				(context#refer Bool scw, context#refer Bool scs, ss')
+			in
+			let sss = List.map mapper (emb_candidates fname ss) in
+			let tss = emb_candidates fname ts in
+
+debug (fun _ ->
+	output_term stderr (Node(Fun,fname,List.map erase ss)); prerr_newline ());
+debug (fun _ ->
+	List.iter (fun (_,_,ss') -> output_term stderr (Node(Fun,"-->",List.map erase ss')); prerr_newline ()) sss);
+
+			let all_gt_filter (scw,scs,ss') =
+				let (ge,gt) = split (ac_rpo_compargs fname finfo ss' ts order) context in
+				scw &^ (gt |^ (scs &^ ge))
+			in
+			let all_gt = context#refer Bool (smt_exists all_gt_filter sss) in
+			if all_gt = LB true then strictly_ordered else
+			let all_ge_filter (tcw,tcs,ts') =
+				(tcw &^ tcs) =>^ strictly (ac_rpo_compargs fname finfo ss ts' order)
+			in
+			let all_ge = context#refer Bool (smt_for_all all_ge_filter tss) in
+			if all_ge = LB false then not_ordered else
+			
+			let (ge,gt) = split (comparg_ac_rec finfo order ss ts) context in
+			Cons(all_ge &^ ge, all_gt |^ (all_ge &^ gt)) 
+		)
+	in
+	let ac_compargs =
+		if p.adm then
+			fun fname gname finfo order ss ts ->
+				if fname = gname then
+					comparg_ac finfo order ss ts
+				else
+					not_ordered
+		else
+			fun fname gname finfo order ss ts ->
+				if fname = gname then
+					let ss, ts = delete_common ss ts in
+					ac_rpo_compargs fname finfo ss ts order
+				else not_ordered
+	in
+	(* compargss for f and g *)
+	let compargs =
 		fun fname gname finfo ginfo ->
 			match finfo.symtype, ginfo.symtype with
-			| Fun, Fun			-> default_extension finfo ginfo
+			| Fun, Fun			-> default_compargs finfo ginfo
 			| Th "C", Th "C"	->
 				fun order ss ts ->
 					smt_if
@@ -1178,7 +1203,7 @@ class processor p (trs:Trs.t) dg =
 				fun order ss ts ->
 					smt_if
 						(mapped finfo 1)
-						(smt_if (mapped ginfo 1) (ac_extension fname gname finfo order ss ts) strictly_ordered)
+						(smt_if (mapped ginfo 1) (ac_compargs fname gname finfo order ss ts) strictly_ordered)
 						(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
 			| _					-> (fun _ _ _ -> not_ordered)
 	in
@@ -1318,7 +1343,7 @@ class processor p (trs:Trs.t) dg =
 								if all_gt = LB false then
 									Cons(some_ge |^ (ngl &^ all_ge), some_gt)
 								else
-									smt_split (compose (po s t) (extend fname gname finfo ginfo wpo ss ts))
+									smt_split (compose (po s t) (compargs fname gname finfo ginfo wpo ss ts))
 									(fun rest_ge rest_gt ->
 										smt_let Bool all_gt
 										(fun all_gt ->
@@ -1505,7 +1530,7 @@ class processor p (trs:Trs.t) dg =
 					prerr_string "    PREC: ";
 					sub
 					(	List.sort
-						(fun (_,i) (_,j) -> compare i j)
+						(fun (_,i) (_,j) -> compare j i)
 						(	Hashtbl.fold
 							(fun fname finfo ps ->
 								if solver#get_bool (argfilt_list finfo) then
