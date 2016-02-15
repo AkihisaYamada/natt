@@ -135,7 +135,7 @@ let local_flat fname =
 		function
 		| [] -> ss
 		| (Node(_,gname,ts) as t)::us ->
-			if fname = gname then sub (sub ss ts) us else sub (t::ss) us
+			if fname = gname then sub ss (ts @ us) else sub (ss@[t]) us
 	in
 	sub []
 
@@ -201,8 +201,10 @@ let output_eq os (l,r) =
 	output_term os r
 
 let prerr_term = output_term stderr
+let prerr_terms = List.iter (fun t -> output_term stderr t; prerr_string " ")
+let prerr_wterm wt = output_term stderr (erase wt)
+let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wts
 let prerr_rule = output_rule stderr
-let prerr_aterm s = prerr_term (erase s)
 
 (* xml printers *)
 let rec output_xml_term os =

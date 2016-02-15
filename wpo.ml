@@ -89,16 +89,6 @@ let default_finfo symtype arity =
 let rec emb_le (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 	s = t || List.exists (emb_le s) ts || fname = gname && List.for_all2 emb_le ss ts
 
-(* flat top $f$ from list of functions *)
-let local_flat fname =
-	let rec sub ss =
-		function
-		| [] -> ss
-		| (Node(_,gname,ts) as t)::us ->
-			if fname = gname then sub (sub ss ts) us else sub (t::ss) us
-	in
-	sub []
-
 class processor p (trs:Trs.t) dg =
 
 	(* SMT variables *)
@@ -478,6 +468,8 @@ class processor p (trs:Trs.t) dg =
 					solver#add_assertion (coef <=^ LI p.sc_max);
 				end;
 				coef
+			| W_none ->
+				if j = 1 && k = 1 then LI 1 else LI 0
 			| _ ->
 				if not p.dp && j = 1 && k = 1 then
 				(* if not in DP mode, assert top left element >= 1 *)
@@ -944,11 +936,10 @@ class processor p (trs:Trs.t) dg =
 				if p.prec_mode = PREC_quasi then
 					raise (No_support "quasi-precedence + 0-coefficient + no status")
 				else
-					fun finfo ginfo ->
+					fun finfo ginfo order ss ts ->
 						if finfo == ginfo then
-							filtered_lex_extension (permed finfo)
-						else
-							fun _ _ _ -> not_ordered
+							filtered_lex_extension (permed finfo) order ss ts
+						else not_ordered
 			else
 				(* simple lexicographic extension is used. *)
 				fun _ _ -> lex_extension
@@ -1041,12 +1032,6 @@ class processor p (trs:Trs.t) dg =
 		mset_extension order ss ts
 	in
 	let comparg_ac_rec finfo order ss ts =
-debug(fun os ->
-output_term os (Node(Fun,"",List.map erase ss));
-output_string os "  >?  ";
-output_term os (Node(Fun,"",List.map erase ts));
-output_string os "\n";
-);
 		let ss, ts = delete_common ss ts in
 		let nss = List.length ss in
 		let nts = List.length ts in
@@ -1117,28 +1102,31 @@ output_string os "\n";
 			| (WT(gty,gname,ts,_) as t)::ss ->
 			if fname = gname then
 				(* this argument should be flattened *)
-				sub prefix ret (ts@ss)
-			else if gty = Var then
-				(* variables must stay *)
+				sub prefix ret (ts @ ss)
+			else (
 				let mapper (tcw,tcs,ts') = (tcw,tcs,ts' @ [t]) in
-				sub (prefix @ [t]) (List.map mapper ret) ss
-			else
-				let ginfo = lookup gname in
-				let p_g = permed ginfo in
-				let afl_g = argfilt_list ginfo in
-				let mapper (tcw, tcs, ts') = (tcw, tcs, t::ts') in
 				let ret = List.map mapper ret in
-				(* pop-out an argument *)
-				let ret = sub2 prefix ret afl_g p_g 1 ts in
-				sub (prefix @ [t]) ret ss
+				if gty = Var then
+					sub (prefix @ [t]) ret ss
+				else
+					let ginfo = lookup gname in
+					let p_g = permed ginfo in
+					let afl_g = argfilt_list ginfo in
+					(* pop-out an argument *)
+					let ret = sub2 prefix ret afl_g p_g 1 ts in
+					sub (prefix @ [t]) ret ss
+			)
 		and sub2 prefix ret afl_g p_g i =
 			function
 			| [] -> ret
-			| u::us ->
+			| (WT(_,hname,vs,_) as u)::us ->
 				(* If u survives after argfilter, then it can pop out.
 				   If moreover g survives, then the pop-out is strict embedding.
 				 *)
-				sub2 prefix ((p_g i, afl_g, prefix @ [u])::ret) afl_g p_g (i+1) us
+				let ret =
+					(p_g i, afl_g, prefix @ (if hname = fname then vs else [u])) :: ret
+				in
+				sub2 prefix ret afl_g p_g (i+1) us
 		in
 		sub [] []
 	in
@@ -1153,11 +1141,6 @@ output_string os "\n";
 			let sss = List.map mapper (emb_candidates fname ss) in
 			let tss = emb_candidates fname ts in
 
-debug (fun _ ->
-	output_term stderr (Node(Fun,fname,List.map erase ss)); prerr_newline ());
-debug (fun _ ->
-	List.iter (fun (_,_,ss') -> output_term stderr (Node(Fun,"-->",List.map erase ss')); prerr_newline ()) sss);
-
 			let all_gt_filter (scw,scs,ss') =
 				let (ge,gt) = split (ac_rpo_compargs fname finfo ss' ts order) context in
 				scw &^ (gt |^ (scs &^ ge))
@@ -1171,7 +1154,7 @@ debug (fun _ ->
 			if all_ge = LB false then not_ordered else
 			
 			let (ge,gt) = split (comparg_ac_rec finfo order ss ts) context in
-			Cons(all_ge &^ ge, all_gt |^ (all_ge &^ gt)) 
+			Cons(all_gt |^ (all_ge &^ ge), all_gt |^ (all_ge &^ gt)) 
 		)
 	in
 	let ac_compargs =
@@ -1184,7 +1167,6 @@ debug (fun _ ->
 		else
 			fun fname gname finfo order ss ts ->
 				if fname = gname then
-					let ss, ts = delete_common ss ts in
 					ac_rpo_compargs fname finfo ss ts order
 				else not_ordered
 	in
