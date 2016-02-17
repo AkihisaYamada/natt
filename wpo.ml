@@ -118,27 +118,20 @@ class processor p (trs:Trs.t) dg =
 	let nest_map = ref Mset.empty in
 	let nest fname = Mset.count fname !nest_map in
 
-	(*** Argument filters ***)
-	let argfilt finfo = finfo.argfilt_exp in
-	let argfilt_list finfo = finfo.argfilt_list_exp in
-
-	(*** Usable rules ***)
-	let usable =
-		if p.dp && p.usable then
-			fun i -> EV(usable_v i)
-		else
-			fun _ -> LB true
-	in
-	let usable_w =
-		if p.dp && p.usable_w then
-			fun i -> EV(usable_w_v i)
-		else
-			usable
-	in
-
-	(*** Weights ***)
+(*** Weights ***)
 	let weight finfo = finfo.weight_exp in
 
+	let makebin a b =
+		smt_if a (smt_if b (LI 3) (LI 2)) (smt_if b (LI 1) (LI 0))
+	in
+	let add_number w_mode =
+		match w_mode with
+		| W_num -> fun v -> solver#new_variable v weight_ty
+		| W_bool -> fun v -> PB(solver#new_variable v Bool)
+		| W_tri -> fun v -> If(solver#new_variable (v ^ "a") Bool, If(solver#new_variable (v ^ "b") Bool, LI 2, LI 1), LI 0)
+		| W_quad -> fun v -> makebin (solver#new_variable (v ^ "a") Bool) (solver#new_variable (v ^ "b") Bool)
+		| W_none -> fun _ -> LI 0
+	in
 	(* Minimum weight *)
 	let mcw_val = LI p.mcw_val in
 	let mcw =
@@ -147,12 +140,8 @@ class processor p (trs:Trs.t) dg =
 		| MCW_bool	-> PB(EV mcw_v)
 		| MCW_const	-> mcw_val
 	in
-	(* test if $f$ is interpreted as max *)
-	let max_status finfo = finfo.max in
-	let maxfilt finfo = finfo.maxfilt_exp in
-
+	(* Matrix interpretations *)
 	let to_dim = intlist 1 p.w_dim in
-
 	let makemat =
 		if p.w_dim > 1 then
 			fun f -> Mat(List.map (fun j -> List.map (fun k -> f j k) to_dim) to_dim)
@@ -165,14 +154,154 @@ class processor p (trs:Trs.t) dg =
 		else
 			fun f -> f 1
 	in
-	let makebin a b =
-		smt_if a (smt_if b (LI 3) (LI 2)) (smt_if b (LI 1) (LI 0))
+	let supply_matrix_index =
+		if p.w_dim > 1 then
+			fun v j k -> supply_index (supply_index v j) k
+		else
+			fun v _ _ -> v
 	in
-	(* subterm penalty *)
-	let subterm_penalty finfo = finfo.subterm_penalty_exp in
-	(* subterm coefficient *)
+	(* constant part *)
+	let add_weight =
+		let bind_lower =
+			if p.w_neg then
+				if p.w_max = 0 then fun _ _ -> ()
+				else fun _ fw -> solver#add_assertion (fw >=^ LI (- p.w_max))
+			else fun finfo fw -> solver#add_assertion (fw >=^ if finfo.arity = 0 then mcw else LI 0)
+		in
+		let bind_upper =
+			if p.w_max = 0 then fun _ _ -> ()
+			else fun _ fw -> solver#add_assertion (fw <=^ LI p.w_max)
+		in
+		let sub finfo v i =
+			let fw = add_number p.w_mode (v i) in
+			bind_lower finfo fw;
+			bind_upper finfo fw;
+			fw
+		in
+		fun fname finfo ->
+			if not p.ac_w && finfo.symtype = Th "AC" then begin
+				finfo.weight_exp <- LI 0
+			end else begin
+				let v =
+					if p.w_dim > 1 then supply_index ("w_" ^ fname)
+					else k_comb ("w_" ^ fname)
+				in
+				finfo.weight_exp <- makevec (sub finfo v);
+			end;
+	in
+
+	(* Coefficients *)
 	let subterm_coef finfo = finfo.subterm_coef_exp in
-	(* variable coeficient *)
+	let add_subterm_coef fname finfo =
+		let sub v j k =
+			let coef = add_number p.sc_mode (supply_matrix_index v j k) in
+			match p.sc_mode with
+			| W_num ->
+				if not p.dp && j = 1 && k = 1 then begin
+					(* if not in DP mode, assert top left element >= 1 *)
+					solver#add_assertion (coef >=^ LI 1);
+					if p.sc_max > 0 then
+						solver#add_assertion (coef <=^ LI (p.sc_max + 1));
+				end else begin
+					solver#add_assertion (coef >=^ LI 0);
+				if p.sc_max > 0 then
+					solver#add_assertion (coef <=^ LI p.sc_max);
+				end;
+				coef
+			| W_none ->
+				if j = 1 && k = 1 then LI 1 else LI 0
+			| _ ->
+				if not p.dp && j = 1 && k = 1 then
+				(* if not in DP mode, assert top left element >= 1 *)
+					coef +^ LI 1
+				else
+					coef
+		in
+		match finfo.symtype with
+		| Th "C"	->
+			finfo.subterm_coef_exp <- k_comb (makemat (sub ("sc_" ^ fname)));
+		| Th "AC"	->
+			let coef =
+				if p.sc_mode = W_none then
+					LI 1
+				else
+					PB(solver#new_variable ("sc_" ^ fname) Bool)
+			in
+			finfo.subterm_coef_exp <- k_comb coef
+		| _ ->
+			let n = finfo.arity in
+			let v = (if n > 1 then supply_index else k_comb) ("sc_" ^ fname) in
+			let array = Array.make n (LI 0) in
+			for i = 1 to n do
+				array.(i-1) <- makemat (sub (v i));
+			done;
+			finfo.subterm_coef_exp <- fun i -> array.(i-1);
+	in
+
+	(* Max-polynomial *)
+	let max_status finfo = finfo.max in
+	let maxfilt finfo = finfo.maxfilt_exp in
+	let subterm_penalty finfo = finfo.subterm_penalty_exp in
+	let add_subterm_penalty fname finfo =
+		if max_status finfo then begin
+			let sub v j k =
+				let pen = add_number p.sp_mode (supply_matrix_index v j k) in
+				if not p.w_neg then solver#add_assertion (pen >=^ LI 0);
+				if p.w_max > 0 then solver#add_assertion (pen <=^ LI p.w_max);
+				pen
+			in
+			let use_maxpol () =
+				finfo.maxpol <- true;
+				debug2 (fun _ -> prerr_string "    using maxpol for "; prerr_endline fname;);
+			in
+			match finfo.symtype with
+			| Th "C" ->
+				if p.Params.max_poly &&
+					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
+				then begin
+					finfo.subterm_penalty_exp <- k_comb (makemat (sub ("sp_" ^ fname)));
+					finfo.maxfilt_exp <- k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool);
+					use_maxpol ();
+				end else begin
+					finfo.maxpol <- false;
+					finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
+				end;
+			| Th "AC" ->
+				if p.Params.max_poly &&
+					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
+				then begin
+					finfo.maxfilt_exp <- k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool);
+					use_maxpol ();
+				end else begin
+					finfo.maxpol <- false;
+					finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
+				end;
+			| _ ->
+				let n = finfo.arity in
+				let vsp = (if n > 1 then supply_index else k_comb) ("sp_" ^ fname) in
+				let array = Array.make n (LI 0) in
+				for i = 1 to n do
+					array.(i-1) <- makemat (sub (vsp i));
+				done;
+				finfo.subterm_penalty_exp <- (fun i -> array.(i-1));
+				if p.Params.max_poly &&
+					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
+				then begin
+					let vmf = (if n > 1 then supply_index else k_comb) ("maxfilt_" ^ fname) in
+					let emf i = EV(vmf i) in
+					for i = 1 to n do
+						solver#add_variable (vmf i) Bool;
+					done;
+					use_maxpol ();
+					finfo.maxfilt_exp <- emf;
+				end else begin
+					finfo.maxpol <- false;
+					finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
+				end;
+		end;
+	in
+
+	(* accumulation of coeficient for term variables *)
 	let vc_lookup vc vname =
 		try Hashtbl.find vc vname with Not_found -> LI 0
 	in
@@ -199,6 +328,7 @@ class processor p (trs:Trs.t) dg =
 	let vc_refer context vc =
 		Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (context#refer_base value)) vc
 	in
+
 	(* weight order *)
 	let weq =
 		let pol_eq (vc1,e1) (vc2,e2) = vc_eq vc1 vc2 &^ (e1 =^ e2) in
@@ -247,23 +377,27 @@ class processor p (trs:Trs.t) dg =
 			| _ -> sub (LB true) (LB true) ws1 ws2
 	in
 
-	(*** Status ***)
-	let perm finfo = finfo.perm_exp in
-	(* test if $f$'s $i$th argument has position after permutation *)
-	let permed finfo = finfo.permed_exp in
-	(* test if $f$ has $k$th argument after permutation *)
-	let mapped finfo = finfo.mapped_exp in
-	(* multiset status *)
-	let mset_status finfo = finfo.mset_status_exp in
-	(* lexicographic status *)
-	let lex_status finfo = smt_not finfo.mset_status_exp in
-
+(*** Maximum constant ***)
 	let maxcons = if p.maxcons then EV(maxcons_v) else LB false in
 
-	(*** Precedence ***)
+(*** Precedence ***)
 	let pmin = LI 0 in
 	let pmax = ref (LI 0) in
 	let prec finfo = finfo.prec_exp in
+	let add_prec =
+		match p.prec_mode with
+		| PREC_none -> fun _ _ -> ()
+		| _ ->
+			fun fname finfo ->
+				if p.ac_mode = AC_S90 && finfo.symtype = Th "AC" then begin
+					finfo.prec_exp <- pmin;
+				end else begin
+					let fp = solver#new_variable ("p_" ^ fname) weight_ty in
+					finfo.prec_exp <- fp;
+					solver#add_assertion (pmin <=^ fp);
+					solver#add_assertion (fp <=^ !pmax);
+				end;
+	in
 	(* Precedence over symbols *)
 	let spo =
 		match p.prec_mode with
@@ -302,44 +436,8 @@ class processor p (trs:Trs.t) dg =
 				| _			-> spo (lookup fname) (lookup gname)
 	in
 
-	(*** Tests for arity ***)
-	let is_const finfo = finfo.is_const_exp in
-	let is_quasi_const finfo = finfo.is_quasi_const_exp in
-	let is_unary =
-		if p.dp && p.sc_mode <> W_none then
-			fun finfo to_n ->
-				argfilt_list finfo &^
-				ES1(List.map (argfilt finfo) to_n) &^
-				smt_exists (permed finfo) to_n
-		else
-			fun _ -> function [_] -> LB true | _ -> LB false
-	in
-
-	(*** Usable rules ***)
-	let rec set_usable filt usable s =
-		smt_for_all (fun ri -> usable ri) (trs#find_matchable s) &^ set_usable_inner filt usable s
-	and set_usable_inner filt usable (Node(fty,fname,ss)) =
-		if fty = Var then
-			smt_for_all (set_usable_inner filt usable) ss
-		else
-			let finfo = lookup fname in
-			let rec sub i ss =
-				match ss with
-				| [] -> LB true
-				| s::ss -> (filt finfo i =>^ set_usable filt usable s) &^ sub (i+1) ss
-			in
-			sub 1 ss
-	in
-	let add_usable =
-		if not p.dp || not p.usable then
-			fun _ -> ()
-		else
-			fun i ->
-				solver#add_variable (usable_v i) Bool;
-				if p.usable_w then
-					solver#add_variable (usable_w_v i) Bool;
-	in
-
+(*** Argument filters ***)
+	let argfilt finfo = finfo.argfilt_exp in
 	let add_argfilt =
 		(* argument is filtered iff coef = 0 *)
 		if not p.dp || p.sc_mode = W_none then
@@ -378,8 +476,8 @@ class processor p (trs:Trs.t) dg =
 					finfo.argfilt_exp <- ef;
 				| _			-> ()
 	in
-
 	(* collapsing argument filters *)
+	let argfilt_list finfo = finfo.argfilt_list_exp in
 	let add_argfilt_list =
 		if p.collapse then
 			fun fname finfo to_n ->
@@ -392,170 +490,53 @@ class processor p (trs:Trs.t) dg =
 				finfo.argfilt_list_exp <- LB true
 	in
 
-	let add_number w_mode =
-		match w_mode with
-		| W_num -> fun v -> solver#new_variable v weight_ty
-		| W_bool -> fun v -> PB(solver#new_variable v Bool)
-		| W_tri -> fun v -> If(solver#new_variable (v ^ "a") Bool, If(solver#new_variable (v ^ "b") Bool, LI 2, LI 1), LI 0)
-		| W_quad -> fun v -> makebin (solver#new_variable (v ^ "a") Bool) (solver#new_variable (v ^ "b") Bool)
-		| W_none -> fun _ -> LI 0
-	in
-
-	let add_weight =
-		let bind_lower =
-			if p.w_neg then
-				if p.w_max = 0 then fun _ _ -> ()
-				else fun _ fw -> solver#add_assertion (fw >=^ LI (- p.w_max))
-			else fun finfo fw -> solver#add_assertion (fw >=^ if finfo.arity = 0 then mcw else LI 0)
-		in
-		let bind_upper =
-			if p.w_max = 0 then fun _ _ -> ()
-			else fun _ fw -> solver#add_assertion (fw <=^ LI p.w_max)
-		in
-		let sub finfo v i =
-			let fw = add_number p.w_mode (v i) in
-			bind_lower finfo fw;
-			bind_upper finfo fw;
-			fw
-		in
-		fun fname finfo ->
-			if not p.ac_w && finfo.symtype = Th "AC" then begin
-				finfo.weight_exp <- LI 0
-			end else begin
-				let v =
-					if p.w_dim > 1 then supply_index ("w_" ^ fname)
-					else k_comb ("w_" ^ fname)
-				in
-				finfo.weight_exp <- makevec (sub finfo v);
-			end;
-	in
-
-	let add_prec =
-		match p.prec_mode with
-		| PREC_none -> fun _ _ -> ()
-		| _ ->
-			fun fname finfo ->
-				if p.ac_mode = AC_S90 && finfo.symtype = Th "AC" then begin
-					finfo.prec_exp <- pmin;
-				end else begin
-					let fp = solver#new_variable ("p_" ^ fname) weight_ty in
-					finfo.prec_exp <- fp;
-					solver#add_assertion (pmin <=^ fp);
-					solver#add_assertion (fp <=^ !pmax);
-				end;
-	in
-
-	let supply_matrix_index =
-		if p.w_dim > 1 then
-			fun v j k -> supply_index (supply_index v j) k
+(*** Usable rules ***)
+	let usable =
+		if p.dp && p.usable then
+			fun i -> EV(usable_v i)
 		else
-			fun v _ _ -> v
+			fun _ -> LB true
+	in
+	let usable_w =
+		if p.dp && p.usable_w then
+			fun i -> EV(usable_w_v i)
+		else
+			usable
+	in
+	let rec set_usable filt usable s =
+		smt_for_all usable (trs#find_matchable s) &^ set_usable_inner filt usable s
+	and set_usable_inner filt usable (Node(fty,fname,ss)) =
+		if fty = Var then
+			smt_for_all (set_usable_inner filt usable) ss
+		else
+			let finfo = lookup fname in
+			let rec sub i ss =
+				match ss with
+				| [] -> LB true
+				| s::ss -> (filt finfo i =>^ set_usable filt usable s) &^ sub (i+1) ss
+			in
+			sub 1 ss
+	in
+	let add_usable =
+		if not p.dp || not p.usable then
+			fun _ -> ()
+		else
+			fun i ->
+				solver#add_variable (usable_v i) Bool;
+				if p.usable_w then
+					solver#add_variable (usable_w_v i) Bool;
 	in
 
-	let add_subterm_coef fname finfo =
-		let sub v j k =
-			let coef = add_number p.sc_mode (supply_matrix_index v j k) in
-			match p.sc_mode with
-			| W_num ->
-				if not p.dp && j = 1 && k = 1 then begin
-					(* if not in DP mode, assert top left element >= 1 *)
-					solver#add_assertion (coef >=^ LI 1);
-					if p.sc_max > 0 then
-						solver#add_assertion (coef <=^ LI (p.sc_max + 1));
-				end else begin
-					solver#add_assertion (coef >=^ LI 0);
-				if p.sc_max > 0 then
-					solver#add_assertion (coef <=^ LI p.sc_max);
-				end;
-				coef
-			| W_none ->
-				if j = 1 && k = 1 then LI 1 else LI 0
-			| _ ->
-				if not p.dp && j = 1 && k = 1 then
-				(* if not in DP mode, assert top left element >= 1 *)
-					coef +^ LI 1
-				else
-					coef
-		in
-		match finfo.symtype with
-		| Th "C"	->
-			finfo.subterm_coef_exp <- k_comb (makemat (sub ("sc_" ^ fname)));
-		| Th "AC"	->
-			let coef =
-				if p.sc_mode = W_none then
-					LI 1
-				else
-					PB(solver#new_variable ("sc_" ^ fname) Bool)
-			in
-			finfo.subterm_coef_exp <- k_comb coef
-		| _ ->
-			let n = finfo.arity in
-			let v = (if n > 1 then supply_index else k_comb) ("sc_" ^ fname) in
-			let array = Array.make n (LI 0) in
-			for i = 1 to n do
-				array.(i-1) <- makemat (sub (v i));
-			done;
-			finfo.subterm_coef_exp <- fun i -> array.(i-1);
-	in
-
-	let add_subterm_penalty fname finfo =
-		if max_status finfo then begin
-			let sub v j k =
-				let pen = add_number p.sp_mode (supply_matrix_index v j k) in
-				if not p.w_neg then solver#add_assertion (pen >=^ LI 0);
-				if p.w_max > 0 then solver#add_assertion (pen <=^ LI p.w_max);
-				pen
-			in
-			let use_maxpol () =
-				finfo.maxpol <- true;
-				debug2 (fun _ -> prerr_string "    using maxpol for "; prerr_endline fname;);
-			in
-			match finfo.symtype with
-			| Th "C" ->
-				if p.Params.max_poly &&
-					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
-				then begin
-					finfo.subterm_penalty_exp <- k_comb (makemat (sub ("sp_" ^ fname)));
-					finfo.maxfilt_exp <- k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool);
-					use_maxpol ();
-				end else begin
-					finfo.maxpol <- false;
-					finfo.maxfilt_exp <- (fun i -> argfilt finfo i);
-				end;
-			| Th "AC" ->
-				if p.Params.max_poly &&
-					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
-				then begin
-					finfo.maxfilt_exp <- k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool);
-					use_maxpol ();
-				end else begin
-					finfo.maxpol <- false;
-					finfo.maxfilt_exp <- (fun i -> argfilt finfo i);
-				end;
-			| _ ->
-				let n = finfo.arity in
-				let vsp = (if n > 1 then supply_index else k_comb) ("sp_" ^ fname) in
-				let array = Array.make n (LI 0) in
-				for i = 1 to n do
-					array.(i-1) <- makemat (sub (vsp i));
-				done;
-				finfo.subterm_penalty_exp <- (fun i -> array.(i-1));
-				if p.Params.max_poly &&
-					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
-				then begin
-					let vmf = (if n > 1 then supply_index else k_comb) ("maxfilt_" ^ fname) in
-					let emf i = EV(vmf i) in
-					for i = 1 to n do
-						solver#add_variable (vmf i) Bool;
-					done;
-					use_maxpol ();
-					finfo.maxfilt_exp <- emf;
-				end else begin
-					finfo.maxpol <- false;
-					finfo.maxfilt_exp <- (fun i -> argfilt finfo i);
-				end;
-		end;
-	in
+(*** Status ***)
+	let perm finfo = finfo.perm_exp in
+	(* test if $f$'s $i$th argument has position after permutation *)
+	let permed finfo = finfo.permed_exp in
+	(* test if $f$ has $k$th argument after permutation *)
+	let mapped finfo = finfo.mapped_exp in
+	(* multiset status *)
+	let mset_status finfo = finfo.mset_status_exp in
+	(* lexicographic status *)
+	let lex_status finfo = smt_not finfo.mset_status_exp in
 
 	let add_perm =
 		let sub_lex =
@@ -623,7 +604,8 @@ class processor p (trs:Trs.t) dg =
 						solver#add_assertion (p_i |^ zero);
 					end;
 					let m_i = mapped finfo i in
-					let (zero,one) = split (ZeroOne (List.map (fun j -> perm finfo j i) to_n)) solver in
+					let mapper j = perm finfo j i in
+					let (zero,one) = split (ZeroOne (List.map mapper to_n)) solver in
 					solver#add_assertion (m_i =>^ one);
 					solver#add_assertion (m_i |^ zero);
 				done;
@@ -654,7 +636,8 @@ class processor p (trs:Trs.t) dg =
 		in
 		fun fname finfo to_n ->
 			finfo.status_mode <-
-				(if p.status_nest > 0 && nest fname > p.status_nest then S_empty else p.Params.status_mode);
+				(if p.status_nest > 0 && nest fname > p.status_nest then S_empty
+				 else p.Params.status_mode);
 			match finfo.symtype with
 			| Th "C" -> sub_c fname finfo;
 			| Th "AC" ->
@@ -682,8 +665,20 @@ class processor p (trs:Trs.t) dg =
 			| _ -> if finfo.arity > 1 then finfo.mset_status_exp <- sub fname;
 	in
 
+(*** Tests for arity ***)
+	let is_const finfo = finfo.is_const_exp in
+	let is_quasi_const finfo = finfo.is_quasi_const_exp in
+	let is_unary =
+		if p.dp && p.sc_mode <> W_none then
+			fun finfo to_n ->
+				argfilt_list finfo &^
+				ES1(List.map (argfilt finfo) to_n) &^
+				smt_exists (permed finfo) to_n
+		else
+			fun _ -> function [_] -> LB true | _ -> LB false
+	in
 
-	(* preparing for function symbols *)
+(*** preparing for function symbols ***)
 	let add_symbol fname finfo =
 		let n = finfo.arity in
 		let to_n = intlist 1 n in
@@ -745,7 +740,6 @@ class processor p (trs:Trs.t) dg =
 			end;
 		end;
 
-
 		if p.w_neg || p.mcw_val > 0 then
 			(* asserting $mcw$ be the minimal weight of constants. *)
 			if max_status finfo then
@@ -763,7 +757,8 @@ class processor p (trs:Trs.t) dg =
 			else begin
 				solver#add_assertion (fp <=^ !pmax);
 				(* asserting admissibility of weight and precedence. *)
-				solver#add_assertion (smt_if (is_unary finfo to_n &^ (fw =^ LI 0)) (fp =^ !pmax) (fp <^ !pmax));
+				solver#add_assertion
+					(smt_if (is_unary finfo to_n &^ (fw =^ LI 0)) (fp =^ !pmax) (fp <^ !pmax));
 			end;
 		end else if p.maxcons then begin
 			solver#add_assertion (fp <=^ !pmax);
@@ -788,8 +783,7 @@ class processor p (trs:Trs.t) dg =
 		end;
 	in
 
-	(* for weight *)
-
+(* for weight computation *)
 	let refer_w =
 		if p.refer_w then
 			solver#refer_base
@@ -798,28 +792,28 @@ class processor p (trs:Trs.t) dg =
 	in
 	let emptytbl = Hashtbl.create 0 in
 	let weight_summand fty finfo =
-			let rec sub_ac coef vc w i e =
-				function
-				| [] -> (vc, w +^ coef *^ (e +^ (LI i *^ w)))
-				| (vc',e')::vws ->
-					vc_merge vc coef vc';
-					sub_ac coef vc w (i + 1) (e +^ e') vws
-			in
-			let rec sub_c coef vc w e =
-				function
-				| [] -> (vc, w +^ (coef *^ e))
-				| (vc',e')::vws	->
-					vc_merge vc coef vc';
-					sub_c coef vc w (e +^ e') vws
-			in
-			let rec sub_lex coef i vc e =
-				function
-				| [] -> (vc,e)
-				| (vc',e')::vws	->
-					let c = coef i in
-					vc_merge vc c vc';
-					sub_lex coef (i + 1) vc (e +^ (c *^ e')) vws
-			in
+		let rec sub_ac coef vc w i e =
+			function
+			| [] -> (vc, w +^ coef *^ (e +^ (LI i *^ w)))
+			| (vc',e')::vws ->
+				vc_merge vc coef vc';
+				sub_ac coef vc w (i + 1) (e +^ e') vws
+		in
+		let rec sub_c coef vc w e =
+			function
+			| [] -> (vc, w +^ (coef *^ e))
+			| (vc',e')::vws	->
+				vc_merge vc coef vc';
+				sub_c coef vc w (e +^ e') vws
+		in
+		let rec sub_lex coef i vc e =
+			function
+			| [] -> (vc,e)
+			| (vc',e')::vws	->
+				let c = coef i in
+				vc_merge vc c vc';
+				sub_lex coef (i + 1) vc (e +^ (c *^ e')) vws
+		in
 		let sub =
 			function
 			| []	-> (emptytbl, weight finfo)
@@ -827,9 +821,9 @@ class processor p (trs:Trs.t) dg =
 				let vc = Hashtbl.create 4 in
 				let (vc,e) =
 					match fty with
-						| Th "AC"	-> sub_ac (subterm_coef finfo 1) vc (weight finfo) (-2) (LI 0) vces
-						| Th "C"	-> sub_c (subterm_coef finfo 1) vc (weight finfo) (LI 0) vces
-						| _			-> sub_lex (subterm_coef finfo) 1 vc (weight finfo) vces
+					| Th "AC"	-> sub_ac (subterm_coef finfo 1) vc (weight finfo) (-2) (LI 0) vces
+					| Th "C"	-> sub_c (subterm_coef finfo 1) vc (weight finfo) (LI 0) vces
+					| _			-> sub_lex (subterm_coef finfo) 1 vc (weight finfo) vces
 				in
 				vc_refer solver vc;
 				(vc, refer_w e)
@@ -854,26 +848,28 @@ class processor p (trs:Trs.t) dg =
 		let rec sub_fun finfo i ret =
 			function
 			| []		-> ret
-			| ws::wss	-> sub_fun finfo (i + 1) (List.fold_left (folder (maxfilt finfo i) (subterm_penalty finfo i)) ret ws) wss
+			| ws::wss	->
+				sub_fun finfo (i + 1)
+				(List.fold_left (folder (maxfilt finfo i) (subterm_penalty finfo i)) ret ws) wss
 		in
 		let sub_c finfo =
 			let af = maxfilt finfo 1 in
 			let sp = subterm_penalty finfo 1 in
-			let rec sub2 ret =
+			let rec sub ret =
 				function
 				| []		-> ret
-				| ws::wss	-> sub2 (List.fold_left (folder af sp) ret ws) wss
+				| ws::wss	-> sub (List.fold_left (folder af sp) ret ws) wss
 			in
-			sub2
+			sub
 		in
 		let sub_ac finfo =
 			let af = maxfilt finfo 1 in
-			let rec sub2 ret =
+			let rec sub ret =
 				function
 				| []		-> ret
-				| ws::wss	-> sub2 (List.fold_left (folder af (LI 0)) ret ws) wss
+				| ws::wss	-> sub (List.fold_left (folder af (LI 0)) ret ws) wss
 			in
-			sub2
+			sub
 		in
 		match p.max_mode with
 		| MAX_none ->
@@ -914,6 +910,7 @@ class processor p (trs:Trs.t) dg =
 							(emptytbl,mcw)::sum
 						else sum
 	in
+	(* annote terms with weights *)
 	let rec annote (Node(fty,fname,ss)) =
 		let ss =
 			match fty with
@@ -926,7 +923,7 @@ class processor p (trs:Trs.t) dg =
 		WT(fty, fname, args, ws)
 	in
 
-	(* argument comparison *)
+(*** argument comparison ***)
 	let lexperm_compargs =
 		match p.Params.status_mode with
 		| S_empty ->
@@ -993,7 +990,7 @@ class processor p (trs:Trs.t) dg =
 			fun _ _ _ _ _ -> weakly_ordered
 	in
 
-	(* compargs for AC symbols *)
+(*** compargs for AC symbols ***)
 
 	(* Korovin & Voronkov's original auxiliary order *)
 	let w_top_order (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
@@ -1190,7 +1187,7 @@ class processor p (trs:Trs.t) dg =
 			| _					-> (fun _ _ _ -> not_ordered)
 	in
 
-	(* RPO-like subfunctions *)
+(*** RPO-like recursive checks ***)
 
 	let order_by_some_arg =
 		(* returns:
@@ -1260,7 +1257,7 @@ class processor p (trs:Trs.t) dg =
 			sub 1 (LB true) (LB true)
 	in
 
-	(* WPO frame *)
+(*** WPO frame ***)
 	let is_mincons =
 		if p.mincons then
 			fun finfo -> is_quasi_const finfo &^ (prec finfo =^ pmin)
@@ -1295,7 +1292,7 @@ class processor p (trs:Trs.t) dg =
 			Cons(var_eq fname t, LB false)
 		else
 			let finfo = lookup fname in
-			try
+			try (* for efficiency *)
 				if fname = gname then
 					match ss,ts with
 					| [s1], [t1] ->
@@ -1348,6 +1345,7 @@ class processor p (trs:Trs.t) dg =
 	in
 
 
+(*** Printing proofs ***)
 	let zero =
 		function
 		| LI 0 -> true
@@ -1363,8 +1361,6 @@ class processor p (trs:Trs.t) dg =
 		| Mat m -> Matrix.is_unit (LI 0) (LI 1) m
 		| _ -> false
 	in
-
-	(* Print proof *)
 	let output_proof =
 		let prerr_perm fname finfo =
 			prerr_string "sigma(";
