@@ -15,7 +15,7 @@ let static_usable_rules (trs:Trs.t) dg used_dpset =
 		let rec sub (Node(_,_,ts) as t) =
 			let iterer i =
 				if not (Hashtbl.mem used i) then begin
-					let (_,r) = trs#find_rule i in
+					let (_,r,_) = trs#find_rule i in
 					Hashtbl.add used i ();
 					sub r;
 				end;
@@ -23,7 +23,7 @@ let static_usable_rules (trs:Trs.t) dg used_dpset =
 			List.iter iterer (trs#find_matchable t);
 			List.iter sub ts;
 		in
-		IntSet.iter (fun i -> let (_,Node(_,_,ts)) = dg#find_dp i in List.iter sub ts) used_dpset;
+		IntSet.iter (fun i -> let (_,Node(_,_,ts),_) = dg#find_dp i in List.iter sub ts) used_dpset;
 	
 		trs#fold_rules
 		(fun i _ (usables,unusables) ->
@@ -36,7 +36,7 @@ let static_usable_rules (trs:Trs.t) dg used_dpset =
 
 let uncurry =
 	if params.uncurry then
-		fun trs dg ->
+		fun (trs:Trs.t) dg ->
 			comment (fun _ -> prerr_string "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
 			if StrSet.is_empty appsyms then
@@ -55,8 +55,8 @@ let uncurry =
 
 
 let relative_test (trs:Trs.t) =
-	trs#exists_eq (fun i (l,r) ->
-		if duplicating l r then (
+	trs#exists_rule (fun i (l,r,s) ->
+		if s <> StrictRule && duplicating l r then (
 			comment (fun os ->
 				output_string os "Weak rule e";
 				output_string os (string_of_int i);
@@ -75,7 +75,7 @@ let relative_test (trs:Trs.t) =
 		) else false
 	);;
 
-let theory_test trs =
+let theory_test (trs:Trs.t) =
 	let ths = trs#get_ths in
 	if StrSet.is_empty ths then false
 	else
@@ -88,8 +88,8 @@ let theory_test trs =
 		)
 
 (* extra variable test *)
-let extra_test trs =
-	let iterer i (l,r) =
+let extra_test (trs:Trs.t) =
+	let iterer i (l,r,s) =
 		let lvars = varlist l in
 		let rvars = varlist r in
 		if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
@@ -106,7 +106,7 @@ let extra_test trs =
 	trs#iter_rules iterer;;
 
 (* remove trivial relative rules *)
-let clean_eqs trs =
+let clean_eqs (trs:Trs.t) =
 	let iterer i (l,r) =
 		if l = r then begin
 			proof (fun _ ->
@@ -123,7 +123,7 @@ let clean_eqs trs =
 (* rule removal processor *)
 let dummy_dg = new Dp.dg (new Trs.t)
 
-let rule_remove trs =
+let rule_remove (trs:Trs.t) =
 	if Array.length params.orders_removal > 0 then begin
 		let proc_list =
 			let folder p procs =
@@ -137,11 +137,11 @@ let rule_remove trs =
 		let rec loop () =
 			let rules = trs#fold_rules (fun i _ is -> i::is) [] in
 			comment (fun _ ->
-				prerr_string "Number of Rules: ";
-				prerr_int trs#get_size;
+				prerr_string "Number of strict rules: ";
+				prerr_int trs#get_size_strict;
 				prerr_newline ();
 			);
-			if trs#get_size = 0 then raise Success
+			if trs#get_size_strict = 0 then raise Success
 			else if remove_strict rules then begin
 				loop ();
 			end else begin
@@ -152,7 +152,7 @@ let rule_remove trs =
 	end;;
 
 (* reduction pair processor *)
-let dp_remove trs dg =
+let dp_remove (trs:Trs.t) dg =
 	let sccs = ref dg#get_sccs in
 	let remove_unusable () =
 		let init = ref true in
@@ -343,7 +343,7 @@ class main =
 		method no_ac = not(StrSet.mem "AC" trs#get_ths)
 
 		method duplicating =
-			trs#exists_rule (fun _ (l,r) -> dupvarlist l r <> [])
+			trs#exists_rule (fun _ (l,r,_) -> dupvarlist l r <> [])
 
 		method run =
 			if params.file = "" then
@@ -365,23 +365,23 @@ class main =
 			| MODE_through ->
 				trs#output stdout;
 			| MODE_flat ->
-				trs#iter_rules (fun i (l,r) -> trs#replace_rule i (flat l) (flat r));
+				trs#iter_rules (fun i (l,r,s) -> trs#replace_rule_extra s i (flat l) (flat r));
 				trs#output stdout;
 			| MODE_uncurry ->
 				ignore (App.auto_uncurry trs (new Dp.dg trs));
 				trs#output stdout;
 			| MODE_simple ->
-				if trs#exists_rule (fun _ (l,r) -> emb_le l r) then
+				if trs#exists_rule (fun _ (l,r,_) -> emb_le l r) then
 					err "Not simple";
 			| MODE_dup	->
 				if x#duplicating then err "Duplicating TRS";
 				warn "Non-duplicating TRS";
 				exit 0;
 			| MODE_id	->
-				trs#iter_rules (fun i (l,r) -> if term_eq l r then trs#remove_rule i);
+				trs#iter_rules (fun i (l,r,_) -> if term_eq l r then trs#remove_rule i);
 				trs#output_wst stdout;
 			| MODE_dist	->
-				let sub _ (l,r) =
+				let sub _ (l,r,_) =
 					match r with
 					| Node(Th "AC",_,
 						[Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);

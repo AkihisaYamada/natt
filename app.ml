@@ -26,9 +26,8 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 			List.iter (dig 0) ss;
 		end
 	in
-	let iterer _ (l,r) = dig 0 l; dig 0 r; in
+	let iterer _ (l,r,_) = dig 0 l; dig 0 r; in
 	trs#iter_rules iterer;
-	trs#iter_eqs iterer;
 	dg#iter_dps iterer;
 
 	let rec dig_hd d (Node(fty,fname,ss)) =
@@ -38,9 +37,8 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 			if fty = Fun then set_aa (>) fname d;
 		end
 	in
-	let iterer _ (l,r) = dig_hd 0 l; in
+	let iterer _ (l,r,_) = dig_hd 0 l; in
 	trs#iter_rules iterer;
-	trs#iter_eqs iterer;
 	dg#iter_dps iterer;
 
 	let uncurry_name fname i =
@@ -68,9 +66,8 @@ let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
 			let ss = List.map uncurry_term ss in
 			(fty, fname, ss, 0, aa)
 	in
-	trs#iter_rules (fun i (l,r) -> trs#replace_rule i (uncurry_term l) (uncurry_term r););
-	trs#iter_eqs (fun i (l,r) -> trs#replace_eq i (uncurry_term l) (uncurry_term r););
-	dg#iter_dps (fun i (l,r) -> dg#replace_dp i (uncurry_term l) (uncurry_term r););
+	trs#iter_rules (fun i (l,r,s) -> trs#replace_rule_extra s i (uncurry_term l) (uncurry_term r););
+	dg#iter_dps (fun i (l,r,s) -> dg#replace_dp i (uncurry_term l, uncurry_term r, s););
 
 	let varlist name start count =
 		let last = start + count - 1 in
@@ -110,7 +107,7 @@ let auto_uncurry trs dg =
 					List.iter (sub2 0) (tl ss);
 				end else begin
 					if d > 0 then
-						if fty <> Fun || trs#defines fname || trs#equates fname
+						if fty <> Fun || trs#defines fname
 						then bad d
 						else good d;
 					List.iter (sub2 0) ss;
@@ -129,13 +126,11 @@ let auto_uncurry trs dg =
 			let ngoods = ref 0 in
 			let nbads = ref 0 in
 			let add r n = r := !r + n in
-			let iterer_l _ (l,_) = sub (fun _ -> ()) (fun _ -> raise Next) l in
-			let iterer_r _ (_,r) = sub (add ngoods) (add nbads) r in
+			let iterer_l _ (l,_,_) = sub (fun _ -> ()) (fun _ -> raise Next) l in
+			let iterer_r _ (_,r,_) = sub (add ngoods) (add nbads) r in
 			trs#iter_rules iterer_l;
-			trs#iter_eqs iterer_l;
 			dg#iter_dps iterer_l;
 			trs#iter_rules iterer_r;
-			trs#iter_eqs iterer_r;
 			dg#iter_dps iterer_r;
 
 			if !ngoods = 0 (*|| !ngoods < !nbads*) then raise Next;

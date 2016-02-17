@@ -76,13 +76,12 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 	while
 		trs#fold_eqs (fun i (l,r) ret ->
 			if duplicating l r || not(trs#const_term r) then (
-				trs#remove_eq i;
-				trs#add_rule_extra l r MediumRule;
+				trs#replace_rule_extra MediumRule i l r;
 				true)
 			else ret
 		) false do () done;
 	(* minimality can be assumed if all weak rules are size preserving *)
-	minimal := trs#for_all_eq (fun i (l,r) -> size l >= size r);
+	minimal := trs#for_all_eqs (fun i (l,r) -> size l >= size r);
 
 	(* Main process *)
 	let cnt = ref 0 in
@@ -123,7 +122,7 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 					generate_dp_default i (xl, xr, strength);
 				end;
 	in
-	trs#iter_rules_extra generate_dp;
+	trs#iter_rules_strict generate_dp;
 
 	(* Additional rules for AC *)
 	let add_eq s t =
@@ -196,7 +195,7 @@ let make_ac_ext (trs:Trs.t) dp_table =
 			add_dp (mark_term xl) (mark_term xr) strength;
 		end;
 	in
-	trs#iter_rules_extra generate_dp;
+	trs#iter_rules generate_dp;
 	let ac_mark_handle fname finfo =
 		if not (Rules.is_empty finfo.defined_by) && finfo.symtype = Th "AC" then begin
 			let u s t = Node(finfo.symtype, fname, [s;t]) in
@@ -268,7 +267,7 @@ let get_sccs dg =
 let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
-class dg trs =
+class dg (trs:Trs.t) =
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
@@ -279,15 +278,15 @@ class dg trs =
 		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs dp_table dg;
 		method minimal = !min
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
-		method replace_dp i l r = Hashtbl.replace dp_table i (l,r,StrictRule);
+		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
 		method get_subsccs dpset = ll2ls (get_subsccs dg dpset)
 		method get_size = Hashtbl.length dp_table
-		method find_dp i = let (l,r,_) = Hashtbl.find dp_table i in (l,r)
-		method get_dp_size i = let (l,r) = x#find_dp i in size l + size r
-		method iter_dps f = Hashtbl.iter (fun i (l,r,_) -> f i (l,r)) dp_table
-		method get_dps = Hashtbl.fold (fun i (l,r,_) ps -> (i,(l,r))::ps) dp_table []
+		method find_dp = Hashtbl.find dp_table
+		method get_dp_size i = let (l,r,_) = x#find_dp i in size l + size r
+		method iter_dps f = Hashtbl.iter f dp_table
+		method get_dps = Hashtbl.fold (fun i dp dps -> (i,dp)::dps) dp_table []
 		method output_dps os = output_tbl os output_rule "   #" dp_table
 		method is_strict i = let (_,_,s) = Hashtbl.find dp_table i in s = StrictRule
 		method is_weak i = let (_,_,s) = Hashtbl.find dp_table i in s = WeakRule

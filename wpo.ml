@@ -1678,8 +1678,6 @@ class processor p (trs:Trs.t) dg =
 	let ge_v i = "ge#" ^ string_of_int i in
 	let gt_r_v i = "gt" ^ string_of_int i in
 	let ge_r_v i = "ge" ^ string_of_int i in
-	let gt_e_v i = "gt=" ^ string_of_int i in
-	let ge_e_v i = "ge=" ^ string_of_int i in
 
 	object (x)
 
@@ -1704,7 +1702,7 @@ class processor p (trs:Trs.t) dg =
 				dplist := dg#get_dps;
 				usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
 			end else begin
-				dplist := IntSet.fold (fun i l -> (i, dg#find_dp i) :: l) scc [];
+				dplist := IntSet.fold (fun i dps -> (i, dg#find_dp i) :: dps) scc [];
 				usables := List.map (fun i -> (i, trs#find_rule i)) current_usables;
 			end;
 
@@ -1721,15 +1719,13 @@ class processor p (trs:Trs.t) dg =
 					Hashtbl.replace sigma fname (transform_finfo fname);
 				List.iter sub ss;
 			in
-			List.iter (fun (_,(l,r)) -> sub l; sub r;) !usables;
+			List.iter (fun (_,(l,r,_)) -> sub l; sub r;) !usables;
 			let sub_dp (Node(fty,fname,ss)) =
 				if not (Hashtbl.mem sigma fname) then
 					Hashtbl.add sigma fname (transform_finfo fname);
 				List.iter sub ss;
 			in
-			List.iter (fun (_,(l,r)) -> sub_dp l; sub_dp r;) !dplist;
-
-			trs#iter_eqs (fun _ (l,r) -> sub l; sub r;);
+			List.iter (fun (_,(l,r,_)) -> sub_dp l; sub_dp r;) !dplist;
 
 			(* count nesting *)
 			if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
@@ -1740,7 +1736,7 @@ class processor p (trs:Trs.t) dg =
 						Mset.union (Mset.singleton fname)
 							(List.fold_left Mset.join Mset.empty (List.map nest_term ss))
 				in
-				let nest_rule (l,r) = Mset.join (nest_term l) (nest_term r) in
+				let nest_rule (l,r,_) = Mset.join (nest_term l) (nest_term r) in
 				let nest_rules =
 					fun rules ->
 						List.fold_left Mset.join Mset.empty
@@ -1788,7 +1784,7 @@ class processor p (trs:Trs.t) dg =
 							set_max_finfo gname (lookup gname)
 						then raise Continue;
 					in
-					let annote_sub (_, (Node(_,fname,_) as s,t)) =
+					let annote_sub (_, (Node(_,fname,_) as s,t,_)) =
 						sub (annote_vs s) (annote_vs t);
 					in
 					let rec loop rulelist =
@@ -1847,7 +1843,7 @@ class processor p (trs:Trs.t) dg =
 			List.iter (fun (i,_) -> add_usable i) !usables;
 			try
 				debug2 (fun _ -> prerr_string "    Rules: {"; flush stderr;);
-				let iterer (i,(Node(_,fname,_) as l,r)) =
+				let iterer (i,(Node(_,fname,_) as l,r,_)) =
 					debug2 (fun _ -> prerr_char ' '; prerr_int i; flush stderr;);
 					let (WT(_,_,_,lw) as la) = annote l in
 					let (WT(_,_,_,rw) as ra) = annote r in
@@ -1885,25 +1881,8 @@ class processor p (trs:Trs.t) dg =
 				List.iter iterer !usables;
 				debug2 (fun _ -> prerr_endline " }");
 
-				debug2 (fun _ -> prerr_string "    Relative Rules: {");
-				let iterer i (l,r) =
-					debug2 (fun _ -> prerr_string " e"; prerr_int i; flush stderr;);
-					let la = annote l in
-					let ra = annote r in
-					if p.dp then begin
-						solver#add_assertion (weakly (frame la ra));
-					end else begin
-						(* rule removal mode *)
-						let (ge,gt) = split (frame la ra) solver in
-						solver#add_assertion ge;
-						solver#add_definition (gt_e_v i) Bool gt;
-					end;
-				in
-				trs#iter_eqs iterer;
-				debug2 (fun _ -> prerr_endline " }");
-
 				debug2 (fun _ -> prerr_string "    DPs: {"; flush stderr;);
-				let iterer i (l,r) =
+				let iterer i (l,r,_) =
 					debug2 (fun _ -> prerr_string " #"; prerr_int i; flush stderr;);
 					let (ge,gt) = split (frame (annote l) (annote r)) solver in
 					solver#add_definition (ge_v i) Bool ge;
@@ -1959,7 +1938,7 @@ class processor p (trs:Trs.t) dg =
 					IntSet.fold
 					(fun i some_gt ->
 						solver#add_assertion (EV(ge_v i));
-						let (_,t) = dg#find_dp i in
+						let (_,t,_) = dg#find_dp i in
 						if p.usable_w then begin
 							solver#add_assertion (set_usable_inner argfilt usable_w t);
 							solver#add_assertion (set_usable_inner permed usable t);
@@ -2012,10 +1991,7 @@ class processor p (trs:Trs.t) dg =
 					comment (fun _ -> prerr_endline " orients all.");
 					trs#iter_rules (fun i _ -> trs#remove_rule i);
 				end else begin
-					solver#add_assertion
-						(trs#fold_eqs (fun i _ result -> EV(gt_e_v i) |^ result)
-						 (smt_exists (fun i -> EV(gt_r_v i)) current_usables)
-						);
+					solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
 					comment putdot;
 					solver#check;
 					comment (fun _ -> prerr_string " removes:");
@@ -2026,13 +2002,6 @@ class processor p (trs:Trs.t) dg =
 							comment(fun _ -> prerr_string " "; prerr_int i;);
 						end;
 					) current_usables;
-					trs#iter_eqs
-					(fun i _ ->
-						if solver#get_bool (EV(gt_e_v i)) then begin
-							trs#remove_eq i;
-							comment (fun _ -> prerr_string " e"; prerr_int i;);
-						end;
-					);
 					comment(fun _ -> prerr_newline ());
 				end;
 				proof output_proof;

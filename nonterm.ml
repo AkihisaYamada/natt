@@ -13,19 +13,19 @@ let prerr_dp i l r =
 	prerr_endline "  ->>";
 	;;
 
-let prerr_loop dg u =
+let prerr_loop (dg:Dp.dg) u =
 	let rec sub pos =
 		function
 		| [] -> ()
 		| [i] ->
-			let (l,r) = dg#find_dp i in
+			let (l,r,_) = dg#find_dp i in
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v l) in
 			prerr_string "   \t";
 			prerr_term l;
 			prerr_newline ();
 		| i::is ->
-			let (l,r) = dg#find_dp i in
+			let (l,r,_) = dg#find_dp i in
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v l) in
 			let r = u#subst (Subst.vrename v r) in
@@ -52,9 +52,9 @@ let estimate_paths len trs dg scc =
 	in
 	sub 0
 
-let find_loop lim trs dg scc =
+let find_loop lim trs (dg:Dp.dg) scc =
 	let iterer len nlim i1 =
-		let (l1,r1) = dg#find_dp i1 in
+		let (l1,r1,s) = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =
 			let cnt = ref 0 in
 			match path with
@@ -88,7 +88,7 @@ let find_loop lim trs dg scc =
 					| _ -> ();
 				end
 			| i3::rest ->
-				let (l3,r3) = dg#find_dp i3 in
+				let (l3,r3,_) = dg#find_dp i3 in
 				let v = string_of_int pos in
 				let l3 = Subst.vrename v l3 in
 				let r3 = Subst.vrename v r3 in
