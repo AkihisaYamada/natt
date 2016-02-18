@@ -26,7 +26,7 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 			List.iter (dig 0) ss;
 		end
 	in
-	let iterer _ (l,r,_) = dig 0 l; dig 0 r; in
+	let iterer _ rule = dig 0 rule#l; dig 0 rule#r; in
 	trs#iter_rules iterer;
 	dg#iter_dps iterer;
 
@@ -37,7 +37,7 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 			if fty = Fun then set_aa (>) fname d;
 		end
 	in
-	let iterer _ (l,r,_) = dig_hd 0 l; in
+	let iterer _ rule = dig_hd 0 rule#l; in
 	trs#iter_rules iterer;
 	dg#iter_dps iterer;
 
@@ -66,8 +66,8 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 			let ss = List.map uncurry_term ss in
 			(fty, fname, ss, 0, aa)
 	in
-	trs#iter_rules (fun i (l,r,s) -> trs#replace_rule_extra s i (uncurry_term l) (uncurry_term r););
-	dg#iter_dps (fun i (l,r,s) -> dg#replace_dp i (uncurry_term l, uncurry_term r, s););
+	trs#iter_rules (fun i rule -> trs#modify_rule i (uncurry_term rule#l) (uncurry_term rule#r););
+	dg#iter_dps (fun i dp -> dg#modify_dp i (uncurry_term dp#l) (uncurry_term dp#r););
 
 	let varlist name start count =
 		let last = start + count - 1 in
@@ -89,7 +89,7 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 					let l = Node(Fun, aname, !r :: new_args) in
 					args := !args @ new_args;
 					r := Node(Fun, uncurry_name fname i, !args);
-					trs#add_eq l !r;
+					trs#add_rule (weak_rule l !r);
 				done;
 			| _ -> raise (Internal "app")
 		end;
@@ -98,7 +98,7 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 
 exception Next
 
-let auto_uncurry trs dg =
+let auto_uncurry (trs:trs) (dg:dg) =
 	let tester aname =
 		let sub good bad =
 			let rec sub2 d (Node(fty,fname,ss)) =
@@ -126,8 +126,8 @@ let auto_uncurry trs dg =
 			let ngoods = ref 0 in
 			let nbads = ref 0 in
 			let add r n = r := !r + n in
-			let iterer_l _ (l,_,_) = sub (fun _ -> ()) (fun _ -> raise Next) l in
-			let iterer_r _ (_,r,_) = sub (add ngoods) (add nbads) r in
+			let iterer_l _ lr = sub (fun _ -> ()) (fun _ -> raise Next) lr#l in
+			let iterer_r _ lr = sub (add ngoods) (add nbads) lr#r in
 			trs#iter_rules iterer_l;
 			dg#iter_dps iterer_l;
 			trs#iter_rules iterer_r;

@@ -5,6 +5,8 @@ type symtype = Var | Fun | Th of string | Special
 type symname= string
 type term = Node of symtype * symname * term list
 
+let root (Node(_,fname,_)) = fname
+
 type 'a wterm = WT of symtype * symname * 'a wterm list * 'a
 
 let get_weight (WT(_,_,_,ws)) = ws
@@ -189,22 +191,10 @@ let rec output_term os =
 		match ts with
 		| []	-> if fty <> Var then output_string os "()";
 		| t::ts	-> output_string os "("; output_term os t; sub ts
-
-let output_rule os (l,r) =
-	output_term os l;
-	output_string os " -> ";
-	output_term os r
-
-let output_eq os (l,r) =
-	output_term os l;
-	output_string os " ->= ";
-	output_term os r
-
 let prerr_term = output_term stderr
 let prerr_terms = List.iter (fun t -> output_term stderr t; prerr_string " ")
 let prerr_wterm wt = output_term stderr (erase wt)
 let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wts
-let prerr_rule = output_rule stderr
 
 (* xml printers *)
 let rec output_xml_term os =
@@ -227,9 +217,45 @@ let rec output_xml_term os =
 			| t::ts	-> output_string os "<arg>"; output_xml_term os t; sub ts
 		end
 
-let output_xml_rule os (l,r) =
-	output_string os "<rule><lhs>";
-	output_xml_term os l;
-	output_string os "</lhs><rhs>";
-	output_xml_term os r;
-	output_string os "</rhs></rule>"
+(*** rules ***)
+type strength = StrictRule | MediumRule | WeakRule
+
+class rule s (l:term) (r:term) =
+	object (x)
+		val lhs = l
+		val rhs = r
+		val strength = s
+		method l = lhs
+		method r = rhs
+		method strength = strength
+		method size = size l + size r
+		method is_strict = strength = StrictRule
+		method is_medium = strength = MediumRule
+		method is_weak = strength = WeakRule
+		method is_duplicating = duplicating l r
+		method is_size_increasing = size l < size r || x#is_duplicating
+		method has_extra_variable =
+			let lvars = varlist l in
+			let rvars = varlist r in
+			List.exists (fun rvar -> not (List.mem rvar lvars)) rvars
+
+		method output os =
+			output_term os l;
+			output_string os (
+				match s with
+				| StrictRule -> " -> "
+				| WeakRule -> " ->= "
+				| _ -> " ->? ");
+			output_term os r
+		method output_xml os =
+			output_string os "<rule><lhs>";
+			output_xml_term os l;
+			output_string os "</lhs><rhs>";
+			output_xml_term os r;
+			output_string os "</rhs></rule>"
+	end
+
+let rule l r = new rule StrictRule l r
+let weak_rule l r = new rule WeakRule l r
+let medium_rule l r = new rule MediumRule l r
+

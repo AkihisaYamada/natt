@@ -61,7 +61,7 @@ let add_marked_symbol_ac =
 
 let add_marked_symbols trs =
 	let iterer fname finfo =
-		if trs#defines fname then begin
+		if trs#strictly_defines fname then begin
 			if finfo.symtype = Fun then begin
 				add_marked_symbol_default trs fname finfo;
 			end else begin
@@ -72,65 +72,77 @@ let add_marked_symbols trs =
 	Hashtbl.iter iterer trs#get_table;;
 
 let make_dp_table (trs:trs) minimal dp_table =
-	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
+	(* Relative: Moving duplicating or non-dominant weak rules to *medium* rules *)
 	while
-		trs#fold_rules (fun i (l,r,s) ret ->
-			if s = WeakRule && (duplicating l r || not(trs#const_term r)) then (
-				trs#replace_rule_extra MediumRule i l r;
+		trs#fold_rules (fun i rule ret ->
+			if rule#is_weak && (rule#is_duplicating || not(trs#relative_const rule#r)) then (
+				trs#replace_rule i (medium_rule rule#l rule#r);
 				true)
 			else ret
 		) false do () done;
 	(* minimality can be assumed if all weak rules are size preserving *)
-	minimal := trs#for_all_eqs (fun i (l,r) -> size l >= size r);
+	let tester i rule =
+		rule#is_weak && rule#is_size_increasing && (
+			log (fun _ ->
+				prerr_string "Detected size-increasing weak rule ";
+				prerr_int i;
+				prerr_endline ". Disabling minimality.";
+			); true)
+	in
+	if trs#exists_rule tester then begin
+		minimal := false;
+	end;
 
 	(* Main process *)
 	let cnt = ref 0 in
-	let add_dp l r strength =
+	let add_dp lr =
 		cnt := !cnt + 1;
-		Hashtbl.add dp_table (!cnt) (l,r,strength);
+		Hashtbl.add dp_table (!cnt) lr;
 	in
 	
 	add_marked_symbols trs;
 
 	(* Generating dependency pairs *)
-	let rec generate_dp_sub s strength (Node(gty,gname,ts) as t) =
-		if trs#defines gname && not (is_strict_subterm t s) then begin
-			add_dp s (mark_term t) strength;
+	let rec generate_dp_sub strength s (Node(gty,gname,ts) as t) =
+		if trs#strictly_defines gname && not (is_strict_subterm t s) then begin
+			add_dp (new rule strength s (mark_term t));
 		end;
-		List.iter (generate_dp_sub s strength) ts;
+		List.iter (generate_dp_sub strength s) ts;
 	in
-	let generate_dp_default _ (Node(fty,fname,_) as l, r, strength) =
-		generate_dp_sub (mark_term l) strength r
+	let generate_dp_default i rule =
+		generate_dp_sub rule#strength (mark_term rule#l) rule#r
 	in
 	let generate_dp =
 		match params.acdp_mode with
 		| ACDP_new -> generate_dp_default
 		| ACDP_KT98 ->
-			fun i (Node(fty,fname,_) as l, r, strength) ->
-				generate_dp_default i (l,r,strength);
+			fun i rule ->
+				let Node(fty,fname,_) = rule#l in
+				generate_dp_default i rule;
 				if fty = Th "AC" then begin
-					let xl = ext_ac fty fname l in
-					let xr = ext_ac fty fname r in
-					add_dp (mark_term xl) (mark_term xr) strength;
+					let xl = ext_ac fty fname rule#l in
+					let xr = ext_ac fty fname rule#r in
+					add_dp (new rule rule#strength (mark_term xl) (mark_term xr));
 				end;
 		| _ ->
-			fun i (Node(fty,fname,_) as l, r, strength) ->
-				generate_dp_default i (l,r,strength);
+			fun i rule ->
+				let Node(fty,fname,_) = rule#l in
+				generate_dp_default i rule;
 				if fty = Th "AC" then begin
-					let xl = ext_ac fty fname l in
-					let xr = ext_ac fty fname r in
-					generate_dp_default i (xl, xr, strength);
+					let xl = ext_ac fty fname rule#l in
+					let xr = ext_ac fty fname rule#r in
+					generate_dp_default i (new rule rule#strength xl xr);
 				end;
 	in
-	trs#iter_rules generate_dp;
+	trs#iter_rules (fun i rule -> if not rule#is_weak then generate_dp i rule;);
 
 	(* Additional rules for AC *)
 	let add_eq s t =
-		trs#add_eq s t;
-		problem (fun os -> trs#output_last_eq os);
+		trs#add_rule (weak_rule s t);
+		problem trs#output_last_rule;
 	in
 	let ac_mark_handle fname finfo =
-		if finfo.symtype = Th "AC" && trs#defines fname then begin
+		if finfo.symtype = Th "AC" && trs#strictly_defines fname then begin
 			let u s t = Node(finfo.symtype, fname, [s;t]) in
 			let m =
 				if params.ac_mark_mode = AC_mark then
@@ -163,11 +175,11 @@ let make_dp_table (trs:trs) minimal dp_table =
 				add_eq (m (u x y) z) (m x y);
 			| ACDP_new ->
 				if params.ac_mark_mode = AC_mark then begin
-					add_dp (m (u x y) z) (m x (u y z)) WeakRule;
-(*					add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+					add_dp (weak_rule (m (u x y) z) (m x (u y z)));
+(*					add_dp (weak_rule (m x (u y z)) (m (u x y) z));
 *)				end;
-				add_dp (m (u x y) z) (m y z) WeakRule;
-(*				add_dp (m x (u y z)) (m x y) WeakRule;
+				add_dp (weak_rule (m (u x y) z) (m y z));
+(*				add_dp (weak_rule (m x (u y z)) (m x y));
 *)		end;
 	in
 	Hashtbl.iter ac_mark_handle trs#get_table;;
@@ -176,7 +188,7 @@ let make_dp_table (trs:trs) minimal dp_table =
 (* For the new AC-DP *)
 let add_marked_symbols_ac trs =
 	let iterer fname finfo =
-		if finfo.symtype <> Fun && trs#defines fname then begin
+		if finfo.symtype <> Fun && trs#strictly_defines fname then begin
 			add_marked_symbol_ac trs fname finfo;
 		end;
 	in
@@ -184,15 +196,16 @@ let add_marked_symbols_ac trs =
 
 let make_ac_ext (trs:trs) dp_table =
 	let cnt = ref 0 in
-	let add_dp l r strength =
+	let add_dp rule =
 		cnt := !cnt + 1;
-		Hashtbl.add dp_table (!cnt) (l,r,strength);
+		Hashtbl.add dp_table (!cnt) rule;
 	in
-	let generate_dp i (Node(fty,fname,_) as l, r, strength) =
-		if strength = StrictRule && fty = Th "AC" then begin
-			let xl = ext_ac fty fname l in
-			let xr = ext_ac fty fname r in
-			add_dp (mark_term xl) (mark_term xr) strength;
+	let generate_dp i rule =
+		let Node(fty,fname,_) = rule#l in
+		if rule#is_strict && fty = Th "AC" then begin
+			let xl = ext_ac fty fname rule#l in
+			let xr = ext_ac fty fname rule#r in
+			add_dp (new rule rule#strength (mark_term xl) (mark_term xr));
 		end;
 	in
 	trs#iter_rules generate_dp;
@@ -207,11 +220,11 @@ let make_ac_ext (trs:trs) dp_table =
 			let y = var "_2" in
 			let z = var "_3" in
 			if params.ac_mark_mode = AC_mark then begin
-				add_dp (m (u x y) z) (m x (u y z)) WeakRule;
-(*				add_dp (m x (u y z)) (m (u x y) z) WeakRule;
+				add_dp (weak_rule (m (u x y) z) (m x (u y z)));
+(*				add_dp (weak_rule (m x (u y z)) (m (u x y) z));
 *)			end;
-			add_dp (m (u x y) z) (m y z) WeakRule;
-(*			add_dp (m x (u y z)) (m x y) WeakRule;
+			add_dp (weak_rule (m (u x y) z) (m y z));
+(*			add_dp (weak_rule (m x (u y z)) (m x y));
 *)		end;
 	in
 	Hashtbl.iter ac_mark_handle trs#get_table;
@@ -236,17 +249,19 @@ module SubComponents = Graph.Components.Make(SubDG)
 
 (* Estimated dependency graph *)
 
-let make_dg trs dp_table dg =
-	let edged_KT98 (_,(Node(fty,fname,rs) as r),_) (l,_,_) =
+let make_dg (trs:trs) dp_table dg =
+	let edged_KT98 src tgt =
+		let Node(fty,_,_) = src#l in
 		if fty = Th "AC" then
-			List.exists (fun r' -> trs#estimate_edge r' l) (top_ac_subterms r)
-		else trs#estimate_edge r l
+			List.exists (fun r' -> trs#estimate_edge r' tgt#l) (top_ac_subterms src#r)
+		else trs#estimate_edge src#r tgt#l
 	in
 	let edged =
 		if params.acdp_mode = ACDP_KT98 then edged_KT98
-		else fun (_,r,_) (l,_,_) -> trs#estimate_edge r l
+		else fun src tgt -> trs#estimate_edge src#r tgt#l
 	in
 	trs#init_sym_graph;
+	log trs#output_sym_graph;
 	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 	Hashtbl.iter
 	(fun i1 dp1 ->
@@ -277,24 +292,29 @@ class dg (trs:trs) =
 		method init = make_dp_table trs min dp_table; make_dg trs dp_table dg;
 		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs dp_table dg;
 		method minimal = !min
-		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
-		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
 		method get_subsccs dpset = ll2ls (get_subsccs dg dpset)
 		method get_size = Hashtbl.length dp_table
 		method find_dp = Hashtbl.find dp_table
-		method get_dp_size i = let (l,r,_) = x#find_dp i in size l + size r
+		method get_dp_size i = let dp = x#find_dp i in dp#size
 		method iter_dps f = Hashtbl.iter f dp_table
 		method get_dps = Hashtbl.fold (fun i dp dps -> (i,dp)::dps) dp_table []
-		method output_dps os = output_tbl os output_rule "   #" dp_table
-		method is_strict i = let (_,_,s) = Hashtbl.find dp_table i in s = StrictRule
-		method is_weak i = let (_,_,s) = Hashtbl.find dp_table i in s = WeakRule
+		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
+		method replace_dp i dp = Hashtbl.replace dp_table i dp;
+		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
+		method output_dps os = output_tbl os "   #" dp_table
 		method iter_edges f = DG.iter_edges f dg
-		method output os =
-			output_string os "Edges: {";
-			x#iter_edges (fun i j ->
-				output_string os ("\n   #" ^ string_of_int i ^ " -> #" ^ string_of_int j));
-			output_string os " }\n";
+		method output_edges os =
+			output_string os "Edges:\n";
+			let iterer i _ =
+				let succ = DG.succ dg i in
+				if succ <> [] then begin
+					output_string os ("  #" ^ string_of_int i ^ " -->");
+					Abbrev.output_int_list os " #" (List.sort compare succ);
+					output_char os '\n';
+				end;
+			in
+			x#iter_dps iterer;
 
 	end;;

@@ -1,6 +1,8 @@
 open Util
 open Params
 open Term
+open Trs
+open Dp
 
 let prerr_dp i l r =
 	prerr_string "\t";
@@ -13,28 +15,28 @@ let prerr_dp i l r =
 	prerr_endline "  ->>";
 	;;
 
-let prerr_loop (dg:Dp.dg) u =
+let prerr_loop (dg:dg) u =
 	let rec sub pos =
 		function
 		| [] -> ()
 		| [i] ->
-			let (l,r,_) = dg#find_dp i in
+			let dp = dg#find_dp i in
 			let v = string_of_int pos in
-			let l = u#subst (Subst.vrename v l) in
+			let l = u#subst (Subst.vrename v dp#l) in
 			prerr_string "   \t";
 			prerr_term l;
 			prerr_newline ();
 		| i::is ->
-			let (l,r,_) = dg#find_dp i in
+			let dp = dg#find_dp i in
 			let v = string_of_int pos in
-			let l = u#subst (Subst.vrename v l) in
-			let r = u#subst (Subst.vrename v r) in
+			let l = u#subst (Subst.vrename v dp#l) in
+			let r = u#subst (Subst.vrename v dp#r) in
 			prerr_dp i l r;
 			sub (pos+1) is;
 	in
 	sub 1
 
-let estimate_paths len trs dg scc =
+let estimate_paths len (trs:trs) (dg:dg) scc =
 	let subdg = dg#get_subdg scc in
 	let rec sub n i k =
 		if n > len then []
@@ -52,16 +54,16 @@ let estimate_paths len trs dg scc =
 	in
 	sub 0
 
-let find_loop lim trs (dg:Dp.dg) scc =
+let find_loop lim (trs:trs) (dg:dg) scc =
 	let iterer len nlim i1 =
-		let (l1,r1,s) = dg#find_dp i1 in
+		let dp1 = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =
 			let cnt = ref 0 in
 			match path with
 			| [] ->
 				begin
-					let l1 = u1#subst l1 in
-					let r1 = u1#subst r1 in
+					let l1 = u1#subst dp1#l in
+					let r1 = u1#subst dp1#r in
 					let l2 = u1#subst l2 in
 					match Subst.matches l2 l1 with
 					| Some(u2) ->
@@ -88,13 +90,15 @@ let find_loop lim trs (dg:Dp.dg) scc =
 					| _ -> ();
 				end
 			| i3::rest ->
-				let (l3,r3,_) = dg#find_dp i3 in
+				let dp3 = dg#find_dp i3 in
 				let v = string_of_int pos in
-				let l3 = Subst.vrename v l3 in
-				let r3 = Subst.vrename v r3 in
-				List.iter
-				(fun (c2,u2) -> sub (pos + 1) loop (u1#compose u2) l3 r3 rest (strict || dg#is_strict i3);)
-				(Trs.instantiate_edge trs cnt nlim (u1#subst r2) l3);
+				let l3 = Subst.vrename v dp3#l in
+				let r3 = Subst.vrename v dp3#r in
+				let iterer (c2,u2) =
+					sub (pos + 1) loop (u1#compose u2) l3 r3 rest
+					(strict || (dg#find_dp i3)#is_strict)
+				in
+				List.iter iterer (instantiate_edge trs cnt nlim (u1#subst r2) l3);
 		in
 		let iterer2 loop =
 			debug2
@@ -104,7 +108,7 @@ let find_loop lim trs (dg:Dp.dg) scc =
 				List.iter (fun i -> prerr_string " -> #"; prerr_int i;) loop;
 				flush stderr;
 			);
-			sub 1 loop (new Subst.t) l1 r1 loop (dg#is_strict i1);
+			sub 1 loop (new Subst.t) dp1#l dp1#r loop (dg#find_dp i1)#is_strict;
 			debug2 (fun _ -> prerr_newline ());
 		in
 		List.iter iterer2 (estimate_paths len trs dg scc i1 i1);

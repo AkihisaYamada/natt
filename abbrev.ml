@@ -36,3 +36,6 @@ class ['a] t os printer prefix infix continuous =
 class for_int os prefix =
 	[int] t os output_int (fun os -> output_string os prefix) output_dots continuous_int
 
+let output_int_list os prefix is =
+	let folder abbr i = abbr#add i in
+	(List.fold_left folder (new for_int os prefix) is)#close

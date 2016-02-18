@@ -1,6 +1,7 @@
 open Params
 open Term
 open Trs
+open Dp
 open Util
 
 type result =
@@ -9,21 +10,21 @@ type result =
 | NO
 
 (* static usable rules *)
-let static_usable_rules (trs:trs) dg used_dpset =
+let static_usable_rules (trs:trs) (dg:dg) used_dpset =
 	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,_,ts) as t) =
 			let iterer i =
 				if not (Hashtbl.mem used i) then begin
-					let (_,r,_) = trs#find_rule i in
+					let rule = trs#find_rule i in
 					Hashtbl.add used i ();
-					sub r;
+					sub rule#r;
 				end;
 			in
 			List.iter iterer (trs#find_matchable t);
 			List.iter sub ts;
 		in
-		IntSet.iter (fun i -> let (_,Node(_,_,ts),_) = dg#find_dp i in List.iter sub ts) used_dpset;
+		IntSet.iter (fun i -> let Node(_,_,ts) = (dg#find_dp i)#r in List.iter sub ts) used_dpset;
 	
 		trs#fold_rules
 		(fun i _ (usables,unusables) ->
@@ -36,7 +37,7 @@ let static_usable_rules (trs:trs) dg used_dpset =
 
 let uncurry =
 	if params.uncurry then
-		fun (trs:trs) dg ->
+		fun (trs:trs) (dg:dg) ->
 			comment (fun _ -> prerr_string "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
 			if StrSet.is_empty appsyms then
@@ -55,8 +56,8 @@ let uncurry =
 
 
 let relative_test (trs:trs) =
-	trs#exists_rule (fun i (l,r,s) ->
-		if s <> StrictRule && duplicating l r then (
+	trs#exists_rule (fun i rule ->
+		if rule#is_weak && rule#is_duplicating then (
 			comment (fun os ->
 				output_string os "Weak rule e";
 				output_string os (string_of_int i);
@@ -64,7 +65,7 @@ let relative_test (trs:trs) =
 				flush os;
 			);
 			true
-		) else if not(trs#const_term r) then (
+		) else if not(trs#const_term rule#r) then (
 			comment (fun os ->
 				output_string os "Weak rule e";
 				output_string os (string_of_int i);
@@ -89,11 +90,8 @@ let theory_test (trs:trs) =
 
 (* extra variable test *)
 let extra_test (trs:trs) =
-	let iterer i (l,r,s) =
-		let lvars = varlist l in
-		let rvars = varlist r in
-		if List.exists (fun rvar -> not (List.mem rvar lvars)) rvars then
-		begin
+	let iterer i rule =
+		if rule#has_extra_variable then begin
 			proof
 			(fun _ ->
 				prerr_string "Extra variable in rule ";
@@ -106,22 +104,31 @@ let extra_test (trs:trs) =
 	trs#iter_rules iterer;;
 
 (* remove trivial relative rules *)
-let clean_eqs (trs:trs) =
-	let iterer i (l,r) =
-		if l = r then begin
-			proof (fun _ ->
-				prerr_string "Removing trivial relative rule e";
-				prerr_int i;
-				prerr_endline ".";
-			);
-			trs#remove_eq i;
+let trivial_test (trs:trs) =
+	let iterer i rule =
+		if rule#l = rule#r then begin
+			if rule#is_strict then begin
+				proof (fun _ ->
+					prerr_string "Trivially nonterminating rule ";
+					prerr_int i;
+					prerr_endline "."
+				);
+				raise Nonterm;
+			end else if rule#is_weak then begin
+				proof (fun _ ->
+					prerr_string "Removing trivial weak rule e";
+					prerr_int i;
+					prerr_endline ".";
+				);
+				trs#remove_rule i;
+			end;
 		end;
 	in
-	trs#iter_eqs iterer;;
+	trs#iter_rules iterer;;
 
 
 (* rule removal processor *)
-let dummy_dg = new Dp.dg (new trs)
+let dummy_dg = new dg (new trs)
 
 let rule_remove (trs:trs) =
 	if Array.length params.orders_removal > 0 then begin
@@ -152,7 +159,7 @@ let rule_remove (trs:trs) =
 	end;;
 
 (* reduction pair processor *)
-let dp_remove (trs:trs) dg =
+let dp_remove (trs:trs) (dg:dg) =
 	let sccs = ref dg#get_sccs in
 	let remove_unusable () =
 		let init = ref true in
@@ -231,7 +238,7 @@ let dp_remove (trs:trs) dg =
 				(IntSet.fold folder scc (new Abbrev.for_int stderr " #"))#close;
 				prerr_string " }\n    ";
 			);
-			if IntSet.for_all dg#is_weak scc then begin
+			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
 				comment (fun _ -> prerr_endline "only weak rules.");
 				sccs := rest;
 				loop ();
@@ -239,7 +246,7 @@ let dp_remove (trs:trs) dg =
 				let sccref = ref scc in
 				if remove_strict sccref then begin
 					sccs := scc_sorter (dg#get_subsccs !sccref) @ rest;
-					log dg#output;
+					log dg#output_edges;
 					loop ();
 				end else begin
 					comment
@@ -276,7 +283,7 @@ let prove_termination (trs:trs) =
 
 		extra_test trs;
 
-		clean_eqs trs;
+		trivial_test trs;
 
 		rule_remove trs;
 
@@ -285,13 +292,13 @@ let prove_termination (trs:trs) =
 		if params.mode = MODE_order then raise Unknown;
 		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
-		let dg = new Dp.dg trs in
+		let dg = new dg trs in
 		dg#init;
 		problem (fun _ ->
 			prerr_endline "Dependency Pairs:";
 			dg#output_dps stderr;
 		);
-		log dg#output;
+		log dg#output_edges;
 
 		dp_remove trs dg;
 		MAYBE
@@ -342,8 +349,7 @@ class main =
 
 		method no_ac = not(StrSet.mem "AC" trs#get_ths)
 
-		method duplicating =
-			trs#exists_rule (fun _ (l,r,_) -> dupvarlist l r <> [])
+		method duplicating = trs#exists_rule (fun _ rule -> rule#is_duplicating)
 
 		method run =
 			if params.file = "" then
@@ -365,29 +371,29 @@ class main =
 			| MODE_through ->
 				trs#output stdout;
 			| MODE_flat ->
-				trs#iter_rules (fun i (l,r,s) -> trs#replace_rule_extra s i (flat l) (flat r));
+				trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
 				trs#output stdout;
 			| MODE_uncurry ->
-				ignore (App.auto_uncurry trs (new Dp.dg trs));
+				ignore (App.auto_uncurry trs (new dg trs));
 				trs#output stdout;
 			| MODE_simple ->
-				if trs#exists_rule (fun _ (l,r,_) -> emb_le l r) then
+				if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then
 					err "Not simple";
 			| MODE_dup	->
 				if x#duplicating then err "Duplicating TRS";
 				warn "Non-duplicating TRS";
 				exit 0;
 			| MODE_id	->
-				trs#iter_rules (fun i (l,r,_) -> if term_eq l r then trs#remove_rule i);
+				trs#iter_rules (fun i rule -> if term_eq rule#l rule#r then trs#remove_rule i);
 				trs#output_wst stdout;
 			| MODE_dist	->
-				let sub _ (l,r,_) =
-					match r with
+				let tester _ rule =
+					match rule#r with
 					| Node(Th "AC",_,
 						[Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
 						 Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
 						]) ->
-						(match l with
+						(match rule#l with
 						 | Node(Th "AC",_,
 						 	[Node(Var,_,_);
 							 Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
@@ -400,7 +406,7 @@ class main =
 						)
 					| _ -> false
 				in
-				if trs#exists_rule sub then
+				if trs#exists_rule tester then
 					print_endline "Distribution like rule"
 				else if x#duplicating then
 					print_endline "Duplicating TRS"

@@ -1,6 +1,7 @@
 open Util
 open Term
 open Trs
+open Dp
 open Smt
 open Preorder
 open Params
@@ -89,7 +90,7 @@ let default_finfo symtype arity =
 let rec emb_le (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 	s = t || List.exists (emb_le s) ts || fname = gname && List.for_all2 emb_le ss ts
 
-class processor p (trs:trs) dg =
+class processor p (trs:trs) (dg:dg) =
 
 	(* SMT variables *)
 
@@ -492,7 +493,7 @@ class processor p (trs:trs) dg =
 
 (*** Usable rules ***)
 	let usable =
-		if p.dp && p.usable then
+		if p.dp && dg#minimal && p.usable then
 			fun i -> EV(usable_v i)
 		else
 			fun _ -> LB true
@@ -1522,7 +1523,7 @@ class processor p (trs:trs) dg =
 					prerr_newline ();
 		in
 		let prerr_usable =
-			if p.dp && p.usable || params.debug then
+			if p.dp && dg#minimal && p.usable || params.debug then
 				let folder abbr (i,_) =
 					if solver#get_bool (usable i) then
 						abbr#add i
@@ -1719,13 +1720,13 @@ class processor p (trs:trs) dg =
 					Hashtbl.replace sigma fname (transform_finfo fname);
 				List.iter sub ss;
 			in
-			List.iter (fun (_,(l,r,_)) -> sub l; sub r;) !usables;
+			List.iter (fun (_,rule) -> sub rule#l; sub rule#r;) !usables;
 			let sub_dp (Node(fty,fname,ss)) =
 				if not (Hashtbl.mem sigma fname) then
 					Hashtbl.add sigma fname (transform_finfo fname);
 				List.iter sub ss;
 			in
-			List.iter (fun (_,(l,r,_)) -> sub_dp l; sub_dp r;) !dplist;
+			List.iter (fun (_,dp) -> sub_dp dp#l; sub_dp dp#r;) !dplist;
 
 			(* count nesting *)
 			if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
@@ -1736,7 +1737,7 @@ class processor p (trs:trs) dg =
 						Mset.union (Mset.singleton fname)
 							(List.fold_left Mset.join Mset.empty (List.map nest_term ss))
 				in
-				let nest_rule (l,r,_) = Mset.join (nest_term l) (nest_term r) in
+				let nest_rule rule = Mset.join (nest_term rule#l) (nest_term rule#r) in
 				let nest_rules =
 					fun rules ->
 						List.fold_left Mset.join Mset.empty
@@ -1784,8 +1785,8 @@ class processor p (trs:trs) dg =
 							set_max_finfo gname (lookup gname)
 						then raise Continue;
 					in
-					let annote_sub (_, (Node(_,fname,_) as s,t,_)) =
-						sub (annote_vs s) (annote_vs t);
+					let annote_sub (_,lr) =
+						sub (annote_vs lr#l) (annote_vs lr#r);
 					in
 					let rec loop rulelist =
 						try List.iter annote_sub rulelist with Continue -> loop rulelist
@@ -1843,15 +1844,18 @@ class processor p (trs:trs) dg =
 			List.iter (fun (i,_) -> add_usable i) !usables;
 			try
 				debug2 (fun _ -> prerr_string "    Rules: {"; flush stderr;);
-				let iterer (i,(Node(_,fname,_) as l,r,_)) =
+				let iterer (i,rule) =
+					let fname = root rule#l in
 					debug2 (fun _ -> prerr_char ' '; prerr_int i; flush stderr;);
-					let (WT(_,_,_,lw) as la) = annote l in
-					let (WT(_,_,_,rw) as ra) = annote r in
+					let (WT(_,_,_,lw) as la) = annote rule#l in
+					let (WT(_,_,_,rw) as ra) = annote rule#r in
 
 					if p.dp then begin
 						if p.usable_w then begin
-							solver#add_assertion (usable_w i =>^ set_usable argfilt usable_w r);
-							solver#add_assertion (usable i =>^ set_usable permed usable r);
+							solver#add_assertion
+								(usable_w i =>^ set_usable argfilt usable_w rule#r);
+							solver#add_assertion
+								(usable i =>^ set_usable permed usable rule#r);
 							let wge, wgt = split (wo lw rw) solver in
 							let wge = solver#refer Bool wge in
 							solver#add_assertion (usable_w i =>^ wge);
@@ -1864,8 +1868,10 @@ class processor p (trs:trs) dg =
 								solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
 							end;
 						end else if p.usable then begin
-							solver#add_assertion (usable i =>^ set_usable argfilt usable r);
-							solver#add_assertion (usable i =>^ weakly (frame la ra));
+							solver#add_assertion
+								(usable i =>^ set_usable argfilt usable rule#r);
+							solver#add_assertion 
+								(usable i =>^ weakly (frame la ra));
 						end else begin
 							solver#add_assertion (weakly (frame la ra));
 						end;
@@ -1882,9 +1888,9 @@ class processor p (trs:trs) dg =
 				debug2 (fun _ -> prerr_endline " }");
 
 				debug2 (fun _ -> prerr_string "    DPs: {"; flush stderr;);
-				let iterer i (l,r,_) =
+				let iterer i dp =
 					debug2 (fun _ -> prerr_string " #"; prerr_int i; flush stderr;);
-					let (ge,gt) = split (frame (annote l) (annote r)) solver in
+					let (ge,gt) = split (frame (annote dp#l) (annote dp#r)) solver in
 					solver#add_definition (ge_v i) Bool ge;
 					solver#add_definition (gt_v i) Bool gt;
 				in
@@ -1938,12 +1944,12 @@ class processor p (trs:trs) dg =
 					IntSet.fold
 					(fun i some_gt ->
 						solver#add_assertion (EV(ge_v i));
-						let (_,t,_) = dg#find_dp i in
+						let dp = dg#find_dp i in
 						if p.usable_w then begin
-							solver#add_assertion (set_usable_inner argfilt usable_w t);
-							solver#add_assertion (set_usable_inner permed usable t);
+							solver#add_assertion (set_usable_inner argfilt usable_w dp#r);
+							solver#add_assertion (set_usable_inner permed usable dp#r);
 						end else begin
-							solver#add_assertion (set_usable_inner argfilt usable t);
+							solver#add_assertion (set_usable_inner argfilt usable dp#r);
 						end;
 						EV(gt_v i) |^ some_gt
 					) !sccref (LB false)

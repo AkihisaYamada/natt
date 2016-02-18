@@ -4,7 +4,6 @@ open Subst
 
 
 type arity = Unknown | Arity of int
-type strength = StrictRule | MediumRule | WeakRule
 
 exception ExistsConditionalRule
 exception ExistsEquation
@@ -26,7 +25,7 @@ type finfo =
 	mutable symtype : symtype;
 	mutable arity : arity;
 	mutable defined_by : Rules.t;
-	mutable equated_by : Rules.t;
+	mutable weakly_defined_by : Rules.t;
 	mutable stable : bool;
 }
 
@@ -35,25 +34,21 @@ let var_finfo =
 	symtype = Var;
 	arity = Unknown;
 	defined_by = Rules.empty;
-	equated_by = Rules.empty;
+	weakly_defined_by = Rules.empty;
 	stable = false;
 }
 
-let output_tbl_index os output prefix (i,(l,r,strength)) =
+let output_tbl_index os prefix (i,rule) =
 	output_string os prefix;
 	output_string os (string_of_int i);
 	output_string os ": ";
-	output os (l,r);
-	begin match strength with
-		| WeakRule -> output_string os "\t[weak]\n"
-		| MediumRule -> output_string os "\t[medium]\n"
-		| StrictRule -> output_char os '\n'
-	end;
+	rule#output os;
+	output_char os '\n';
 	flush os;;
 
-let output_tbl os output prefix ruletbl =
-	List.iter (output_tbl_index os output prefix)
-	(List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i rule l -> (i,rule)::l) ruletbl []))
+let output_tbl os prefix ruletbl =
+	List.iter (output_tbl_index os prefix)
+	(List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i lr l -> (i,lr)::l) ruletbl []))
 
 let hashtbl_exists test hashtbl =
 	try
@@ -90,7 +85,7 @@ class trs =
 					symtype = Fun;
 					arity = Unknown;
 					defined_by = Rules.empty;
-					equated_by = Rules.empty;
+					weakly_defined_by = Rules.empty;
 					stable = true;
 				}
 			in
@@ -103,19 +98,21 @@ class trs =
 		method has_constructor fname = 
 			let finfo = x#find_sym fname in
 			finfo.symtype <> Var && Rules.is_empty finfo.defined_by
-		method defines fname =
+		method strictly_defines fname =
 			try not (Rules.is_empty (Hashtbl.find sym_table fname).defined_by)
+			with Not_found -> false
+		method defines fname =
+			try let finfo = Hashtbl.find sym_table fname in
+				not (Rules.is_empty finfo.defined_by) ||
+				not (Rules.is_empty finfo.weakly_defined_by)
 			with Not_found -> false
 		method stable fname =
 			try (Hashtbl.find sym_table fname).stable
 			with Not_found -> true
-		method undefine fname i =
-			let finfo = x#get_sym fname in
-			finfo.defined_by <- Rules.remove i finfo.defined_by;
-			if Rules.is_empty finfo.defined_by then
-				defsyms <- Syms.remove fname defsyms;
 		method const_term (Node(fty,fname,ss)) =
 			(fty = Var || not(x#defines fname)) && List.for_all x#const_term ss
+		method relative_const (Node(fty,fname,ss)) =
+			(fty = Var || not(x#strictly_defines fname)) && List.for_all x#relative_const ss
 		method init_sym_graph =
 			SymG.add_vertex sym_g ""; (* this vertex represents arbitrary symbol *)
 			let add_sym fname finfo =
@@ -125,7 +122,9 @@ class trs =
 				end;
 			in
 			Hashtbl.iter add_sym sym_table;
-			let add_edge _ (Node(_,fname,_),Node(gty,gname,_),_) =
+			let add_edge _ lr =
+				let Node(_,fname,_) = lr#l in
+				let Node(gty,gname,_) = lr#r in
 				SymG.add_edge sym_g fname (if gty = Var then "" else gname);
 			in
 			Hashtbl.iter add_edge rule_table;
@@ -134,51 +133,41 @@ class trs =
 		method trans_sym fname gname = SymG.mem_edge sym_g fname gname
 (* methods for rules *)
 		method find_rule = Hashtbl.find rule_table
-		method find_eq i = let (l,r,_) = Hashtbl.find rule_table i in (l,r)
 		method iter_rules f = Hashtbl.iter f rule_table
-		method iter_rules_strict f =
-			Hashtbl.iter (fun i (l,r,s) -> if s = StrictRule then f i (l,r)) rule_table
-		method iter_eqs f =
-			Hashtbl.iter (fun i (l,r,s) -> if s = WeakRule then f i (l,r)) rule_table
 		method for_all_rules f = hashtbl_for_all f rule_table
-		method for_all_rules_strict f =
-			hashtbl_for_all (fun i (l,r,s) -> s <> StrictRule || f i (l,r)) rule_table
-		method for_all_eqs f =
-			hashtbl_for_all (fun i (l,r,s) -> s <> WeakRule || f i (l,r)) rule_table
 		method exists_rule f = hashtbl_exists f rule_table
-		method fold_rules : 'a. (int -> term * term * strength -> 'a -> 'a) -> 'a -> 'a =
+		method fold_rules : 'a. (int -> rule -> 'a -> 'a) -> 'a -> 'a =
 			fun f a -> Hashtbl.fold f rule_table a
-		method fold_eqs : 'a. (int -> term * term -> 'a -> 'a) -> 'a -> 'a =
-			fun f a ->
-				let folder i (l,r,s) aa = if s = WeakRule then f i (l,r) aa else aa in
-				 Hashtbl.fold folder rule_table a
-		method add_rule_extra s (Node(_,fname,_) as l) (Node(gty,gname,_) as r) =
+		method private add_rule_i i rule =
+			let f = root rule#l in
+			let g = root rule#r in
+			let finfo = x#get_sym f in
+			finfo.stable <- finfo.stable && f = g;
+			Hashtbl.add rule_table i rule;
+			if rule#is_weak then begin
+				finfo.weakly_defined_by <- Rules.add i finfo.weakly_defined_by;
+			end else begin
+				finfo.defined_by <- Rules.add i finfo.defined_by;
+				strict_rule_cnt <- strict_rule_cnt + 1;
+			end;
+		method add_rule rule =
 			rule_cnt <- rule_cnt + 1;
-			if s = StrictRule then strict_rule_cnt <- strict_rule_cnt + 1;
-			defsyms <- Syms.add fname defsyms;
-			Hashtbl.add rule_table rule_cnt (l,r,s);
-			let finfo = x#get_sym fname in
-			finfo.defined_by <- Rules.add rule_cnt finfo.defined_by;
-			finfo.stable <- finfo.stable && fname = gname;
-		method add_rule = x#add_rule_extra StrictRule;
-		method add_eq = x#add_rule_extra WeakRule
-		method replace_rule_extra strength i (Node(_,fname,_) as l) (Node(_,gname,_) as r) =
-			let (Node(_,hname,_),_,s) = Hashtbl.find rule_table i in
-			x#undefine hname i;
-			if s = StrictRule then strict_rule_cnt <- strict_rule_cnt - 1;
-			let finfo = x#get_sym fname in
-			finfo.stable <- finfo.stable && fname = gname;
-			Hashtbl.replace rule_table i (l,r,strength);
-			finfo.defined_by <- Rules.add i finfo.defined_by;
-			if strength = StrictRule then strict_rule_cnt <- strict_rule_cnt + 1;
-		method replace_rule = x#replace_rule_extra StrictRule
-		method replace_eq = x#replace_rule_extra WeakRule
+			x#add_rule_i rule_cnt rule;
 		method remove_rule i =
-			let (Node(_,fname,_),_,s) = Hashtbl.find rule_table i in
-			x#undefine fname i;
+			let rule = Hashtbl.find rule_table i in
+			let finfo = Hashtbl.find sym_table (root rule#l) in
+			if rule#is_weak then begin
+				finfo.weakly_defined_by <- Rules.remove i finfo.weakly_defined_by;
+			end else begin
+				finfo.defined_by <- Rules.remove i finfo.defined_by;
+				strict_rule_cnt <- strict_rule_cnt - 1;
+			end;
 			Hashtbl.remove rule_table i;
-			if s = StrictRule then strict_rule_cnt <- strict_rule_cnt - 1;
-		method remove_eq = x#remove_rule
+		method replace_rule i lr =
+			x#remove_rule i;
+			x#add_rule_i i lr;
+		method modify_rule i l r =
+			x#replace_rule i (new rule (x#find_rule i)#strength l r)
 
 (* input *)
 		method private trans_term (Trs_ast.Term ((_,fname),ss)) =
@@ -186,13 +175,16 @@ class trs =
 			if finfo.arity = Unknown then
 				finfo.arity <- Arity (List.length ss);
 			Node(finfo.symtype, fname, List.map (x#trans_term) ss)
-		method private add_rule_raw rule =
-			match rule with
-			| Trs_ast.Rew ([],l,r)		-> x#add_rule (x#trans_term l) (x#trans_term r);
-			| Trs_ast.RelRew ([],l,r)	-> x#add_eq (x#trans_term l) (x#trans_term r);
+		method private add_rule_raw =
+			function
+			| Trs_ast.Rew ([],l,r)		-> x#add_rule (rule (x#trans_term l) (x#trans_term r));
+			| Trs_ast.RelRew ([],l,r)	-> x#add_rule (weak_rule (x#trans_term l) (x#trans_term r));
 			| _ 				-> raise ExistsConditionalRule
 		method private add_eq_raw (l,r) =
-			x#add_eq (x#trans_term l) (x#trans_term r);
+			let l = x#trans_term l in
+			let r = x#trans_term r in
+			x#add_rule (weak_rule l r);
+			x#add_rule (weak_rule r l);
 		method private add_theory_raw =
 			function
 			| Trs_ast.Equations eqs -> List.iter (x#add_eq_raw) eqs
@@ -229,14 +221,12 @@ class trs =
 			in
 			Ths.iter iterer_th ths;
 		method output_rules os =
-			output_tbl os output_rule "    " rule_table;
-		method output_eqs os = ()
-		method output_last_eq os =
-			output_tbl_index os output_rule "   " (rule_cnt, Hashtbl.find rule_table rule_cnt);
+			output_tbl os "    " rule_table;
+		method output_last_rule os =
+			output_tbl_index os "   " (rule_cnt, Hashtbl.find rule_table rule_cnt);
 		method output os =
 			x#output_ths os;
 			x#output_rules os;
-			x#output_eqs os;
 		method output_wst os =
 			output_string os "(VAR";
 			let iterer_var fname finfo =
@@ -247,20 +237,45 @@ class trs =
 			in
 			Hashtbl.iter iterer_var sym_table;
 			output_string os ")\n(RULES\n";
-			let iterer_rule _ (l,r,s) =
+			let iterer_rule _ rule =
 				output_string os "\t";
-				begin
-					match s with
-					| StrictRule -> output_rule os (l,r);
-					| _ -> output_eq os (l,r);
-				end;
+				rule#output os;
 				output_string os "\n";
 			in
 			x#iter_rules iterer_rule;
 			output_string os ")\n";
+		method output_sym_graph os =
+			output_string os "Symbol transition graph:\n";
+			let pr g = output_char os ' '; output_name os g; in
+			let collapsable = ref [] in
+			let stable = ref [] in
+			let iterer f finfo =
+				if x#defines f then begin
+					if SymG.mem_edge sym_g f "" then begin
+						collapsable := f :: !collapsable;
+					end else begin
+						let succ = SymG.succ sym_g f in
+						if succ = [] then begin
+							stable := f :: !stable;
+						end else begin
+							output_string os "  ";
+							output_string os f;
+							output_string os "\t-->";
+							List.iter pr succ;
+							output_char os '\n';
+						end;
+					end;
+				end;
+			in
+			Hashtbl.iter iterer sym_table;
+			output_string os "  Collapsable symbols: {";
+			List.iter pr !collapsable;
+			output_string os " }\n  Stable symbols: {";
+			List.iter pr !stable;
+			output_string os " }\n";
 		method output_xml_rules os =
 			output_string os "<rules>";
-			x#iter_rules_strict (fun _ rule -> output_xml_rule os rule);
+			x#iter_rules (fun _ rule -> rule#output_xml os);
 			output_string os "</rules>";
 		method output_xml_ho_signature os =
 			output_string os "<higherOrderSignature>";
@@ -332,23 +347,20 @@ class trs =
 				| _ -> true
 			)
 		method is_redex_candidate (Node(_,fname,ss)) =
-			let rtester i =
-				let (Node(_,_,ls),_,_) = x#find_rule i in
+			let tester i =
+				let Node(_,_,ls) = (x#find_rule i)#l in
 				List.for_all2 x#estimate_narrow ss ls
 			in
-			let etester i =
-				let (Node(_,_,ls),_) = x#find_eq i in
-				List.for_all2 x#estimate_narrow ss ls
-			in
-			Rules.exists rtester (x#find_sym fname).defined_by ||
-			Rules.exists etester (x#find_sym fname).equated_by
+			let finfo = x#find_sym fname in
+			Rules.exists tester finfo.defined_by ||
+			Rules.exists tester finfo.weakly_defined_by
 		method find_matchable (Node(_,fname,_) as s) =
 			let finfo = x#find_sym fname in
 			let folder i ret =
-				let (l,_,_) = x#find_rule i in
-				if x#estimate_edge s l then i::ret else ret
+				if x#estimate_edge s (x#find_rule i)#l then i::ret else ret
 			in
-			Rules.fold folder finfo.defined_by []
+			Rules.fold folder finfo.weakly_defined_by
+			(Rules.fold folder finfo.defined_by [])
 
 	end;;
 
@@ -363,8 +375,8 @@ let rec estimate_paths (trs:trs) lim (Node(fty,_,_) as s) (Node(gty,_,_) as t) =
 	else if lim > 0 then
 		let init = if trs#estimate_edge s t then [(1,[])] else [] in
 		let folder ret i =
-			let (_,r,_) = trs#find_rule i in
-			List.map (path_append (1,[i])) (estimate_paths trs (lim-1) r t) @ ret
+			List.map (path_append (1,[i]))
+				(estimate_paths trs (lim-1) (trs#find_rule i)#r t) @ ret
 		in
 		List.fold_left folder init (trs#find_matchable s)
 	else
@@ -413,9 +425,9 @@ let instantiate_edge (trs:trs) cnt =
 		| i::is ->
 			cnt := !cnt + 1;
 			let v = "i" ^ string_of_int !cnt in
-			let (l,r,_) = trs#find_rule i in
-			let l = Subst.vrename v l in
-			let r = Subst.vrename v r in
+			let rule = trs#find_rule i in
+			let l = Subst.vrename v rule#l in
+			let r = Subst.vrename v rule#r in
 			let rec sub3 cus =
 				match cus with
 				| [] -> []
