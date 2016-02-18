@@ -5,7 +5,7 @@ open Dp
 
 let is_fun (Node(fty,_,_)) = fty = Fun
 
-let uncurry aname nargs (trs : Trs.t) (dg : Dp.dg) =
+let uncurry aname nargs (trs:trs) (dg:dg) =
 	let aa_tbl = Hashtbl.create 64 in
 	let aarity fname =
 		try Hashtbl.find aa_tbl fname

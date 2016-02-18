@@ -71,11 +71,11 @@ let add_marked_symbols trs =
 	in
 	Hashtbl.iter iterer trs#get_table;;
 
-let make_dp_table (trs:Trs.t) minimal dp_table =
+let make_dp_table (trs:trs) minimal dp_table =
 	(* Relative: Moving duplicating or non-dominant weak rules to strict rules *)
 	while
-		trs#fold_eqs (fun i (l,r) ret ->
-			if duplicating l r || not(trs#const_term r) then (
+		trs#fold_rules (fun i (l,r,s) ret ->
+			if s = WeakRule && (duplicating l r || not(trs#const_term r)) then (
 				trs#replace_rule_extra MediumRule i l r;
 				true)
 			else ret
@@ -122,7 +122,7 @@ let make_dp_table (trs:Trs.t) minimal dp_table =
 					generate_dp_default i (xl, xr, strength);
 				end;
 	in
-	trs#iter_rules_strict generate_dp;
+	trs#iter_rules generate_dp;
 
 	(* Additional rules for AC *)
 	let add_eq s t =
@@ -182,7 +182,7 @@ let add_marked_symbols_ac trs =
 	in
 	Hashtbl.iter iterer trs#get_table;;
 
-let make_ac_ext (trs:Trs.t) dp_table =
+let make_ac_ext (trs:trs) dp_table =
 	let cnt = ref 0 in
 	let add_dp l r strength =
 		cnt := !cnt + 1;
@@ -267,7 +267,7 @@ let get_sccs dg =
 let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
-class dg (trs:Trs.t) =
+class dg (trs:trs) =
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)

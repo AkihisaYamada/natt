@@ -68,7 +68,7 @@ let hashtbl_for_all test hashtbl =
 	with Success -> false
 
 (* the class for TRSs *)
-class t =
+class trs =
 	object (x)
 		val sym_table = Hashtbl.create 64(* the symbol table *)
 		val rule_table = Hashtbl.create 256
@@ -357,7 +357,7 @@ type path = int * (int list)
 let path_append (c1,is1) (c2,is2) = (c1 + c2, is1 @ is2)
 let cu_append (c1,u1) (c2,u2) = (c1 + c2, u1#compose u2)
 
-let rec estimate_paths (trs:t) lim (Node(fty,_,_) as s) (Node(gty,_,_) as t) =
+let rec estimate_paths (trs:trs) lim (Node(fty,_,_) as s) (Node(gty,_,_) as t) =
 	if s = t || fty = Var || gty = Var then
 		[(0,[])]
 	else if lim > 0 then
@@ -380,7 +380,7 @@ prerr_term t;
 prerr_endline "?";
 u#output stderr
 *)
-let instantiate_edge (trs:t) cnt =
+let instantiate_edge (trs:trs) cnt =
 	let rec sub1 lim s t =
 		let paths = estimate_paths trs (min 4 lim) s t in
 		List.fold_left

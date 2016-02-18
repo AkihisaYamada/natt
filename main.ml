@@ -9,7 +9,7 @@ type result =
 | NO
 
 (* static usable rules *)
-let static_usable_rules (trs:Trs.t) dg used_dpset =
+let static_usable_rules (trs:trs) dg used_dpset =
 	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,_,ts) as t) =
@@ -36,7 +36,7 @@ let static_usable_rules (trs:Trs.t) dg used_dpset =
 
 let uncurry =
 	if params.uncurry then
-		fun (trs:Trs.t) dg ->
+		fun (trs:trs) dg ->
 			comment (fun _ -> prerr_string "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
 			if StrSet.is_empty appsyms then
@@ -54,7 +54,7 @@ let uncurry =
 		fun _ _ -> false
 
 
-let relative_test (trs:Trs.t) =
+let relative_test (trs:trs) =
 	trs#exists_rule (fun i (l,r,s) ->
 		if s <> StrictRule && duplicating l r then (
 			comment (fun os ->
@@ -75,7 +75,7 @@ let relative_test (trs:Trs.t) =
 		) else false
 	);;
 
-let theory_test (trs:Trs.t) =
+let theory_test (trs:trs) =
 	let ths = trs#get_ths in
 	if StrSet.is_empty ths then false
 	else
@@ -88,7 +88,7 @@ let theory_test (trs:Trs.t) =
 		)
 
 (* extra variable test *)
-let extra_test (trs:Trs.t) =
+let extra_test (trs:trs) =
 	let iterer i (l,r,s) =
 		let lvars = varlist l in
 		let rvars = varlist r in
@@ -106,7 +106,7 @@ let extra_test (trs:Trs.t) =
 	trs#iter_rules iterer;;
 
 (* remove trivial relative rules *)
-let clean_eqs (trs:Trs.t) =
+let clean_eqs (trs:trs) =
 	let iterer i (l,r) =
 		if l = r then begin
 			proof (fun _ ->
@@ -121,9 +121,9 @@ let clean_eqs (trs:Trs.t) =
 
 
 (* rule removal processor *)
-let dummy_dg = new Dp.dg (new Trs.t)
+let dummy_dg = new Dp.dg (new trs)
 
-let rule_remove (trs:Trs.t) =
+let rule_remove (trs:trs) =
 	if Array.length params.orders_removal > 0 then begin
 		let proc_list =
 			let folder p procs =
@@ -152,7 +152,7 @@ let rule_remove (trs:Trs.t) =
 	end;;
 
 (* reduction pair processor *)
-let dp_remove (trs:Trs.t) dg =
+let dp_remove (trs:trs) dg =
 	let sccs = ref dg#get_sccs in
 	let remove_unusable () =
 		let init = ref true in
@@ -253,7 +253,7 @@ let dp_remove (trs:Trs.t) dg =
 	loop ();;
 
 
-let prove_termination (trs:Trs.t) =
+let prove_termination (trs:trs) =
 	problem (fun os ->
 		output_string os "Input TRS:\n";
 		trs#output os;
@@ -338,7 +338,7 @@ class main =
 	let err msg = prerr_endline ("Error: " ^ msg ^ "!"); exit 1 in
 	let warn msg = warning(fun _ -> prerr_endline ("Warning: " ^ msg ^ ".")) in
 	object (x)
-		val trs = new Trs.t
+		val trs = new trs
 
 		method no_ac = not(StrSet.mem "AC" trs#get_ths)
 

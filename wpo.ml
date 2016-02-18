@@ -89,7 +89,7 @@ let default_finfo symtype arity =
 let rec emb_le (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 	s = t || List.exists (emb_le s) ts || fname = gname && List.for_all2 emb_le ss ts
 
-class processor p (trs:Trs.t) dg =
+class processor p (trs:trs) dg =
 
 	(* SMT variables *)
 
