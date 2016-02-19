@@ -10,7 +10,7 @@ type result =
 | NO
 
 (* static usable rules *)
-let static_usable_rules (trs:trs) (dg:dg) used_dpset =
+let static_usable_rules (trs:trs) (estimator:Estimator.t) (dg:dg) used_dpset =
 	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,_,ts) as t) =
@@ -21,7 +21,7 @@ let static_usable_rules (trs:trs) (dg:dg) used_dpset =
 					sub rule#r;
 				end;
 			in
-			List.iter iterer (trs#find_matchable t);
+			List.iter iterer (estimator#find_matchable t);
 			List.iter sub ts;
 		in
 		IntSet.iter (fun i -> let Node(_,_,ts) = (dg#find_dp i)#r in List.iter sub ts) used_dpset;
@@ -128,13 +128,14 @@ let trivial_test (trs:trs) =
 
 
 (* rule removal processor *)
-let dummy_dg = new dg (new trs)
+let dummy_estimator = new Estimator.t (new trs)
+let dummy_dg = new dg (new trs) dummy_estimator
 
 let rule_remove (trs:trs) =
 	if Array.length params.orders_removal > 0 then begin
 		let proc_list =
 			let folder p procs =
-				new Wpo.processor p trs dummy_dg :: procs
+				new Wpo.processor p trs dummy_estimator dummy_dg :: procs
 			in
 			Array.fold_right folder params.orders_removal []
 		in
@@ -159,7 +160,7 @@ let rule_remove (trs:trs) =
 	end;;
 
 (* reduction pair processor *)
-let dp_remove (trs:trs) (dg:dg) =
+let dp_remove (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	let sccs = ref dg#get_sccs in
 	let remove_unusable () =
 		let init = ref true in
@@ -208,12 +209,12 @@ let dp_remove (trs:trs) (dg:dg) =
 		Array.fold_right
 		(fun p procs ->
 			p.usable <- p.usable && dg#minimal;
-			new Wpo.processor p trs dg :: procs
+			new Wpo.processor p trs estimator dg :: procs
 		)
 		params.orders_dp []
 	in
 	let remove_strict sccref =
-		let (usables,_) = static_usable_rules trs dg !sccref in
+		let (usables,_) = static_usable_rules trs estimator dg !sccref in
 		let remove_by_proc proc =
 			proc#reduce dg (if proc#using_usable then usables
 				else trs#fold_rules (fun i _ is -> i::is) []) sccref
@@ -233,9 +234,8 @@ let dp_remove (trs:trs) (dg:dg) =
 		| scc::rest ->
 			problem
 			(fun _ ->
-				let folder i abbr = abbr#add i in
 				prerr_string "  SCC {";
-				(IntSet.fold folder scc (new Abbrev.for_int stderr " #"))#close;
+				Abbrev.output_int_set stderr " #" scc;
 				prerr_string " }\n    ";
 			);
 			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
@@ -253,7 +253,7 @@ let dp_remove (trs:trs) (dg:dg) =
 					(fun _ ->
 						prerr_endline "failed.";
 					);
-					Nonterm.find_loop params.max_loop trs dg scc;
+					Nonterm.find_loop params.max_loop trs estimator dg scc;
 				end
 			end
 	in
@@ -292,7 +292,8 @@ let prove_termination (trs:trs) =
 		if params.mode = MODE_order then raise Unknown;
 		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
-		let dg = new dg trs in
+		let estimator = new Estimator.t trs in
+		let dg = new dg trs estimator in
 		dg#init;
 		problem (fun _ ->
 			prerr_endline "Dependency Pairs:";
@@ -300,25 +301,22 @@ let prove_termination (trs:trs) =
 		);
 		log dg#output_edges;
 
-		dp_remove trs dg;
-		MAYBE
+		if theoried && params.acdp_mode = ACDP_new then begin
+			try dp_remove trs estimator dg with Success ->
+			let dg = new Dp.dg trs estimator in
+			dg#init_ac_ext;
+			problem (fun _ ->
+				prerr_endline "AC Extensions:";
+				dg#output_dps stderr;
+			);
+			dp_remove trs estimator dg;
+		end else begin
+			dp_remove trs estimator dg;
+		end;
+
+		raise Unknown;
 	with
-	| Success ->
-		if theoried && params.acdp_mode = ACDP_new then
-			try let dg = new Dp.dg trs in
-				dg#init_ac_ext;
-				problem (fun _ ->
-					prerr_endline "AC Extensions:";
-					dg#output_dps stderr;
-				);
-				dp_remove trs dg;
-				raise Unknown
-			with
-			| Success -> YES
-			| Unknown -> MAYBE
-			| Nonterm -> NO
-		else
-			YES
+	| Success -> YES
 	| Unknown -> MAYBE
 	| Nonterm -> NO
 in
@@ -374,7 +372,7 @@ class main =
 				trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
 				trs#output stdout;
 			| MODE_uncurry ->
-				ignore (App.auto_uncurry trs (new dg trs));
+				ignore (App.auto_uncurry trs (new dg (new trs) (new Estimator.t (new trs))));
 				trs#output stdout;
 			| MODE_simple ->
 				if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then

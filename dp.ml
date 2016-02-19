@@ -249,19 +249,18 @@ module SubComponents = Graph.Components.Make(SubDG)
 
 (* Estimated dependency graph *)
 
-let make_dg (trs:trs) dp_table dg =
+let make_dg (trs:trs) (estimator:Estimator.t) dp_table dg =
+	log estimator#output_sym_graph;
 	let edged_KT98 src tgt =
 		let Node(fty,_,_) = src#l in
 		if fty = Th "AC" then
-			List.exists (fun r' -> trs#estimate_edge r' tgt#l) (top_ac_subterms src#r)
-		else trs#estimate_edge src#r tgt#l
+			List.exists (fun r' -> estimator#connects r' tgt#l) (top_ac_subterms src#r)
+		else estimator#connects src#r tgt#l
 	in
 	let edged =
 		if params.acdp_mode = ACDP_KT98 then edged_KT98
-		else fun src tgt -> trs#estimate_edge src#r tgt#l
+		else fun src tgt -> estimator#connects src#r tgt#l
 	in
-	trs#init_sym_graph;
-	log trs#output_sym_graph;
 	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 	Hashtbl.iter
 	(fun i1 dp1 ->
@@ -282,15 +281,15 @@ let get_sccs dg =
 let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
-class dg (trs:trs) =
+class dg (trs:trs) (estimator:Estimator.t) =
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
 		val min = ref true
 		val dp_table = Hashtbl.create 256
 		val dg = DG.create ()
-		method init = make_dp_table trs min dp_table; make_dg trs dp_table dg;
-		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs dp_table dg;
+		method init = make_dp_table trs min dp_table; make_dg trs estimator dp_table dg;
+		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs estimator dp_table dg;
 		method minimal = !min
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)

@@ -142,7 +142,7 @@ class t command opts =
 					with Unix.Unix_error(_,_,_) ->
 					debug (fun _ -> prerr_endline "... failed.");
 				end else begin
-					Unix.waitpid [] pid;
+					ignore (Unix.waitpid [] pid);
 					pid <- 0;
 				end;
 				Unix.close in_from;

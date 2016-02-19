@@ -1,3 +1,5 @@
+open Util
+
 let continuous_int i j = abs(i - j) < 2
 let continuous_index (i,_) (j,_) = continuous_int i j
 let output_dots os = output_string os ".."
@@ -39,3 +41,8 @@ class for_int os prefix =
 let output_int_list os prefix is =
 	let folder abbr i = abbr#add i in
 	(List.fold_left folder (new for_int os prefix) is)#close
+
+let output_int_set os prefix iset =
+	let folder i abbr = abbr#add i in
+	(IntSet.fold folder iset (new for_int os prefix))#close
+

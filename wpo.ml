@@ -90,7 +90,7 @@ let default_finfo symtype arity =
 let rec emb_le (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
 	s = t || List.exists (emb_le s) ts || fname = gname && List.for_all2 emb_le ss ts
 
-class processor p (trs:trs) (dg:dg) =
+class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 
 	(* SMT variables *)
 
@@ -505,7 +505,7 @@ class processor p (trs:trs) (dg:dg) =
 			usable
 	in
 	let rec set_usable filt usable s =
-		smt_for_all usable (trs#find_matchable s) &^ set_usable_inner filt usable s
+		smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
 	and set_usable_inner filt usable (Node(fty,fname,ss)) =
 		if fty = Var then
 			smt_for_all (set_usable_inner filt usable) ss
@@ -1845,7 +1845,6 @@ class processor p (trs:trs) (dg:dg) =
 			try
 				debug2 (fun _ -> prerr_string "    Rules: {"; flush stderr;);
 				let iterer (i,rule) =
-					let fname = root rule#l in
 					debug2 (fun _ -> prerr_char ' '; prerr_int i; flush stderr;);
 					let (WT(_,_,_,lw) as la) = annote rule#l in
 					let (WT(_,_,_,rw) as ra) = annote rule#r in

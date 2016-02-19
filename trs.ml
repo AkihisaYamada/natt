@@ -16,10 +16,6 @@ module Ths = StrSet
 module Syms = StrSet
 module Rules = IntSet
 
-(* symbol transition graph *)
-module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
-module SymGoper = Graph.Oper.I(SymG)
-
 type finfo =
 {
 	mutable symtype : symtype;
@@ -67,7 +63,6 @@ class trs =
 	object (x)
 		val sym_table = Hashtbl.create 64(* the symbol table *)
 		val rule_table = Hashtbl.create 256
-		val sym_g = SymG.create ()(* symbol transition graph *)
 		val mutable rule_cnt = 0
 		val mutable strict_rule_cnt = 0
 		val mutable ths = Ths.empty(* the set of used built-in theories *)
@@ -111,24 +106,6 @@ class trs =
 			(fty = Var || not(x#defines fname)) && List.for_all x#const_term ss
 		method relative_const (Node(fty,fname,ss)) =
 			(fty = Var || not(x#strictly_defines fname)) && List.for_all x#relative_const ss
-		method init_sym_graph =
-			SymG.add_vertex sym_g ""; (* this vertex represents arbitrary symbol *)
-			let add_sym fname finfo =
-				if finfo.symtype <> Var then begin
-					SymG.add_vertex sym_g fname;
-					SymG.add_edge sym_g "" fname;
-				end;
-			in
-			Hashtbl.iter add_sym sym_table;
-			let add_edge _ lr =
-				let Node(_,fname,_) = lr#l in
-				let Node(gty,gname,_) = lr#r in
-				SymG.add_edge sym_g fname (if gty = Var then "" else gname);
-			in
-			Hashtbl.iter add_edge rule_table;
-			SymGoper.add_transitive_closure sym_g;
-
-		method trans_sym fname gname = SymG.mem_edge sym_g fname gname
 (* methods for rules *)
 		method find_rule = Hashtbl.find rule_table
 		method iter_rules f = Hashtbl.iter f rule_table
@@ -242,35 +219,6 @@ class trs =
 			in
 			x#iter_rules iterer_rule;
 			output_string os ")\n";
-		method output_sym_graph os =
-			output_string os "Symbol transition graph:\n";
-			let pr g = output_char os ' '; output_name os g; in
-			let collapsable = ref [] in
-			let stable = ref [] in
-			let iterer f finfo =
-				if x#defines f then begin
-					if SymG.mem_edge sym_g f "" then begin
-						collapsable := f :: !collapsable;
-					end else begin
-						let succ = SymG.succ sym_g f in
-						if succ = [] then begin
-							stable := f :: !stable;
-						end else begin
-							output_string os "  ";
-							output_string os f;
-							output_string os "\t-->";
-							List.iter pr succ;
-							output_char os '\n';
-						end;
-					end;
-				end;
-			in
-			Hashtbl.iter iterer sym_table;
-			output_string os "  Collapsable symbols: {";
-			List.iter pr !collapsable;
-			output_string os " }\n  Stable symbols: {";
-			List.iter pr !stable;
-			output_string os " }\n";
 		method output_xml_rules os =
 			output_string os "<rules>";
 			x#iter_rules (fun _ rule -> rule#output_xml os);
@@ -325,60 +273,12 @@ class trs =
 			x#output_xml_rules os;
 			output_string os "</trs>";
 
-(* estimations *)
-		method estimate_narrow (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
-			fty = Var ||
-			gty = Var ||
-			x#is_redex_candidate s && x#trans_sym fname gname ||
-			x#estimate_edge s t
-		method estimate_edge (Node(fty,fname,ss)) (Node(gty,gname,ts)) =
-			fname = gname &&
-			(	match fty with
-				| Fun -> List.for_all2 x#estimate_narrow ss ts
-				| Th "C" ->
-					(	match ss, ts with
-						| [s1;s2], [t1;t2] ->
-							(x#estimate_narrow s1 t1 && x#estimate_narrow s2 t2) ||
-							(x#estimate_narrow s1 t2 && x#estimate_narrow s2 t1)
-						| _ -> raise (No_support "nonbinary commutative symbol")
-					)
-				| _ -> true
-			)
-		method is_redex_candidate (Node(_,fname,ss)) =
-			let tester i =
-				let Node(_,_,ls) = (x#find_rule i)#l in
-				List.for_all2 x#estimate_narrow ss ls
-			in
-			let finfo = x#find_sym fname in
-			Rules.exists tester finfo.defined_by ||
-			Rules.exists tester finfo.weakly_defined_by
-		method find_matchable (Node(_,fname,_) as s) =
-			let finfo = x#find_sym fname in
-			let folder i ret =
-				if x#estimate_edge s (x#find_rule i)#l then i::ret else ret
-			in
-			Rules.fold folder finfo.weakly_defined_by
-			(Rules.fold folder finfo.defined_by [])
-
 	end;;
 
 type path = int * (int list)
 
 let path_append (c1,is1) (c2,is2) = (c1 + c2, is1 @ is2)
 let cu_append (c1,u1) (c2,u2) = (c1 + c2, u1#compose u2)
-
-let rec estimate_paths (trs:trs) lim (Node(fty,_,_) as s) (Node(gty,_,_) as t) =
-	if s = t || fty = Var || gty = Var then
-		[(0,[])]
-	else if lim > 0 then
-		let init = if trs#estimate_edge s t then [(1,[])] else [] in
-		let folder ret i =
-			List.map (path_append (1,[i]))
-				(estimate_paths trs (lim-1) (trs#find_rule i)#r t) @ ret
-		in
-		List.fold_left folder init (trs#find_matchable s)
-	else
-		[]
 
 let dbg s is t (c,u) =
 ()(*
@@ -390,58 +290,5 @@ prerr_term t;
 prerr_endline "?";
 u#output stderr
 *)
-let instantiate_edge (trs:trs) cnt =
-	let rec sub1 lim s t =
-		let paths = estimate_paths trs (min 4 lim) s t in
-		List.fold_left
-		(fun ret (c,is) -> let cus = instantiate_path (lim-c) s is t in List.iter (dbg s is t) cus; cus @ ret)
-		[] paths
-	and sub2 lim ss ts =
-		match ss, ts with
-		| [], [] -> [(0,new Subst.t)]
-		| (s::ss), (t::ts) ->
-			let mapper (c1,u1) =
-				let ss' = List.map u1#subst ss in
-				let ts' = List.map u1#subst ts in
-				List.map (cu_append (c1,u1)) (sub2 (lim-c1) ss' ts')
-			in
-			List.concat (List.map mapper (sub1 lim s t))
-		| _ -> []
-	and instantiate_path lim (Node(fty,fname,ss) as s) is (Node(gty,gname,ts) as t) =
-		match is with
-		| [] ->
-			if s = t then [(0,new Subst.t)]
-			else if fty = Var then
-				if StrSet.mem fname (varset t) then [] else [(0,Subst.singleton fname t)]
-			else if gty = Var then
-				if StrSet.mem gname (varset s) then [] else [(0,Subst.singleton gname s)]
-			else
-				(if fname = gname then
-					sub2 lim ss ts
-				else  []
-				) @ sub1 (lim-1) s t
-		| i::is ->
-			cnt := !cnt + 1;
-			let v = "i" ^ string_of_int !cnt in
-			let rule = trs#find_rule i in
-			let l = Subst.vrename v rule#l in
-			let r = Subst.vrename v rule#r in
-			let rec sub3 cus =
-				match cus with
-				| [] -> []
-				| (c1,u1)::cus ->
-					let r' = u1#subst r in
-					let t' = u1#subst t in
-					List.map (cu_append (c1+1,u1)) (instantiate_path (lim - c1) r' is t') @
-					sub3 cus
-			in
-			let ret = sub3 (sub1 lim s l) in
-			ret
-	in
-	fun lim (Node(_,fname,ss)) (Node(_,gname,ts)) ->
-		if fname = gname then
-			sub2 lim ss ts
-		else
-			[]
 
 
