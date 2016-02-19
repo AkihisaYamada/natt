@@ -1524,28 +1524,24 @@ class processor p (trs:trs) (dg:dg) =
 		in
 		let prerr_usable =
 			if p.dp && dg#minimal && p.usable || params.debug then
-				let folder abbr (i,_) =
-					if solver#get_bool (usable i) then
-						abbr#add i
-					else abbr
+				let folder is (i,_) =
+					if solver#get_bool (usable i) then i::is else is
 				in
 				fun () ->
 					prerr_string "    USABLE RULES: {";
-					(List.fold_left folder (new Abbrev.for_int stderr " ") !usables)#close;
+					Abbrev.output_ints stderr " " (List.fold_left folder [] !usables);
 					prerr_endline " }";
 			else
 				fun () -> ()
 		in
 		let prerr_usable_w =
 			if p.dp && p.usable_w && p.w_mode <> W_none then
-				let folder abbr (i,_) =
-					if solver#get_bool (usable_w i) then
-						abbr#add i
-					else abbr
+				let folder is (i,_) =
+					if solver#get_bool (usable_w i) then i::is else is
 				in
 				fun () ->
 					prerr_string "    USABLE RULES(WEIGHT): {";
-					(List.fold_left folder (new Abbrev.for_int stderr " ") !usables)#close;
+					Abbrev.output_ints stderr " " (List.fold_left folder [] !usables);
 					prerr_endline " }";
 			else
 				fun () -> ()

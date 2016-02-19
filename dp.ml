@@ -311,7 +311,7 @@ class dg (trs:trs) =
 				let succ = DG.succ dg i in
 				if succ <> [] then begin
 					output_string os ("  #" ^ string_of_int i ^ " -->");
-					Abbrev.output_int_list os " #" (List.sort compare succ);
+					Abbrev.output_ints os " #" succ;
 					output_char os '\n';
 				end;
 			in
