@@ -40,12 +40,12 @@ let uncurry =
 		fun (trs:trs) (dg:dg) ->
 			comment (fun _ -> prerr_string "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
-			if StrSet.is_empty appsyms then
+			if appsyms = [] then
 				(comment (fun _ -> prerr_endline " ... failed."); false)
 			else
 			(	comment
 				(fun _ ->
-					StrSet.iter (fun aname -> prerr_string " "; prerr_string aname) appsyms;
+					List.iter (fun aname -> prerr_string " "; prerr_string aname) appsyms;
 					prerr_newline ();
 				);
 				problem trs#output;

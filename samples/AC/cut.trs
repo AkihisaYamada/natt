@@ -1,8 +1,8 @@
 (VAR x)
 (THEORY (AC +))
 (RULES
-	c -> +(a,a)
-	+(a,+(a,c)) -> +(+(a,b),c)
+	+(a,+(a,x)) -> +(+(a,b),x)
 	+(b,c) -> d(+(a,c))
+	c -> +(a,a)
 )
 

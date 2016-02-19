@@ -2,27 +2,28 @@ open Util
 open Term
 open Trs
 open Dp
+open Params
 
 let is_fun (Node(fty,_,_)) = fty = Fun
 
 let uncurry aname nargs (trs:trs) (dg:dg) =
-	let aa_tbl = Hashtbl.create 64 in
+	let aarity_tbl = Hashtbl.create 64 in
 	let aarity fname =
-		try Hashtbl.find aa_tbl fname
+		try Hashtbl.find aarity_tbl fname
 		with Not_found -> 0
 	in
-	let set_aa ord fname d =
-		try let aa = Hashtbl.find aa_tbl fname in
-			if ord aa d then Hashtbl.replace aa_tbl fname d;
+	let set_aarity ord fname d =
+		try let aa = Hashtbl.find aarity_tbl fname in
+			if ord aa d then Hashtbl.replace aarity_tbl fname d;
 		with Not_found ->
-			Hashtbl.add aa_tbl fname d;
+			Hashtbl.add aarity_tbl fname d;
 	in
 	let rec dig d (Node(fty,fname,ss)) =
 		if fname = aname then begin
 			dig (d + 1) (hd ss);
 			List.iter (dig 0) (tl ss);
 		end else begin
-			if fty = Fun then set_aa (<) fname d;
+			if fty = Fun then set_aarity (<) fname d;
 			List.iter (dig 0) ss;
 		end
 	in
@@ -34,7 +35,7 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 		if fname = aname then begin
 			dig_hd (d + 1) (hd ss);
 		end else begin
-			if fty = Fun then set_aa (>) fname d;
+			if fty = Fun then set_aarity (>) fname d;
 		end
 	in
 	let iterer _ rule = dig_hd 0 rule#l; in
@@ -45,11 +46,10 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 		aname ^ "^" ^ string_of_int i ^ "_" ^ fname
 	in
 
-	let reform (fty,fname,ss,d,aa) =
+	let uncurry_top (fty,fname,ss,d,aa) =
 		Node(fty, (if d > 0 then uncurry_name fname d else fname), ss)
 	in
-	let rec uncurry_term s =
-		reform (uncurry_sub s)
+	let rec uncurry_term s = uncurry_top (uncurry_sub s)
 	and uncurry_sub (Node(fty,fname,ss)) =
 		if fname = aname then
 			match ss with
@@ -60,11 +60,9 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 				if d < aa then
 					(gty, gname, ts @ ss, d + 1, aa)
 				else
-					(fty, fname, reform t'::ss, 0, 0)
+					(fty, fname, uncurry_top t'::ss, 0, 0)
 		else
-			let aa = aarity fname in
-			let ss = List.map uncurry_term ss in
-			(fty, fname, ss, 0, aa)
+			(fty, fname, List.map uncurry_term ss, 0, aarity fname)
 	in
 	trs#iter_rules (fun i rule -> trs#modify_rule i (uncurry_term rule#l) (uncurry_term rule#r););
 	dg#iter_dps (fun i dp -> dg#modify_dp i (uncurry_term dp#l) (uncurry_term dp#r););
@@ -94,49 +92,56 @@ let uncurry aname nargs (trs:trs) (dg:dg) =
 			| _ -> raise (Internal "app")
 		end;
 	in
-	Hashtbl.iter iterer aa_tbl;;
+	Hashtbl.iter iterer aarity_tbl;;
 
 exception Next
 
 let auto_uncurry (trs:trs) (dg:dg) =
-	let tester aname =
-		let sub good bad =
-			let rec sub2 d (Node(fty,fname,ss)) =
-				if fname = aname then begin
-					sub2 (d+1) (hd ss);
-					List.iter (sub2 0) (tl ss);
-				end else begin
-					if d > 0 then
-						if fty <> Fun || trs#defines fname
-						then bad d
-						else good d;
-					List.iter (sub2 0) ss;
-				end
-			in
-			sub2 0
-		in
+	let folder aname ainfo anames =
 		try
-			let ainfo = trs#find_sym aname in
 			if ainfo.symtype <> Fun then raise Next;
+			if Rules.is_empty ainfo.defined_by then raise Next;
 			let nargs =
 				match ainfo.arity with
 				| Arity n -> if n > 0 then n - 1 else raise Next
 				| _ -> raise Next
 			in
+			let sub good bad =
+				let rec sub2 d (Node(fty,fname,ss)) =
+					if fname = aname then begin
+						sub2 (d+1) (hd ss);
+						List.iter (sub2 0) (tl ss);
+					end else begin
+						if d > 0 then
+							if fty <> Fun || trs#defines fname then bad d else good d;
+						List.iter (sub2 0) ss;
+					end
+				in
+				sub2 0
+			in
+			let iterer_l _ lr = sub (fun _ -> ()) (fun _ -> raise Next) lr#l in
+			trs#iter_rules iterer_l;
+			dg#iter_dps iterer_l;
+
 			let ngoods = ref 0 in
 			let nbads = ref 0 in
 			let add r n = r := !r + n in
-			let iterer_l _ lr = sub (fun _ -> ()) (fun _ -> raise Next) lr#l in
 			let iterer_r _ lr = sub (add ngoods) (add nbads) lr#r in
-			trs#iter_rules iterer_l;
-			dg#iter_dps iterer_l;
 			trs#iter_rules iterer_r;
 			dg#iter_dps iterer_r;
 
-			if !ngoods = 0 (*|| !ngoods < !nbads*) then raise Next;
+			debug (fun _ ->
+				prerr_string ("  Uncurrying evaluation for " ^ aname ^ ": " ^
+				string_of_int !ngoods ^ " vs. " ^
+				string_of_int !nbads ^ "");
+			);
+
+			if !ngoods = 0 (*|| !ngoods < !nbads*) then begin
+				raise Next;
+			end;
 			uncurry aname nargs trs dg;
-			true
-		with Next -> false
+			aname::anames
+		with Next -> anames
 	in
 (*
 	let compare_occurrence fname gname =
@@ -144,4 +149,4 @@ let auto_uncurry (trs:trs) (dg:dg) =
 	in
 	let app_candidates = List.sort compare_occurrence trs#get_defsyms in
 *)
-	Syms.filter tester trs#get_defsyms
+	trs#fold_syms folder []

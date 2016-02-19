@@ -71,13 +71,11 @@ class trs =
 		val mutable rule_cnt = 0
 		val mutable strict_rule_cnt = 0
 		val mutable ths = Ths.empty(* the set of used built-in theories *)
-		val mutable defsyms = Syms.empty
 (* information retrieval *)
 		method get_table = sym_table
 		method get_size = Hashtbl.length rule_table
 		method get_size_strict = strict_rule_cnt
 		method get_ths = ths
-		method get_defsyms = defsyms
 (* methods for symbols *)
 		method private add_sym fname =
 			let finfo =
@@ -95,9 +93,9 @@ class trs =
 			try Hashtbl.find sym_table fname with Not_found -> x#add_sym fname
 		method find_sym fname =
 			try Hashtbl.find sym_table fname with Not_found -> var_finfo
-		method has_constructor fname = 
-			let finfo = x#find_sym fname in
-			finfo.symtype <> Var && Rules.is_empty finfo.defined_by
+		method iter_syms f = Hashtbl.iter f sym_table
+		method fold_syms : 'a. (string -> finfo -> 'a -> 'a) -> 'a -> 'a =
+			fun f a -> Hashtbl.fold f sym_table a
 		method strictly_defines fname =
 			try not (Rules.is_empty (Hashtbl.find sym_table fname).defined_by)
 			with Not_found -> false
