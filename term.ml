@@ -2,18 +2,63 @@ open Util
 open Params
 
 type symtype = Var | Fun | Th of string | Special
-type symname= string
-type term = Node of symtype * symname * term list
 
-let root (Node(_,fname,_)) = fname
+class type sym =
+	object ('a)
+		inherit output
+		inherit output_xml
+		method is_var : bool
+		method is_fun : bool
+		method ty : symtype
+		method name : string
+	end;;
+class type sym_eq =
+	object
+		inherit sym
+		method equals : 'a. (#sym as 'a) -> bool
+	end;;
 
-type 'a wterm = WT of symtype * symname * 'a wterm list * 'a
+let output_name os name =
+	let n = String.length name in
+	let rec sub i =
+		if i < n then begin
+			match name.[i] with
+			| '\\' -> output_string os "\\\\"; sub (i+1);
+			| '#' -> output_string os "\\#"; sub (i+1);
+			| '^' -> output_string os "\\^"; sub (i+1);
+			| ' ' -> output_char os name.[i+1]; sub (i+2);
+			| c -> output_char os c; sub (i+1);
+		end;
+	in
+	sub 0
 
-let get_weight (WT(_,_,_,ws)) = ws
-let rec erase (WT(fty,fname,ss,_)) = Node(fty,fname,List.map erase ss)
+class sym_basic ty0 name0 =
+	object (x:'a)
+		val mutable ty = ty0
+		val name = name0
+		method is_var = ty = Var
+		method is_fun = ty <> Var
+		method is_theoried = match ty with Th _ -> true | _ -> false
+		method ty = ty
+		method set_ty ty' = ty <- ty'
+		method name = name
+		method output os = output_name os name
+		method output_xml = x#output
+		method equals : 'a. (#sym as 'a) -> bool =
+			fun y -> name = y#name
+	end;;
+
+type 'a term = Node of 'a * 'a term list
+
+let root (Node(f,_)) = f
+
+type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
+
+let get_weight (WT(_,_,ws)) = ws
+let rec erase (WT(f,ss,_)) = Node(f,List.map erase ss)
 
 let size =
-	let rec sub1 ret (Node(_,_,ss)) = sub2 (ret+1) ss
+	let rec sub1 ret (Node(_,ss)) = sub2 (ret+1) ss
 	and	sub2 ret ss =
 		match ss with
 		| [] -> ret
@@ -21,37 +66,28 @@ let size =
 	in
 	sub1 0
 
-let var vname = Node(Var,vname,[])
-let app fname args = Node(Fun,fname,args)
+let var vname = Node(new sym_basic Var vname, [])
+let app f args = Node((f:>sym_basic), args)
 
-let rec term_rec opr (Node(fty,fname,ss)) =
-	opr fty fname (List.map (term_rec opr) ss)
+(* equality *)
+let rec term_eq (Node(f,ss) : #sym_eq term) (Node(g,ts)) =
+	f#equals g && List.for_all2 term_eq ss ts
+
+let rec wterm_eq (WT((f:#sym_eq),ss,sw)) (WT(g,ts,tw)) =
+	f#equals g && List.for_all2 wterm_eq ss ts
+
+let rec strict_subterm (s:#sym_eq term) (Node(_,ts)) =
+	List.exists (subterm s) ts
+and subterm (s:#sym_eq term) t = term_eq s t || strict_subterm s t
 
 (* embeding relation *)
-let rec emb_le (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
-	s = t || List.exists (emb_le s) ts || fname = gname && List.for_all2 emb_le ss ts
-
-let rec eq (WT(fty,fname,ss,sw)) (WT(gty,gname,ts,tw)) =
-	if fty = gty && fname = gname then
-		List.for_all2 eq ss ts
-	else
-		false
-
-let rec term_eq (Node(fty,fname,ss)) (Node(gty,gname,ts)) =
-	if fty = gty && fname = gname then
-		List.for_all2 term_eq ss ts
-	else
-		false
-
-let rec is_strict_subterm s (Node(_,_,ts)) = List.exists (is_subterm s) ts
-and is_subterm s t = s = t || is_strict_subterm s t
+let rec emb_le (Node((f:#sym_eq),ss) as s) (Node(g,ts) as t) =
+	term_eq s t || List.exists (emb_le s) ts || f#equals g && List.for_all2 emb_le ss ts
 
 (* the list of variable occurences in a term *)
 let varlist =
-	let rec sub (Node(fty,fname,ss)) =
-		match fty with
-		| Var	-> fname :: sublist ss
-		| _		-> sublist ss
+	let rec sub (Node((f:#sym),ss)) =
+		if f#is_var then f :: sublist ss else sublist ss
 	and sublist =
 		function
 		| []	-> []
@@ -65,16 +101,15 @@ let rec list_remove f =
 	| x::xs	-> if f x then xs else x :: list_remove f xs
 
 let dupvarlist =
-	let rec sub ret (Node(fty,fname,ts)) =
-		match fty with
-		| Var	->
+	let rec sub ret (Node((f:#sym_eq),ts)) =
+		if f#is_var then
 			let lvars, dupvars = ret in
 			(	try
-					(list_remove (fun gname -> fname = gname) lvars, dupvars)
+					(list_remove f#equals lvars, dupvars)
 				with
-				| Not_found -> (lvars, fname::dupvars)
+				| Not_found -> (lvars, f::dupvars)
 			)
-		| _ -> sublist ret ts
+		else sublist ret ts
 	and sublist ret =
 		function
 		| []	-> ret
@@ -88,10 +123,8 @@ let duplicating l r = dupvarlist l r <> []
 (* the set of variables in a term *)
 module VarSet = Set.Make(String)
 let varset =
-	let rec sub (Node(fty,fname,ts)) =
-		match fty with
-		| Var	-> VarSet.add fname (sublist ts)
-		| _		-> sublist ts
+	let rec sub (Node((f:#sym),ts)) =
+		if f#is_var then VarSet.add f#name (sublist ts) else sublist ts
 	and sublist =
 		function
 		| []	-> VarSet.empty
@@ -99,100 +132,67 @@ let varset =
 	in
 	sub
 
-
-let isvar_sym =
-	function
-	| (Var,_)	-> true
-	| _			-> false
-
-(* $\texttt{subterm}\ s\ t$ iff $s$ is a subterm of $t$ *)
-let subterm s =
-	let rec sub (Node(_,_,ts) as t) =
-		if s = t then true else sublist ts
-	and sublist =
-		function
-		| []	-> false
-		| t::ts	-> sub t || sublist ts
-	in sub
-
 (* flat AC symbols *)
 let rec flat =
-	let rec sub fty fname ss =
+	let rec sub (f:#sym_eq) ss =
 		function
-		| []	-> Node(fty, fname, List.rev ss)
-		| (Node(_,gname,ts) as t)::us ->
-			if gname = fname then
-				sub fty fname ss (ts@us)
+		| []	-> Node(f, List.rev ss)
+		| (Node(g,ts) as t)::us ->
+			if f#equals g then
+				sub f ss (ts@us)
 			else
-				sub fty fname (flat t :: ss) us
+				sub f (flat t :: ss) us
 	in
-	fun (Node(fty,fname,ss)) ->
-		match fty with
-		| Th "AC"	-> sub fty fname [] ss
-		| _			-> Node(fty, fname, List.map flat ss)
+	fun (Node(f,ss)) ->
+		match f#ty with
+		| Th "AC"	-> sub f [] ss
+		| _			-> Node(f, List.map flat ss)
 
 (* flat top $f$ from list of functions *)
-let local_flat fname =
+let local_flat (f:#sym_eq) =
 	let rec sub ss =
 		function
 		| [] -> ss
-		| (Node(_,gname,ts) as t)::us ->
-			if fname = gname then sub ss (ts @ us) else sub (ss@[t]) us
+		| (Node(g,ts) as t)::us ->
+			if f#equals g then sub ss (ts @ us) else sub (ss@[t]) us
 	in
 	sub []
 
 (* unflat *)
-let fold fty fname =
+let fold f =
 	let rec sub ret =
 		function
 		| [] -> ret
-		| s::ss -> sub (Node(fty,fname,[ret;s])) ss
+		| s::ss -> sub (Node(f,[ret;s])) ss
 	in
 	function
 	| [] -> failwith "bug"
 	| s::ss -> sub s ss
 
 (* top-AC subterms, for KT98 *)
-let top_ac_subterms (Node(fty, fname, ss) as s) =
-	if fty = Th "AC" then
-		let args = local_flat fname ss in
+let top_ac_subterms (Node(f,ss) as s) =
+	if f#ty = Th "AC" then
+		let args = local_flat f ss in
 		let subargs = subsequences args in
-		List.map (fold fty fname) (List.filter (fun ts -> List.length ts > 1) subargs)
+		List.map (fold f) (List.filter (fun ts -> List.length ts > 1) subargs)
 	else [s]
 
-let escape c = "\x1b" ^ String.make 1 c
+let escape c = " " ^ String.make 1 c
 
 (* printers *)
-let output_name os s =
-	let n = String.length s in
-	let rec sub i =
-		if i < n then begin
-			match s.[i] with
-			| '\\' -> output_string os "\\\\"; sub (i+1);
-			| '#' -> output_string os "\\#"; sub (i+1);
-			| '\x1b' -> output_char os s.[i+1]; sub (i+2);
-			| c -> output_char os c; sub (i+1);
-		end;
-	in
-	sub 0
-
 let rec output_term os =
 	let rec sub =
 		function
 		| []	-> output_string os ")"
 		| t::ts -> output_string os ","; output_term os t; sub ts
 	in
-	fun (Node(fty,fname,ts)) ->
-		output_name os fname;
-		debug (fun _ ->
-			match fty with
-			| Th s -> output_string os ("["^s^"]");
-			| _ -> ());
+	fun (Node(f,ts)) ->
+		f#output os;
 		match ts with
-		| []	-> if fty <> Var then output_string os "()";
+		| []	-> if f#is_fun then output_string os "()";
 		| t::ts	-> output_string os "("; output_term os t; sub ts
-let prerr_term = output_term stderr
-let prerr_terms = List.iter (fun t -> output_term stderr t; prerr_string " ")
+let prerr_term t = output_term stderr t
+let prerr_terms ts = List.iter (fun t -> output_term stderr t; prerr_string " ") ts
 let prerr_wterm wt = output_term stderr (erase wt)
 let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wts
 
@@ -203,27 +203,27 @@ let rec output_xml_term os =
 		| []	-> output_string os "</arg></funapp>"
 		| t::ts -> output_string os "</arg><arg>"; output_xml_term os t; sub ts
 	in
-	fun (Node(fty,fname,ts)) ->
-		if fty = Var then begin
+	fun (Node(f,ts)) ->
+		if f#is_var then begin
 			output_string os "<var>";
-			output_string os fname;
+			f#output_xml os;
 			output_string os "</var>";
 		end else begin
 			output_string os "<funapp><name>";
-			output_string os fname;
+			f#output_xml os;
 			output_string os "</name>";
 			match ts with
-			| []	-> if fty <> Var then output_string os "</funapp>";
+			| []	-> if f#is_fun then output_string os "</funapp>";
 			| t::ts	-> output_string os "<arg>"; output_xml_term os t; sub ts
 		end
 
 (*** rules ***)
 type strength = StrictRule | MediumRule | WeakRule
 
-class rule s (l:term) (r:term) =
+class rule s (l:#sym_basic term) (r:#sym_basic term) =
 	object (x)
-		val lhs = l
-		val rhs = r
+		val lhs : sym_basic term = l
+		val rhs : sym_basic term = r
 		val strength = s
 		method l = lhs
 		method r = rhs

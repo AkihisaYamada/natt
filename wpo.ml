@@ -11,10 +11,9 @@ exception Continue
 let k_comb x _ = x
 let supply_index v i = v ^ "_" ^ string_of_int i
 
-let rec eq (WT(fty,fname,ss,sw)) (WT(gty,gname,ts,tw)) =
-	fty = gty &&
-	fname = gname && 
-	match fty with
+let rec eq (WT(f,ss,sw)) (WT(g,ts,tw)) =
+	f = g &&
+	match f#ty with
 	| Th "C" -> eq_mset ss ts
 	| Th "AC" -> eq_mset ss ts
 	| _ -> List.for_all2 eq ss ts
@@ -87,10 +86,10 @@ let default_finfo symtype arity =
 }
 
 (* embeding relation *)
-let rec emb_le (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
-	s = t || List.exists (emb_le s) ts || fname = gname && List.for_all2 emb_le ss ts
+let rec emb_le (Node(f,ss) as s) (Node(g,ts) as t) =
+	s = t || List.exists (emb_le s) ts || f = g && List.for_all2 emb_le ss ts
 
-class processor p (trs:trs) (dg:dg) =
+class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 
 	(* SMT variables *)
 
@@ -113,8 +112,8 @@ class processor p (trs:trs) (dg:dg) =
 	let () = solver#set_base_ty weight_ty in
 	(* Signature as the set of function symbols with their informations. *)
 	let sigma = Hashtbl.create 256 in
-	let lookup fname =
-		try Hashtbl.find sigma fname with  _ -> raise (Internal fname)
+	let lookup f =
+		try Hashtbl.find sigma f#name with  _ -> raise (Internal f#name)
 	in
 	let nest_map = ref Mset.empty in
 	let nest fname = Mset.count fname !nest_map in
@@ -429,12 +428,12 @@ class processor p (trs:trs) (dg:dg) =
 				else
 					fun _ _ -> not_ordered
 			in
-			fun (WT(fty,fname,_,_)) (WT(gty,gname,ts,_)) ->
-				match fty, gty with
-				| Var, Var	-> Cons(LB(fname = gname), LB false)
-				| Var, _	-> sub ts (lookup gname)
-				| _, Var	-> not_ordered
-				| _			-> spo (lookup fname) (lookup gname)
+			fun (WT(f,_,_)) (WT(g,ts,_)) ->
+				if f#is_var then
+					if g#is_var then Cons(LB(f#name = g#name), LB false)
+					else sub ts (lookup g)
+				else if g#is_var then not_ordered
+				else spo (lookup f) (lookup g)
 	in
 
 (*** Argument filters ***)
@@ -505,12 +504,12 @@ class processor p (trs:trs) (dg:dg) =
 			usable
 	in
 	let rec set_usable filt usable s =
-		smt_for_all usable (trs#find_matchable s) &^ set_usable_inner filt usable s
-	and set_usable_inner filt usable (Node(fty,fname,ss)) =
-		if fty = Var then
+		smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
+	and set_usable_inner filt usable (Node(f,ss)) =
+		if f#is_var then
 			smt_for_all (set_usable_inner filt usable) ss
 		else
-			let finfo = lookup fname in
+			let finfo = lookup f in
 			let rec sub i ss =
 				match ss with
 				| [] -> LB true
@@ -831,10 +830,10 @@ class processor p (trs:trs) (dg:dg) =
 		in
 		List.map sub
 	in
-	let weight_var fname argws =
+	let weight_var f argws =
 		if argws <> [] then raise (Internal "higher order variable");
 		let vc = Hashtbl.create 1 in
-		(vc_add vc (LI 1) fname (LI 1);[(vc,mcw)])
+		(vc_add vc (LI 1) f#name (LI 1);[(vc,mcw)])
 	in
 	let weight_max =
 		let folder af sp ret (vc,e) =
@@ -875,53 +874,52 @@ class processor p (trs:trs) (dg:dg) =
 		match p.max_mode with
 		| MAX_none ->
 			if p.w_neg then
-				fun fty fname argws ->
-					if fty = Var then weight_var fname argws
+				fun f argws ->
+					if f#is_var then weight_var f argws
 					else
 						(* make it lower bounded by mcw *)
-						let sum = weight_summand fty (lookup fname) (list_product argws) in
+						let sum = weight_summand f#ty (lookup f) (list_product argws) in
 						if argws = [] then sum else (emptytbl,mcw)::sum
 			else
-				fun fty fname argws ->
-					if fty = Var then weight_var fname argws
-					else weight_summand fty (lookup fname) (list_product argws)
+				fun f argws ->
+					if f#is_var then weight_var f argws
+					else weight_summand f#ty (lookup f) (list_product argws)
 		| _ ->
-			fun fty fname argws ->
-				if fty = Var then
-					weight_var fname argws
+			fun f argws ->
+				if f#is_var then weight_var f argws
 				else
-					let finfo = lookup fname in
+					let finfo = lookup f in
 					if max_status finfo then
 						let init =
 							if finfo.maxpol then
-								weight_summand fty finfo (list_product argws)
+								weight_summand f#ty finfo (list_product argws)
 							else if p.w_neg then
 								(* make it lower bounded by mcw *)
 								[emptytbl,mcw]
 							else []
 						in
-						match fty with
+						match f#ty with
 						| Th "C" -> sub_c finfo init argws
 						| Th "AC" -> sub_ac finfo init argws
 						| _ -> sub_fun finfo 1 init argws
 					else
-						let sum = weight_summand fty finfo (list_product argws) in
+						let sum = weight_summand f#ty finfo (list_product argws) in
 						if p.w_neg && argws <> [] then
 							(* make it lower bounded by mcw *)
 							(emptytbl,mcw)::sum
 						else sum
 	in
 	(* annote terms with weights *)
-	let rec annote (Node(fty,fname,ss)) =
+	let rec annote (Node(f,ss)) =
 		let ss =
-			match fty with
-			| Th "AC" -> local_flat fname ss
+			match f#ty with
+			| Th "AC" -> local_flat f ss
 			| _ -> ss
 		in
 		let args = List.map annote ss in
 		let argws = List.map get_weight args in
-		let ws = weight_max fty fname argws in
-		WT(fty, fname, args, ws)
+		let ws = weight_max f argws in
+		WT(f, args, ws)
 	in
 
 (*** argument comparison ***)
@@ -994,34 +992,34 @@ class processor p (trs:trs) (dg:dg) =
 (*** compargs for AC symbols ***)
 
 	(* Korovin & Voronkov's original auxiliary order *)
-	let w_top_order (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
-		if gty = Var then
-			compose (wo sw tw) (Cons(LB(fname = gname), LB false))
-		else if fty = Var then
+	let w_top_order (WT(f,_,sw)) (WT(g,_,tw)) =
+		if g#is_var then
+			compose (wo sw tw) (Cons(LB(f=g), LB false))
+		else if f#is_var then
 			not_ordered
 		else
-			compose (wo sw tw) (compose (spo (lookup fname) (lookup gname)) (Cons(weq sw tw, LB false)))
+			compose (wo sw tw) (compose (spo (lookup f) (lookup g)) (Cons(weq sw tw, LB false)))
 	in
 	(* Corrected KV03 auxiliary order *)
-	let w_top_preorder (WT(fty,fname,_,sw)) (WT(gty,gname,_,tw)) =
-		if gty = Var then
+	let w_top_preorder (WT(f,_,sw)) (WT(g,_,tw)) =
+		if g#is_var then
 			compose (wo sw tw) weakly_ordered
-		else if fty = Var then
+		else if f#is_var then
 			not_ordered
 		else
-			compose (wo sw tw) (spo (lookup fname) (lookup gname))
+			compose (wo sw tw) (spo (lookup f) (lookup g))
 	in
 	
-	let small_head spo hinfo (WT(fty,fname,_,_)) =
-		if fty = Var then LB false else strictly (spo hinfo (lookup fname))
+	let small_head spo hinfo (WT(f,_,_)) =
+		if f#is_var then LB false else strictly (spo hinfo (lookup f))
 	in
 	let no_small_head spo hinfo s = smt_not (small_head spo hinfo s) in
 	let delete_variables =
 		let rec sub ss1 =
 			function
 			| []	-> ss1
-			| WT(fty,_,_,_) as s :: ss ->
-				if fty = Var then sub ss1 ss else sub (s::ss1) ss
+			| WT(f,_,_) as s :: ss ->
+				if f#is_var then sub ss1 ss else sub (s::ss1) ss
 		in
 		sub []
 	in
@@ -1097,17 +1095,17 @@ class processor p (trs:trs) (dg:dg) =
 		let rec sub prefix ret =
 			function
 			| [] -> ret
-			| (WT(gty,gname,ts,_) as t)::ss ->
-			if fname = gname then
+			| (WT(g,ts,_) as t)::ss ->
+			if fname = g#name then
 				(* this argument should be flattened *)
 				sub prefix ret (ts @ ss)
 			else (
 				let mapper (tcw,tcs,ts') = (tcw,tcs,ts' @ [t]) in
 				let ret = List.map mapper ret in
-				if gty = Var then
+				if g#is_var then
 					sub (prefix @ [t]) ret ss
 				else
-					let ginfo = lookup gname in
+					let ginfo = lookup g in
 					let p_g = permed ginfo in
 					let afl_g = argfilt_list ginfo in
 					(* pop-out an argument *)
@@ -1117,12 +1115,12 @@ class processor p (trs:trs) (dg:dg) =
 		and sub2 prefix ret afl_g p_g i =
 			function
 			| [] -> ret
-			| (WT(_,hname,vs,_) as u)::us ->
+			| (WT(h,vs,_) as u)::us ->
 				(* If u survives after argfilter, then it can pop out.
 				   If moreover g survives, then the pop-out is strict embedding.
 				 *)
 				let ret =
-					(p_g i, afl_g, prefix @ (if hname = fname then vs else [u])) :: ret
+					(p_g i, afl_g, prefix @ (if h#name = fname then vs else [u])) :: ret
 				in
 				sub2 prefix ret afl_g p_g (i+1) us
 		in
@@ -1209,8 +1207,8 @@ class processor p (trs:trs) (dg:dg) =
 		if p.Params.status_mode = S_empty then
 			fun _ _ _ _ -> Cons(LB false, LB false)
 		else if not p.collapse && p.adm then
-			fun _ _ _ (WT(gty,_,_,_)) ->
-				if gty = Var then
+			fun _ _ _ (WT(g,_,_)) ->
+				if g#is_var then
 					Cons(LB true, LB true)
 				else
 					Cons(LB false, LB false)
@@ -1271,11 +1269,11 @@ class processor p (trs:trs) (dg:dg) =
 		else
 			fun _ -> LB false
 	in
-	let rec var_eq xname (WT(gty,gname,ts,_)) =
-		if gty = Var then
-			LB(xname = gname)
+	let rec var_eq xname (WT(g,ts,_)) =
+		if g#is_var then
+			LB(xname = g#name)
 		else 
-			let ginfo = lookup gname in
+			let ginfo = lookup g in
 			let rec sub j =
 				function
 				| [] -> LB true
@@ -1283,18 +1281,18 @@ class processor p (trs:trs) (dg:dg) =
 			in
 			is_mincons ginfo |^ (smt_not (argfilt_list ginfo) &^ Delay(fun _ -> sub 1 ts))
 	in
-	let rec wpo (WT(_,fname,ss,sw) as s) (WT(_,gname,ts,tw) as t) =
+	let rec wpo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
 		if eq s t then
 			weakly_ordered
 		else
 			compose (wo sw tw) (wpo2 s t)
-	and wpo2 (WT(fty,fname,ss,_) as s) (WT(gty,gname,ts,_) as t) =
-		if fty = Var then
-			Cons(var_eq fname t, LB false)
+	and wpo2 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+		if f#is_var then
+			Cons(var_eq f#name t, LB false)
 		else
-			let finfo = lookup fname in
+			let finfo = lookup f in
 			try (* for efficiency *)
-				if fname = gname then
+				if f = g then
 					match ss,ts with
 					| [s1], [t1] ->
 						let fltp = permed finfo 1 in
@@ -1312,10 +1310,10 @@ class processor p (trs:trs) (dg:dg) =
 						let some_gt = (nfl &^ some_gt) |^ (fl &^ some_ge) in
 						if some_gt = LB true then
 							strictly_ordered
-						else if gty = Var then
+						else if g#is_var then
 							Cons(some_ge |^ is_maxcons finfo, some_gt)
 						else
-							let ginfo = lookup gname in
+							let ginfo = lookup g in
 							smt_split (order_all_args wpo s ginfo ts)
 							(fun all_ge all_gt ->
 								let gl = argfilt_list ginfo in
@@ -1323,7 +1321,7 @@ class processor p (trs:trs) (dg:dg) =
 								if all_gt = LB false then
 									Cons(some_ge |^ (ngl &^ all_ge), some_gt)
 								else
-									smt_split (compose (po s t) (compargs fname gname finfo ginfo wpo ss ts))
+									smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts))
 									(fun rest_ge rest_gt ->
 										smt_let Bool all_gt
 										(fun all_gt ->
@@ -1341,7 +1339,7 @@ class processor p (trs:trs) (dg:dg) =
 	in
 	let frame =
 		if p.prec_mode = PREC_none && p.Params.status_mode = S_empty then
-			fun (WT(_,_,_,sw)) (WT(_,_,_,tw)) -> wo sw tw
+			fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
 		else wpo
 	in
 
@@ -1705,32 +1703,30 @@ class processor p (trs:trs) (dg:dg) =
 
 			(* generating the signature *)
 			Hashtbl.clear sigma;
-			let transform_finfo fname =
-				let finfo = trs#find_sym fname in
-				match finfo.Trs.arity with
-				| Arity n -> default_finfo finfo.Trs.symtype n
-				| _ -> raise (No_support "variadic signature")
+			let transform_finfo f =
+				let f = trs#find_sym f in
+				default_finfo f#ty f#arity
 			in
-			let rec sub (Node(fty,fname,ss)) =
-				if fty <> Var && not (Hashtbl.mem sigma fname) then
-					Hashtbl.replace sigma fname (transform_finfo fname);
+			let rec sub (Node(f,ss)) =
+				if not f#is_var && not (Hashtbl.mem sigma f#name) then
+					Hashtbl.replace sigma f#name (transform_finfo f);
 				List.iter sub ss;
 			in
 			List.iter (fun (_,rule) -> sub rule#l; sub rule#r;) !usables;
-			let sub_dp (Node(fty,fname,ss)) =
-				if not (Hashtbl.mem sigma fname) then
-					Hashtbl.add sigma fname (transform_finfo fname);
+			let sub_dp (Node(f,ss)) =
+				if not (Hashtbl.mem sigma f#name) then
+					Hashtbl.add sigma f#name (transform_finfo f);
 				List.iter sub ss;
 			in
 			List.iter (fun (_,dp) -> sub_dp dp#l; sub_dp dp#r;) !dplist;
 
 			(* count nesting *)
 			if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
-				let rec nest_term (Node(fty,fname,ss)) =
-					if fty = Var then
+				let rec nest_term (Node(f,ss)) =
+					if f#is_var then
 						Mset.empty
 					else
-						Mset.union (Mset.singleton fname)
+						Mset.union (Mset.singleton f#name)
 							(List.fold_left Mset.join Mset.empty (List.map nest_term ss))
 				in
 				let nest_rule rule = Mset.join (nest_term rule#l) (nest_term rule#r) in
@@ -1760,25 +1756,25 @@ class processor p (trs:trs) (dg:dg) =
 				in
 				function
 				| MAX_dup	->
-					let rec annote_vs (Node(fty,fname,ss)) =
+					let rec annote_vs (Node(f,ss)) =
 						let args = List.map annote_vs ss in
 						let argvss = List.map get_weight args in
 						let vs =
-							if fty = Var then [Mset.singleton fname]
-							else if (lookup fname).max then
+							if f#is_var then [Mset.singleton f#name]
+							else if (lookup f).max then
 								List.concat argvss
 							else
 								List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
 						in
-						WT(fty,fname,args,vs)
+						WT(f,args,vs)
 					in
 					let vcond svss tvss =
 						List.for_all (fun tvs -> List.exists (Mset.subseteq tvs) svss) tvss
 					in
-					let rec sub (WT(fty,fname,ss,svss) as s) (WT(gty,gname,ts,tvss)) =
+					let rec sub (WT(f,ss,svss) as s) (WT(g,ts,tvss)) =
 						List.iter (sub s) ts;
 						if	not (vcond svss tvss) &&
-							set_max_finfo gname (lookup gname)
+							set_max_finfo g#name (lookup g)
 						then raise Continue;
 					in
 					let annote_sub (_,lr) =
@@ -1841,10 +1837,9 @@ class processor p (trs:trs) (dg:dg) =
 			try
 				debug2 (fun _ -> prerr_string "    Rules: {"; flush stderr;);
 				let iterer (i,rule) =
-					let fname = root rule#l in
 					debug2 (fun _ -> prerr_char ' '; prerr_int i; flush stderr;);
-					let (WT(_,_,_,lw) as la) = annote rule#l in
-					let (WT(_,_,_,rw) as ra) = annote rule#r in
+					let (WT(_,_,lw) as la) = annote rule#l in
+					let (WT(_,_,rw) as ra) = annote rule#r in
 
 					if p.dp then begin
 						if p.usable_w then begin

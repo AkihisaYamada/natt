@@ -76,3 +76,11 @@ let rec subsequences xs =
 	| [] -> [[]]
 	| x::xs -> let yss = subsequences xs in List.map (fun ys -> x::ys) yss @ yss
 
+class type output =
+	object
+		method output : out_channel -> unit
+	end;;
+class type output_xml =
+	object
+		method output_xml : out_channel -> unit
+	end;;

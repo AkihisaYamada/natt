@@ -54,7 +54,7 @@ let estimate_paths len (trs:trs) (dg:dg) scc =
 	in
 	sub 0
 
-let find_loop lim (trs:trs) (dg:dg) scc =
+let find_loop lim (trs:trs) (estimator:Estimator.t) (dg:dg) scc =
 	let iterer len nlim i1 =
 		let dp1 = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =
@@ -98,7 +98,7 @@ let find_loop lim (trs:trs) (dg:dg) scc =
 					sub (pos + 1) loop (u1#compose u2) l3 r3 rest
 					(strict || (dg#find_dp i3)#is_strict)
 				in
-				List.iter iterer (instantiate_edge trs cnt nlim (u1#subst r2) l3);
+				List.iter iterer (estimator#instantiate_edge cnt nlim (u1#subst r2) l3);
 		in
 		let iterer2 loop =
 			debug2

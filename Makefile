@@ -16,10 +16,29 @@ OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool"
 
 # The list of ocaml source files
 OCAML_SRCS=\
-	trs_ast.ml trs_parser.mly trs_lexer.mll trs_sem.ml read.ml \
-	util.ml matrix.ml params.ml proc.ml smt.ml preorder.ml mset.ml \
-	abbrev.ml term.ml subst.ml trs.ml dp.ml app.ml wpo.ml nonterm.ml \
+	trs_ast.ml \
+	trs_parser.mly \
+	trs_lexer.mll \
+	trs_sem.ml \
+	read.ml \
+	util.ml \
+	matrix.ml \
+	params.ml \
+	proc.ml \
+	smt.ml \
+	preorder.ml \
+	mset.ml \
+	abbrev.ml \
+	term.ml \
+	subst.ml \
+	trs.ml \
+	estimator.ml \
+	dp.ml \
+	app.ml \
+	wpo.ml \
+	nonterm.ml \
 	main.ml
+
 OCAML_CMAS=\
 	graph.cma unix.cma str.cma
 

@@ -2,46 +2,48 @@ open Term
 
 exception Inconsistent
 
-class t =
-	let rec subst1 xname s t =
-		match t with
-		| Node(Var,yname,[]) -> if xname = yname then s else t
-		| Node(gty,gname,ts) -> Node(gty,gname,List.map (subst1 xname s) ts)
+(* Substitution, but not limited to variables *)
+
+class ['a] t =
+	let rec subst1 x (Node(f,ss) as s) (Node(g,ts)) =
+		let ts' = List.map (subst1 x s) ts in
+		if g = x then Node(f,ss@ts') else Node(g,ts')
 	in
 	object (x:'x)
 		val table = Hashtbl.create 16
 		method get_table = table
-		method mem xname = Hashtbl.mem table xname
-		method find xname = Hashtbl.find table xname
-		method add xname s =
-			try if x#find xname <> s then raise Inconsistent
-			with Not_found -> Hashtbl.add table xname s
-		method replace xname s =
-			Hashtbl.iter (fun yname t -> Hashtbl.replace table yname (subst1 xname s t)) table;
-			if not (x#mem xname) then
-				Hashtbl.add table xname s;
+		method mem (f:'a) = Hashtbl.mem table f
+		method find f = Hashtbl.find table f
+		method add f s =
+			try if x#find f <> s then raise Inconsistent
+			with Not_found -> Hashtbl.add table f s
+		method replace f s =
+			Hashtbl.iter (fun g t -> Hashtbl.replace table g (subst1 f s t)) table;
+			if not (x#mem f) then Hashtbl.add table f s;
 		method compose (y:'x) =
 			let (z:'x) = x#copy in
 			let z_table = z#get_table in
-			let iterer xname s = Hashtbl.replace z_table xname (y#subst s) in
+			let iterer f s = Hashtbl.replace z_table f (y#subst s) in
 			Hashtbl.iter iterer z_table;
-			let iterer yname t =
-				if not (Hashtbl.mem z_table yname) then Hashtbl.add z_table yname t
+			let iterer g t =
+				if not (Hashtbl.mem z_table g) then Hashtbl.add z_table g t
 			in
 			Hashtbl.iter iterer y#get_table;
 			z
 		method copy = {< table = Hashtbl.copy table >}
-		method subst s =
-			match s with
-			| Node(Var,xname,[]) -> (try x#find xname with Not_found -> s)
-			| Node(fty,fname,ss) -> Node(fty, fname, List.map x#subst ss)
+		method subst (Node(f,ss)) =
+			let ss' = List.map x#subst ss in
+			if f#is_var then
+				try let Node(g,ts) = x#find f in Node(g,ts@ss')
+				with Not_found -> Node(f,ss')
+			else Node(f,ss')
 		method output os =
 			if Hashtbl.length table = 0 then begin
 				output_string os "[ ]\n";
 			end else begin
-				let iterer xname s =
+				let iterer f s =
 					output_string os "    ";
-					output_string os xname;
+					f#output os;
 					output_string os " := ";
 					output_term os s;
 					output_string os "\n";
@@ -53,16 +55,16 @@ class t =
 			end;
 	end;;
 
-let singleton xname s = let ret = new t in ret#replace xname s; ret
+let singleton f s = let ret = new t in ret#replace f s; ret
 
 let unify =
-	let rec sub1 unifier (Node(fty,fname,ss) as s) (Node(gty,gname,ts) as t) =
-		if fname = gname then
+	let rec sub1 unifier (Node(f,ss) as s) (Node(g,ts) as t) =
+		if f = g then
 			sub2 unifier ss ts
-		else if fty = Var then
-			if VarSet.mem fname (varset t) then None else Some(unifier#replace fname t; unifier)
-		else if gty = Var then
-			if VarSet.mem gname (varset s) then None else Some(unifier#replace gname s; unifier)
+		else if f#is_var then
+			if VarSet.mem f#name (varset t) then None else Some(unifier#replace f t; unifier)
+		else if g#is_var then
+			if VarSet.mem g#name (varset s) then None else Some(unifier#replace g s; unifier)
 		else None
 	and sub2 unifier ss ts =
 		match ss, ts with
@@ -78,11 +80,11 @@ let unify =
 	fun s t -> sub1 (new t) s t
 
 let matches =
-	let rec sub1 matcher (Node(fty,fname,ss) as s) (Node(gty,gname,ts)) =
-		if gty = Var then
-			try matcher#add gname s; Some(matcher)
+	let rec sub1 matcher (Node(f,ss) as s) (Node(g,ts)) =
+		if g#is_var then
+			try matcher#add g s; Some(matcher)
 			with Inconsistent -> None
-		else if fname = gname then
+		else if f = g then
 			sub2 matcher ss ts
 		else None
 	and sub2 matcher ss ts =
@@ -98,13 +100,10 @@ let matches =
 	in
 	fun s t -> sub1 (new t) s t
 
-let rec rename f (Node(fty,fname,ss)) =
-	if fty = Var then
-		Node(fty, f fname, ss)
-	else
-		Node(fty, fname, List.map (rename f) ss)
+let rec rename renamer (Node(f,ss)) =
+	Node(renamer f, List.map (rename renamer) ss)
 
 let vrename v =
-	let f vname = vname^ "_{" ^ v ^ "}" in
-	rename f
+	let renamer f = new sym_basic f#ty (f#name ^ "_{" ^ v ^ "}") in
+	rename renamer
 

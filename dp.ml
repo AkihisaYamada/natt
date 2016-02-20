@@ -3,73 +3,74 @@ open Term
 open Trs
 open Params
 
-let mark fname = escape '#' ^ fname
-
-let mark_root (Node(fty,fname,ss)) =
-	match fty with
-	| Th "AC" -> Node(Th "C", mark fname, ss)
-	| _ -> Node(fty, mark fname, ss)
-
-let mark_KT98 =
-	let rec sub fname (Node(fty,gname,ss) as s) =
-		if fname = gname then
-			Node(fty, mark fname, List.map (sub fname) ss) else s
+let mark_name name = escape '#' ^ name
+let mark_sym f =
+	let fty =
+		match f#ty with
+		| Th "AC" -> Th "C"
+		| fty -> fty
 	in
-	fun (Node(fty,fname,ss) as s) ->
-		match fty with
-		| Th "AC" -> mark_root (Node(fty, fname, List.map (sub fname) ss))
+	new sym_basic fty (mark_name f#name)
+
+let mark_root (Node(f,ss)) = Node(mark_sym f, ss)
+
+let mark_KT98 f = new sym_basic f#ty (escape '#' ^ f#name)
+
+let mark_term_KT98 =
+	let rec sub f (Node(g,ss) as s) =
+		if f = g then
+			Node(mark_KT98 f, List.map (sub f) ss) else s
+	in
+	fun (Node(f,ss) as s) ->
+		match f#ty with
+		| Th "AC" -> Node(mark_KT98 f, List.map (sub f) ss)
 		| _ -> mark_root s
 
-let mark_guard (Node(fty,fname,ss) as s) =
-	match fty with
+let guard_term (Node(f,ss) as s) =
+	match f#ty with
 	| Fun -> mark_root s
-	| Th _ -> Node(Fun, mark fname, [s])
-	| _ -> raise (No_support "theory")
+	| _ -> Node(new sym_basic Fun (mark_name f#name), [s])
 
-let mark_ac =
+let mark_term_ac =
 	match params.ac_mark_mode with
 	| AC_unmark -> fun x -> x
 	| AC_mark ->
-		if params.acdp_mode = ACDP_KT98 then mark_KT98
-		else mark_root
-	| AC_guard -> mark_guard
+		if params.acdp_mode = ACDP_KT98 then mark_term_KT98 else mark_root
+	| AC_guard -> guard_term
 
-let mark_term (Node(fty,fname,ss) as s) =
-	if fty = Fun then mark_root s else mark_ac s
+let mark_term (Node(f,ss) as s) =
+	if f#is_fun then mark_root s else mark_term_ac s
 
 
-let ext_ac fty fname t = Node(fty, fname, [t; var "_1"])
+let ext_ac f t = Node(f, [t; var "_1"])
 
 (* Adding marked symbols *)
 
-let add_marked_symbol_default trs fname finfo =
-	let minfo = trs#get_sym (mark fname) in
-	minfo.symtype <- finfo.symtype;
-	minfo.arity <- finfo.arity;;
+let add_marked_symbol_default (trs:trs) f =
+	let f' = trs#get_sym (mark_sym f) in
+	f'#set_arity f#arity;;
 
-let add_marked_symbol_ac =
+let add_marked_symbol_ac : trs -> #sym_detailed -> unit =
 	match params.ac_mark_mode with
-	| AC_unmark -> fun _ _ _ -> ()
-	| AC_mark -> fun trs fname finfo ->
-		let minfo = trs#get_sym (mark fname) in
-		minfo.symtype <- Th "C";
-		minfo.arity <- finfo.arity;
-	| AC_guard -> fun trs fname _ ->
-		let minfo = trs#get_sym (mark fname) in
-		minfo.symtype <- Fun;
-		minfo.arity <- Arity 1;;
+	| AC_unmark -> fun _ _ -> ()
+	| AC_mark -> fun trs f ->
+		let f' = trs#get_sym (mark_sym f) in
+		f'#set_arity f#arity;
+	| AC_guard -> fun trs f ->
+		let f' = trs#get_sym_name (mark_name f#name) in
+		f'#set_arity 1;;
 
-let add_marked_symbols trs =
-	let iterer fname finfo =
-		if trs#strictly_defines fname then begin
-			if finfo.symtype = Fun then begin
-				add_marked_symbol_default trs fname finfo;
+let add_marked_symbols (trs:trs) =
+	let iterer f =
+		if f#is_defined then begin
+			if f#ty = Fun then begin
+				add_marked_symbol_default trs f;
 			end else begin
-				add_marked_symbol_ac trs fname finfo;
+				add_marked_symbol_ac trs f;
 			end;
 		end;
 	in
-	Hashtbl.iter iterer trs#get_table;;
+	trs#iter_syms iterer;;
 
 let make_dp_table (trs:trs) minimal dp_table =
 	(* Relative: Moving duplicating or non-dominant weak rules to *medium* rules *)
@@ -103,8 +104,8 @@ let make_dp_table (trs:trs) minimal dp_table =
 	add_marked_symbols trs;
 
 	(* Generating dependency pairs *)
-	let rec generate_dp_sub strength s (Node(gty,gname,ts) as t) =
-		if trs#strictly_defines gname && not (is_strict_subterm t s) then begin
+	let rec generate_dp_sub strength s (Node(g,ts) as t) =
+		if trs#strictly_defines g && not (strict_subterm t s) then begin
 			add_dp (new rule strength s (mark_term t));
 		end;
 		List.iter (generate_dp_sub strength s) ts;
@@ -117,20 +118,20 @@ let make_dp_table (trs:trs) minimal dp_table =
 		| ACDP_new -> generate_dp_default
 		| ACDP_KT98 ->
 			fun i rule ->
-				let Node(fty,fname,_) = rule#l in
+				let f = root rule#l in
 				generate_dp_default i rule;
-				if fty = Th "AC" then begin
-					let xl = ext_ac fty fname rule#l in
-					let xr = ext_ac fty fname rule#r in
+				if f#ty = Th "AC" then begin
+					let xl = ext_ac f rule#l in
+					let xr = ext_ac f rule#r in
 					add_dp (new rule rule#strength (mark_term xl) (mark_term xr));
 				end;
 		| _ ->
 			fun i rule ->
-				let Node(fty,fname,_) = rule#l in
+				let f = root rule#l in
 				generate_dp_default i rule;
-				if fty = Th "AC" then begin
-					let xl = ext_ac fty fname rule#l in
-					let xr = ext_ac fty fname rule#r in
+				if f#ty = Th "AC" then begin
+					let xl = ext_ac f rule#l in
+					let xr = ext_ac f rule#r in
 					generate_dp_default i (new rule rule#strength xl xr);
 				end;
 	in
@@ -141,9 +142,9 @@ let make_dp_table (trs:trs) minimal dp_table =
 		trs#add_rule (weak_rule s t);
 		problem trs#output_last_rule;
 	in
-	let ac_mark_handle fname finfo =
-		if finfo.symtype = Th "AC" && trs#strictly_defines fname then begin
-			let u s t = Node(finfo.symtype, fname, [s;t]) in
+	let ac_mark_handle f =
+		if f#ty = Th "AC" && f#is_defined then begin
+			let u s t = app f [s;t] in
 			let m =
 				if params.ac_mark_mode = AC_mark then
 					fun s t -> mark_root (u s t)
@@ -182,17 +183,17 @@ let make_dp_table (trs:trs) minimal dp_table =
 (*				add_dp (weak_rule (m x (u y z)) (m x y));
 *)		end;
 	in
-	Hashtbl.iter ac_mark_handle trs#get_table;;
+	trs#iter_syms ac_mark_handle;;
 
 
 (* For the new AC-DP *)
 let add_marked_symbols_ac trs =
-	let iterer fname finfo =
-		if finfo.symtype <> Fun && trs#strictly_defines fname then begin
-			add_marked_symbol_ac trs fname finfo;
+	let iterer f =
+		if f#ty <> Fun && f#is_defined then begin
+			add_marked_symbol_ac trs f;
 		end;
 	in
-	Hashtbl.iter iterer trs#get_table;;
+	trs#iter_syms iterer;;
 
 let make_ac_ext (trs:trs) dp_table =
 	let cnt = ref 0 in
@@ -201,17 +202,17 @@ let make_ac_ext (trs:trs) dp_table =
 		Hashtbl.add dp_table (!cnt) rule;
 	in
 	let generate_dp i rule =
-		let Node(fty,fname,_) = rule#l in
-		if rule#is_strict && fty = Th "AC" then begin
-			let xl = ext_ac fty fname rule#l in
-			let xr = ext_ac fty fname rule#r in
+		let f = root rule#l in
+		if rule#is_strict && f#ty = Th "AC" then begin
+			let xl = ext_ac f rule#l in
+			let xr = ext_ac f rule#r in
 			add_dp (new rule rule#strength (mark_term xl) (mark_term xr));
 		end;
 	in
 	trs#iter_rules generate_dp;
-	let ac_mark_handle fname finfo =
-		if not (Rules.is_empty finfo.defined_by) && finfo.symtype = Th "AC" then begin
-			let u s t = Node(finfo.symtype, fname, [s;t]) in
+	let ac_mark_handle f =
+		if f#is_defined && f#ty = Th "AC" then begin
+			let u s t = app f [s;t] in
 			let m =
 				if params.ac_mark_mode = AC_mark then fun s t -> mark_root (u s t)
 				else u
@@ -227,7 +228,7 @@ let make_ac_ext (trs:trs) dp_table =
 (*			add_dp (weak_rule (m x (u y z)) (m x y));
 *)		end;
 	in
-	Hashtbl.iter ac_mark_handle trs#get_table;
+	trs#iter_syms ac_mark_handle;
 	add_marked_symbols_ac trs;;
 
 
@@ -249,19 +250,17 @@ module SubComponents = Graph.Components.Make(SubDG)
 
 (* Estimated dependency graph *)
 
-let make_dg (trs:trs) dp_table dg =
+let make_dg (trs:trs) (estimator:Estimator.t) dp_table dg =
+	log estimator#output_sym_graph;
 	let edged_KT98 src tgt =
-		let Node(fty,_,_) = src#l in
-		if fty = Th "AC" then
-			List.exists (fun r' -> trs#estimate_edge r' tgt#l) (top_ac_subterms src#r)
-		else trs#estimate_edge src#r tgt#l
+		if (root src#l)#ty = Th "AC" then
+			List.exists (fun r' -> estimator#connects r' tgt#l) (top_ac_subterms src#r)
+		else estimator#connects src#r tgt#l
 	in
 	let edged =
 		if params.acdp_mode = ACDP_KT98 then edged_KT98
-		else fun src tgt -> trs#estimate_edge src#r tgt#l
+		else fun src tgt -> estimator#connects src#r tgt#l
 	in
-	trs#init_sym_graph;
-	log trs#output_sym_graph;
 	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 	Hashtbl.iter
 	(fun i1 dp1 ->
@@ -282,15 +281,15 @@ let get_sccs dg =
 let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
-class dg (trs:trs) =
+class dg (trs:trs) (estimator:Estimator.t) =
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
 		val min = ref true
 		val dp_table = Hashtbl.create 256
 		val dg = DG.create ()
-		method init = make_dp_table trs min dp_table; make_dg trs dp_table dg;
-		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs dp_table dg;
+		method init = make_dp_table trs min dp_table; make_dg trs estimator dp_table dg;
+		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs estimator dp_table dg;
 		method minimal = !min
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
