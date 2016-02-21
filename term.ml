@@ -16,6 +16,7 @@ class type sym =
 		method ty : symtype
 		method name : string
 		method equals : 'a. (<name:string;..> as 'a) -> bool
+		method output : out_channel -> unit
 	end;;
 
 let root (Node(f,_)) = f

@@ -97,7 +97,7 @@ exception Next
 let auto_uncurry (trs:trs) (dg:dg) =
 	let folder (a:sym_detailed) a_s =
 		try
-			if a#is_var || a#is_const then begin
+			if a#ty <> Fun || a#is_const then begin
 				raise Next;
 			end;
 			let nargs = if a#arity > 0 then a#arity - 1 else raise Next in

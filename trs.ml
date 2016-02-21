@@ -99,11 +99,11 @@ class trs =
 		method fold_syms : 'b. (sym_detailed -> 'b -> 'b) -> 'b -> 'b =
 			fun folder acc ->
 				Hashtbl.fold (fun _ -> folder) sym_table acc
+		method strictly_defines_name name =
+			try not (Rules.is_empty (Hashtbl.find sym_table name)#defined_by)
+			with Not_found -> false
 		method strictly_defines : 'a. (#sym as 'a) -> bool =
-			fun f ->
-				f#is_fun &&
-				try not (Rules.is_empty (Hashtbl.find sym_table f#name)#defined_by)
-				with Not_found -> false
+			fun f -> f#is_fun && x#strictly_defines_name f#name
 		method defines : 'a. (#sym as 'a) -> bool =
 			fun f ->
 				f#is_fun &&

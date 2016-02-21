@@ -85,10 +85,6 @@ let default_finfo symtype arity =
 	prec_exp = LI 0;
 }
 
-(* embeding relation *)
-let rec emb_le (Node(f,ss) as s) (Node(g,ts) as t) =
-	s = t || List.exists (emb_le s) ts || f = g && List.for_all2 emb_le ss ts
-
 class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 
 	(* SMT variables *)
@@ -396,11 +392,11 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 			fun fname finfo -> finfo.prec_exp <- pmin
 		else
 			fun fname finfo ->
-			if marked_name fname then begin
-				finfo.prec_exp <- (lookup_name (unmark_name fname)).prec_exp;
-			end else begin
-				add_prec_default fname finfo
-			end
+				if marked_name fname then begin
+					(* marked AC symbols have the precedence of unmarked one *)
+				end else begin
+					add_prec_default fname finfo;
+				end;
 	in
 	let add_prec =
 		match p.prec_mode with
@@ -1033,11 +1029,16 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		in
 		sub []
 	in
+
 	let comparg_ac_S90 _ order ss ts =
 		let ss, ts = delete_common ss ts in
 		mset_extension order ss ts
 	in
 	let comparg_ac_rec finfo order ss ts =
+prerr_wterms ss;
+prerr_string "  >  ";
+prerr_wterms ts;
+prerr_endline "?";
 		let ss, ts = delete_common ss ts in
 		let nss = List.length ss in
 		let nts = List.length ts in
@@ -1102,28 +1103,33 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	 * \pi(f(ss)) iteself if not cs but cw.
 	 *)
 	let emb_candidates fname =
-		let fname = if marked_name fname then unmark_name fname else fname in
-		let rec sub prefix ret =
-			function
-			| [] -> ret
+		let rec sub precond preargs ret postargs =
+			if precond = LB false then ret else
+			match postargs with
+			| [] ->
+				(* the whole argument is \pi(f(ss)) if the precondition holds *)
+				(precond, LB false, preargs) :: ret
 			| (WT(g,ts,_) as t)::ss ->
-			if fname = g#name then
-				(* this argument should be flattened *)
-				sub prefix ret (ts @ ss)
-			else (
+				if fname = g#name then
+					(* this argument should be flattened *)
+					sub precond preargs ret (ts @ ss)
+				else (
 				let mapper (tcw,tcs,ts') = (tcw,tcs,ts' @ [t]) in
 				let ret = List.map mapper ret in
 				if g#is_var then
-					sub (prefix @ [t]) ret ss
+					(* a variable must remain *)
+					sub precond (preargs @ [t]) ret ss
 				else
 					let ginfo = lookup g in
 					let p_g = permed ginfo in
 					let afl_g = argfilt_list ginfo in
 					(* pop-out an argument *)
-					let ret = sub2 prefix ret afl_g p_g 1 ts in
-					sub (prefix @ [t]) ret ss
+					let precond = solver#refer Bool precond in
+					let ret = sub2 precond preargs ret afl_g p_g 1 ts in
+					(* t may remain, only if its root symbol is not collapsed *)
+					sub (precond &^ afl_g) (preargs @ [t]) ret ss
 			)
-		and sub2 prefix ret afl_g p_g i =
+		and sub2 precond preargs ret afl_g p_g i =
 			function
 			| [] -> ret
 			| (WT(h,vs,_) as u)::us ->
@@ -1131,48 +1137,71 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 				   If moreover g survives, then the pop-out is strict embedding.
 				 *)
 				let ret =
-					(p_g i, afl_g, prefix @ (if h#name = fname then vs else [u])) :: ret
+					(precond &^ p_g i, afl_g, preargs @ (if h#name = fname then vs else [u])) :: ret
 				in
-				sub2 prefix ret afl_g p_g (i+1) us
+				sub2 precond preargs ret afl_g p_g (i+1) us
 		in
-		sub [] []
+		sub (LB true) [] []
 	in
 
 	let rec ac_rpo_compargs fname finfo ss ts order =
-		if ss = ts then
-			weakly_ordered
-		else Delay (fun context ->
+		Delay (fun context ->
 			let mapper (scw,scs,ss') =
 				(context#refer Bool scw, context#refer Bool scs, ss')
 			in
 			let sss = List.map mapper (emb_candidates fname ss) in
-			let tss = emb_candidates fname ts in
+			let tss = List.map mapper (emb_candidates fname ts) in
 
-			let all_gt_filter (scw,scs,ss') =
-				let (ge,gt) = split (ac_rpo_compargs fname finfo ss' ts order) context in
-				scw &^ (gt |^ (scs &^ ge))
+			let rec step2 ge gt ss' = function
+			| [] -> Cons(ge,gt)
+			| (tcw,tcs,ts') :: tss ->
+				if tcw = LB false then
+					(* this is not even a weak embedding, so don't care *)
+					step2 ge gt ss' tss
+				else if tcs = LB false then
+				 	(* this is at best \pi(t), so go real comparison *)
+				 	let (ge2,gt2) = split (comparg_ac_rec finfo order ss' ts') context in
+				 	step2 (ge &^ (tcw =>^ ge2)) (gt &^ (tcw =>^ gt2)) ss' tss
+				else
+					let (ge3,gt3) = split (ac_rpo_compargs fname finfo ss' ts' order) context in
+					step2
+						(ge &^ (tcw =>^ smt_if tcs gt3 ge3))
+						(gt &^ (tcw =>^ smt_not tcs &^ gt3))
+						ss' tss
 			in
-			let all_gt = context#refer Bool (smt_exists all_gt_filter sss) in
-			if all_gt = LB true then strictly_ordered else
-			let all_ge_filter (tcw,tcs,ts') =
-				(tcw &^ tcs) =>^ strictly (ac_rpo_compargs fname finfo ss ts' order)
+			let rec step1 ge gt =
+			function 
+			| [] -> Cons(ge,gt)
+			| (scw,scs,ss') :: sss ->
+				if scw = LB false then
+					(* if this is not even a weak embedding, so don't care *)
+					step1 ge gt sss
+				else if scs = LB false then
+				 	(* this is at best only weak embedding, so go to the next step *)
+				 	let (ge2,gt2) = split (step2 (LB true) (LB true) ss' tss) context in
+				 	step1 (ge |^ (scw &^ ge2)) (gt |^ (scw &^ gt2)) sss
+				else
+					let (ge3,gt3) = split (ac_rpo_compargs fname finfo ss' ts order) context in
+					(* if this is strict embedding, weak order results strict order *)
+					step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
 			in
-			let all_ge = context#refer Bool (smt_for_all all_ge_filter tss) in
-			if all_ge = LB false then not_ordered else
-			
-			let (ge,gt) = split (comparg_ac_rec finfo order ss ts) context in
-			Cons(all_gt |^ (all_ge &^ ge), all_gt |^ (all_ge &^ gt)) 
+			step1 (LB false) (LB false) sss
 		)
+	in
+	let ac_unmark_name name =
+		if marked_name name then unmark_name name else name
 	in
 	let ac_compargs =
 		if p.adm then
 			fun fname gname finfo order ss ts ->
-				if fname = gname then
+				if ac_unmark_name fname = ac_unmark_name gname then
 					comparg_ac finfo order ss ts
 				else
 					not_ordered
 		else
 			fun fname gname finfo order ss ts ->
+				let fname = ac_unmark_name fname in
+				let gname = ac_unmark_name gname in
 				if fname = gname then
 					ac_rpo_compargs fname finfo ss ts order
 				else not_ordered
@@ -1353,7 +1382,6 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 			fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
 		else wpo
 	in
-
 
 (*** Printing proofs ***)
 	let zero =
@@ -1842,6 +1870,19 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 					| pf::pfs	-> subsub pf pfs; sub pfs
 				in
 				sub (Hashtbl.fold (fun _ finfo vs -> prec finfo::vs) sigma [])
+			end;
+
+			if p.prec_mode <> PREC_none then begin
+				(* special treatment of AC symbols *)
+				let iterer fname finfo =
+					if finfo.symtype = Th "AC" then begin
+						(* marked AC symbols have the precedence of unmarked one *)
+						if marked_name fname then begin
+							finfo.prec_exp <- (lookup_name (unmark_name fname)).prec_exp;
+						end;
+					end;
+				in
+				Hashtbl.iter iterer sigma;
 			end;
 
 			List.iter (fun (i,_) -> add_usable i) !usables;

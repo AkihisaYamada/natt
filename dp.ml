@@ -10,32 +10,24 @@ let string_prefix s t =
 	let n = String.length t in
 	String.length s >= n &&
 	let rec sub i =
-		i > n || s.[i] = t.[i] && sub (i+1)
+		i >= n || s.[i] = t.[i] && sub (i+1)
 	in
 	sub 0
 
 let marked_name name = string_prefix name (escape '#')
 
-let mark_sym f =
-	let fty =
-		match f#ty with
-		| Th "AC" -> Th "C"
-		| fty -> fty
-	in
-	new sym_basic fty (mark_name f#name)
-
-let mark_sym_KT98 f = new sym_basic f#ty (escape '#' ^ f#name)
+let mark_sym f = new sym_basic f#ty (mark_name f#name)
 
 let mark_root (Node(f,ss)) = Node(mark_sym f, ss)
 
 let mark_term_KT98 =
 	let rec sub (f:#sym) (Node(g,ss) as s) =
 		if f#equals g then
-			Node(mark_sym_KT98 f, List.map (sub f) ss) else s
+			Node(mark_sym f, List.map (sub f) ss) else s
 	in
 	fun (Node(f,ss) as s) ->
 		match f#ty with
-		| Th "AC" -> Node(mark_sym_KT98 f, List.map (sub f) ss)
+		| Th "AC" -> Node(mark_sym f, List.map (sub f) ss)
 		| _ -> mark_root s
 
 let guard_term (Node(f,ss) as s) =
@@ -60,12 +52,10 @@ let add_marked_symbol_default (trs:trs) f =
 	let f' = trs#get_sym (mark_sym f) in
 	f'#set_arity f#arity;;
 
-let add_marked_symbol_ac : trs -> #sym_detailed -> unit =
+let add_marked_symbol_ac =
 	match params.ac_mark_mode with
 	| AC_unmark -> fun _ _ -> ()
-	| AC_mark -> fun trs f ->
-		let f' = trs#get_sym (mark_sym f) in
-		f'#set_arity f#arity;
+	| AC_mark -> add_marked_symbol_default
 	| AC_guard -> fun trs f ->
 		let f' = trs#get_sym_name (mark_name f#name) in
 		f'#set_arity 1;;
