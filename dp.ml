@@ -4,6 +4,18 @@ open Trs
 open Params
 
 let mark_name name = escape '#' ^ name
+let unmark_name name = String.sub name 2 (String.length name - 2)
+
+let string_prefix s t =
+	let n = String.length t in
+	String.length s >= n &&
+	let rec sub i =
+		i > n || s.[i] = t.[i] && sub (i+1)
+	in
+	sub 0
+
+let marked_name name = string_prefix name (escape '#')
+
 let mark_sym f =
 	let fty =
 		match f#ty with
@@ -12,24 +24,22 @@ let mark_sym f =
 	in
 	new sym_basic fty (mark_name f#name)
 
+let mark_sym_KT98 f = new sym_basic f#ty (escape '#' ^ f#name)
+
 let mark_root (Node(f,ss)) = Node(mark_sym f, ss)
 
-let mark_KT98 f = new sym_basic f#ty (escape '#' ^ f#name)
-
 let mark_term_KT98 =
-	let rec sub f (Node(g,ss) as s) =
-		if f = g then
-			Node(mark_KT98 f, List.map (sub f) ss) else s
+	let rec sub (f:#sym) (Node(g,ss) as s) =
+		if f#equals g then
+			Node(mark_sym_KT98 f, List.map (sub f) ss) else s
 	in
 	fun (Node(f,ss) as s) ->
 		match f#ty with
-		| Th "AC" -> Node(mark_KT98 f, List.map (sub f) ss)
+		| Th "AC" -> Node(mark_sym_KT98 f, List.map (sub f) ss)
 		| _ -> mark_root s
 
 let guard_term (Node(f,ss) as s) =
-	match f#ty with
-	| Fun -> mark_root s
-	| _ -> Node(new sym_basic Fun (mark_name f#name), [s])
+	Node(new sym_basic Fun (mark_name f#name), [s])
 
 let mark_term_ac =
 	match params.ac_mark_mode with
@@ -39,7 +49,7 @@ let mark_term_ac =
 	| AC_guard -> guard_term
 
 let mark_term (Node(f,ss) as s) =
-	if f#is_fun then mark_root s else mark_term_ac s
+	if f#is_theoried then mark_term_ac s else mark_root s
 
 
 let ext_ac f t = Node(f, [t; var "_1"])

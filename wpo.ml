@@ -11,16 +11,16 @@ exception Continue
 let k_comb x _ = x
 let supply_index v i = v ^ "_" ^ string_of_int i
 
-let rec eq (WT(f,ss,sw)) (WT(g,ts,tw)) =
-	f = g &&
+let rec ac_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
+	f#equals g &&
 	match f#ty with
 	| Th "C" -> eq_mset ss ts
 	| Th "AC" -> eq_mset ss ts
-	| _ -> List.for_all2 eq ss ts
+	| _ -> List.for_all2 ac_eq ss ts
 and delete_one ts1 s =
 	function
 	| [] -> None
-	| t::ts -> if eq s t then Some(ts1@ts) else delete_one (t::ts1) s ts
+	| t::ts -> if ac_eq s t then Some(ts1@ts) else delete_one (t::ts1) s ts
 and eq_mset ss ts =
 	match ss with
 	| [] -> ts = []
@@ -112,9 +112,10 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	let () = solver#set_base_ty weight_ty in
 	(* Signature as the set of function symbols with their informations. *)
 	let sigma = Hashtbl.create 256 in
-	let lookup f =
-		try Hashtbl.find sigma f#name with  _ -> raise (Internal f#name)
+	let lookup_name name =
+		try Hashtbl.find sigma name with  _ -> raise (Internal name)
 	in
+	let lookup f = lookup_name f#name in
 	let nest_map = ref Mset.empty in
 	let nest fname = Mset.count fname !nest_map in
 
@@ -384,19 +385,28 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	let pmin = LI 0 in
 	let pmax = ref (LI 0) in
 	let prec finfo = finfo.prec_exp in
+	let add_prec_default fname finfo =
+		let fp = solver#new_variable ("p_" ^ fname) weight_ty in
+		finfo.prec_exp <- fp;
+		solver#add_assertion (pmin <=^ fp);
+		solver#add_assertion (fp <=^ !pmax);
+	in
+	let add_prec_ac =
+		if p.ac_mode = AC_S90 then
+			fun fname finfo -> finfo.prec_exp <- pmin
+		else
+			fun fname finfo ->
+			if marked_name fname then begin
+				finfo.prec_exp <- (lookup_name (unmark_name fname)).prec_exp;
+			end else begin
+				add_prec_default fname finfo
+			end
+	in
 	let add_prec =
 		match p.prec_mode with
 		| PREC_none -> fun _ _ -> ()
-		| _ ->
-			fun fname finfo ->
-				if p.ac_mode = AC_S90 && finfo.symtype = Th "AC" then begin
-					finfo.prec_exp <- pmin;
-				end else begin
-					let fp = solver#new_variable ("p_" ^ fname) weight_ty in
-					finfo.prec_exp <- fp;
-					solver#add_assertion (pmin <=^ fp);
-					solver#add_assertion (fp <=^ !pmax);
-				end;
+		| _ -> fun fname finfo ->
+			(if finfo.symtype = Th "AC" then add_prec_ac else add_prec_default) fname finfo
 	in
 	(* Precedence over symbols *)
 	let spo =
@@ -1092,6 +1102,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	 * \pi(f(ss)) iteself if not cs but cw.
 	 *)
 	let emb_candidates fname =
+		let fname = if marked_name fname then unmark_name fname else fname in
 		let rec sub prefix ret =
 			function
 			| [] -> ret
@@ -1282,7 +1293,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 			is_mincons ginfo |^ (smt_not (argfilt_list ginfo) &^ Delay(fun _ -> sub 1 ts))
 	in
 	let rec wpo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
-		if eq s t then
+		if ac_eq s t then
 			weakly_ordered
 		else
 			compose (wo sw tw) (wpo2 s t)

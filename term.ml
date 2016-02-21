@@ -1,7 +1,11 @@
 open Util
 open Params
 
+type 'a term = Node of 'a * 'a term list
+
 type symtype = Var | Fun | Th of string | Special
+
+type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
 
 class type sym =
 	object ('a)
@@ -11,12 +15,21 @@ class type sym =
 		method is_fun : bool
 		method ty : symtype
 		method name : string
+		method equals : 'a. (<name:string;..> as 'a) -> bool
 	end;;
-class type sym_eq =
-	object
-		inherit sym
-		method equals : 'a. (#sym as 'a) -> bool
-	end;;
+
+let root (Node(f,_)) = f
+let get_weight (WT(_,_,ws)) = ws
+let rec erase (WT(f,ss,_)) = Node(f,List.map erase ss)
+
+let size : 'a term -> int =
+	let rec sub1 ret (Node(_,ss)) = sub2 (ret+1) ss
+	and sub2 ret ss =
+		match ss with
+		| [] -> ret
+		| s::ss -> sub2 (sub1 ret s) ss
+	in
+	sub1 0
 
 let output_name os name =
 	let n = String.length name in
@@ -33,55 +46,37 @@ let output_name os name =
 	sub 0
 
 class sym_basic ty0 name0 =
-	object (x:'a)
+	object (x:'x)
 		val mutable ty = ty0
 		val name = name0
 		method is_var = ty = Var
 		method is_fun = ty <> Var
 		method is_theoried = match ty with Th _ -> true | _ -> false
-		method ty = ty
+		method ty : symtype = ty
 		method set_ty ty' = ty <- ty'
-		method name = name
+		method name : string = name
 		method output os = output_name os name
 		method output_xml = x#output
-		method equals : 'a. (#sym as 'a) -> bool =
+		method equals : 'a. (<name:string;..> as 'a) -> bool =
 			fun y -> name = y#name
 	end;;
-
-type 'a term = Node of 'a * 'a term list
-
-let root (Node(f,_)) = f
-
-type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
-
-let get_weight (WT(_,_,ws)) = ws
-let rec erase (WT(f,ss,_)) = Node(f,List.map erase ss)
-
-let size =
-	let rec sub1 ret (Node(_,ss)) = sub2 (ret+1) ss
-	and	sub2 ret ss =
-		match ss with
-		| [] -> ret
-		| s::ss -> sub2 (sub1 ret s) ss
-	in
-	sub1 0
 
 let var vname = Node(new sym_basic Var vname, [])
 let app f args = Node((f:>sym_basic), args)
 
 (* equality *)
-let rec term_eq (Node(f,ss) : #sym_eq term) (Node(g,ts)) =
+let rec term_eq (Node(f,ss) : #sym term) (Node(g,ts)) =
 	f#equals g && List.for_all2 term_eq ss ts
 
-let rec wterm_eq (WT((f:#sym_eq),ss,sw)) (WT(g,ts,tw)) =
+let rec wterm_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
 	f#equals g && List.for_all2 wterm_eq ss ts
 
-let rec strict_subterm (s:#sym_eq term) (Node(_,ts)) =
+let rec strict_subterm (s:#sym term) (Node(_,ts)) =
 	List.exists (subterm s) ts
-and subterm (s:#sym_eq term) t = term_eq s t || strict_subterm s t
+and subterm (s:#sym term) t = term_eq s t || strict_subterm s t
 
 (* embeding relation *)
-let rec emb_le (Node((f:#sym_eq),ss) as s) (Node(g,ts) as t) =
+let rec emb_le (Node((f:#sym),ss) as s) (Node(g,ts) as t) =
 	term_eq s t || List.exists (emb_le s) ts || f#equals g && List.for_all2 emb_le ss ts
 
 (* the list of variable occurences in a term *)
@@ -101,7 +96,7 @@ let rec list_remove f =
 	| x::xs	-> if f x then xs else x :: list_remove f xs
 
 let dupvarlist =
-	let rec sub ret (Node((f:#sym_eq),ts)) =
+	let rec sub ret (Node((f:#sym),ts)) =
 		if f#is_var then
 			let lvars, dupvars = ret in
 			(	try
@@ -134,7 +129,7 @@ let varset =
 
 (* flat AC symbols *)
 let rec flat =
-	let rec sub (f:#sym_eq) ss =
+	let rec sub (f:#sym) ss =
 		function
 		| []	-> Node(f, List.rev ss)
 		| (Node(g,ts) as t)::us ->
@@ -149,7 +144,7 @@ let rec flat =
 		| _			-> Node(f, List.map flat ss)
 
 (* flat top $f$ from list of functions *)
-let local_flat (f:#sym_eq) =
+let local_flat (f:#sym) =
 	let rec sub ss =
 		function
 		| [] -> ss

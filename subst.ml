@@ -2,31 +2,34 @@ open Term
 
 exception Inconsistent
 
-(* Substitution, but not limited to variables *)
-
 class ['a] t =
-	let rec subst1 x (Node(f,ss) as s) (Node(g,ts)) =
+	let rec subst1 (x:#sym) (Node(f,ss) as s) (Node(g,ts)) =
 		let ts' = List.map (subst1 x s) ts in
-		if g = x then Node(f,ss@ts') else Node(g,ts')
+		if x#equals f then Node(f,ss@ts') else Node(g,ts')
 	in
 	object (x:'x)
-		val table = Hashtbl.create 16
-		method get_table = table
-		method mem (f:'a) = Hashtbl.mem table f
-		method find f = Hashtbl.find table f
-		method add f s =
-			try if x#find f <> s then raise Inconsistent
-			with Not_found -> Hashtbl.add table f s
-		method replace f s =
-			Hashtbl.iter (fun g t -> Hashtbl.replace table g (subst1 f s t)) table;
-			if not (x#mem f) then Hashtbl.add table f s;
+		val table : (string, 'a term) Hashtbl.t = Hashtbl.create 16
+		method private get_table = table
+		method mem : 'b. (#sym as 'b) -> bool =
+			fun f -> Hashtbl.mem table f#name
+		method find : 'b. (#sym as 'b) -> 'a term =
+			fun f -> Hashtbl.find table f#name
+		method add : 'b. (#sym as 'b) -> 'a term -> unit =
+			fun f s ->
+				try if not (term_eq (x#find f) s) then raise Inconsistent
+				with Not_found -> Hashtbl.add table f#name s
+		method replace : 'b. (#sym as 'b) -> 'a term -> unit =
+			fun f s ->
+				let iterer gname t = Hashtbl.replace table gname (subst1 f s t) in
+				Hashtbl.iter iterer table;
+				if not (x#mem f) then Hashtbl.add table f#name s;
 		method compose (y:'x) =
 			let (z:'x) = x#copy in
 			let z_table = z#get_table in
-			let iterer f s = Hashtbl.replace z_table f (y#subst s) in
+			let iterer fname s = Hashtbl.replace z_table fname (y#subst s) in
 			Hashtbl.iter iterer z_table;
-			let iterer g t =
-				if not (Hashtbl.mem z_table g) then Hashtbl.add z_table g t
+			let iterer gname t =
+				if not (Hashtbl.mem z_table gname) then Hashtbl.add z_table gname t
 			in
 			Hashtbl.iter iterer y#get_table;
 			z
@@ -41,9 +44,9 @@ class ['a] t =
 			if Hashtbl.length table = 0 then begin
 				output_string os "[ ]\n";
 			end else begin
-				let iterer f s =
+				let iterer fname s =
 					output_string os "    ";
-					f#output os;
+					output_name os fname;
 					output_string os " := ";
 					output_term os s;
 					output_string os "\n";
@@ -57,9 +60,9 @@ class ['a] t =
 
 let singleton f s = let ret = new t in ret#replace f s; ret
 
-let unify =
-	let rec sub1 unifier (Node(f,ss) as s) (Node(g,ts) as t) =
-		if f = g then
+let unify : (#sym as 'a) term -> 'a term -> 'a t option =
+	let rec sub1 (unifier : 'a t) (Node((f:'a),ss) as s) (Node(g,ts) as t) =
+		if f#equals g then
 			sub2 unifier ss ts
 		else if f#is_var then
 			if VarSet.mem f#name (varset t) then None else Some(unifier#replace f t; unifier)
@@ -79,12 +82,12 @@ let unify =
 	in
 	fun s t -> sub1 (new t) s t
 
-let matches =
-	let rec sub1 matcher (Node(f,ss) as s) (Node(g,ts)) =
+let matches : (#sym as 'a) term -> 'a term -> 'a t option =
+	let rec sub1 (matcher :'a t) (Node((f:#sym),ss) as s) (Node(g,ts)) =
 		if g#is_var then
 			try matcher#add g s; Some(matcher)
 			with Inconsistent -> None
-		else if f = g then
+		else if f#equals g then
 			sub2 matcher ss ts
 		else None
 	and sub2 matcher ss ts =
@@ -100,10 +103,11 @@ let matches =
 	in
 	fun s t -> sub1 (new t) s t
 
-let rec rename renamer (Node(f,ss)) =
-	Node(renamer f, List.map (rename renamer) ss)
-
 let vrename v =
 	let renamer f = new sym_basic f#ty (f#name ^ "_{" ^ v ^ "}") in
+	let rec rename renamer (Node(f,ss)) =
+		let ss' = List.map (rename renamer) ss in
+		Node((if f#is_var then renamer f else f), ss')
+	in
 	rename renamer
 

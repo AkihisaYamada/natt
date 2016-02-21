@@ -266,7 +266,7 @@ let params =
 	max_narrowing = 8;
 	acdp_mode = ACDP_new;
 	rdp_mode = RDP_move;
-	ac_mark_mode = AC_unmark;
+	ac_mark_mode = AC_mark;
 	orders_removal = Array.make 0 order_default;
 	orders_dp = Array.make 0 order_default;
 	warning = true;
@@ -568,7 +568,7 @@ while !i < argc do
 				| None -> params.max_narrowing <- 7;
 			end;
 		| "-N", None -> params.max_narrowing <- 0;
-		| "-l", _ ->
+		| "l", _ ->
 			begin
 				match optarg with
 				| Some s -> params.max_loop <- safe_atoi s arg;

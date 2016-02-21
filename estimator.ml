@@ -1,32 +1,35 @@
 open Util
 open Term
 open Trs
+open Params
 
 (* symbol transition graph *)
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
 
 
-class t (trs:trs) =
+let init_sym_g (trs:#trs) =
 	let sym_g = SymG.create () in
-	let _ =
-		SymG.add_vertex sym_g  ""; (* this vertex represents arbitrary symbol *)
-		let add_sym f =
-			if f#is_fun then begin
-				SymG.add_vertex sym_g f#name;
-				SymG.add_edge sym_g "" f#name;
-			end;
-		in
-		trs#iter_syms add_sym;
-		let add_edge _ lr =
-			let Node(f,_) = lr#l in
-			let Node(g,_) = lr#r in
-			SymG.add_edge sym_g f#name (if g#is_var then "" else g#name);
-		in
-		trs#iter_rules add_edge;
-		SymGoper.add_transitive_closure sym_g;
+	SymG.add_vertex sym_g  ""; (* this vertex represents arbitrary symbol *)
+	let add_sym f =
+		if f#is_fun then begin
+			SymG.add_vertex sym_g f#name;
+			SymG.add_edge sym_g "" f#name;
+		end;
 	in
+	trs#iter_syms add_sym;
+	let add_edge _ lr =
+		let Node(f,_) = lr#l in
+		let Node(g,_) = lr#r in
+		SymG.add_edge sym_g f#name (if g#is_var then "" else g#name);
+	in
+	trs#iter_rules add_edge;
+	ignore (SymGoper.add_transitive_closure sym_g);
+	sym_g
+
+class t (trs:#trs) =
 	object (x)
+		val sym_g = init_sym_g trs
 		method trans_sym f g =
 			SymG.mem_edge sym_g f#name "" || SymG.mem_edge sym_g f#name g#name
 (* estimations *)
@@ -35,8 +38,9 @@ class t (trs:trs) =
 			g#is_var ||
 			x#is_redex_candidate s && x#trans_sym f g ||
 			x#connects s t
-		method connects (Node(f,ss)) (Node(g,ts)) =
-			f#name = g#name &&
+		method connects : sym_basic term -> sym_basic term -> bool =
+			fun (Node(f,ss)) (Node(g,ts)) ->
+			f#equals g &&
 			(	match f#ty with
 				| Fun -> List.for_all2 x#narrows ss ts
 				| Th "C" ->
@@ -65,7 +69,7 @@ class t (trs:trs) =
 			(Rules.fold folder f#defined_by [])
 
 		method estimate_paths lim (Node(f,_) as s) (Node(g,_) as t) =
-			if s = t || f#is_var || g#is_var then
+			if term_eq s t || f#is_var || g#is_var then
 				[(0,[])]
 			else if lim > 0 then
 				let init = if x#connects s t then [(1,[])] else [] in
@@ -77,15 +81,20 @@ class t (trs:trs) =
 			else
 				[]
 		
-		method instantiate_edge cnt =
-			let rec sub1 lim s t =
+		method instantiate_edge :
+			int ref -> int -> sym_basic term -> sym_basic term ->
+				(int * sym_basic Subst.t) list =
+			fun cnt ->
+			let rec sub1 lim (s : #sym term) t =
 				let paths = x#estimate_paths (min 4 lim) s t in
-				List.fold_left
-				(fun ret (c,is) -> let cus = instantiate_path (lim-c) s is t in List.iter (dbg s is t) cus; cus @ ret)
-				[] paths
+				let folder ret (c,is) =
+					let cus = instantiate_path (lim-c) s is t in
+					List.iter (dbg s is t) cus; cus @ ret
+				in
+				List.fold_left folder [] paths
 			and sub2 lim ss ts =
 				match ss, ts with
-				| [], [] -> [(0,new Subst.t)]
+				| [], [] -> [(0, new Subst.t)]
 				| (s::ss), (t::ts) ->
 					let mapper (c1,u1) =
 						let ss' = List.map u1#subst ss in
@@ -97,13 +106,13 @@ class t (trs:trs) =
 			and instantiate_path lim (Node(f,ss) as s) is (Node(g,ts) as t) =
 				match is with
 				| [] ->
-					if s = t then [(0,new Subst.t)]
+					if term_eq s t then [(0,new Subst.t)]
 					else if f#is_var then
 						if StrSet.mem f#name (varset t) then [] else [(0,Subst.singleton f t)]
 					else if g#is_var then
 						if StrSet.mem g#name (varset s) then [] else [(0,Subst.singleton g s)]
 					else
-						(if f = g then
+						(if f#equals g then
 							sub2 lim ss ts
 						else  []
 						) @ sub1 (lim-1) s t
@@ -126,7 +135,7 @@ class t (trs:trs) =
 					ret
 			in
 			fun lim (Node(f,ss)) (Node(g,ts)) ->
-				if f = g then sub2 lim ss ts else []
+				if f#equals g then sub2 lim ss ts else []
 
 
 		method output_sym_graph os =
