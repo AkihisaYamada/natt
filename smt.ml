@@ -971,7 +971,8 @@ class virtual smt_lib_2_0 =
 				if i < len then begin
 					begin
 						match v.[i] with
-						| 'a'..'z' | 'A'..'Z' | '0'..'9' | '_' -> x#pr_c v.[i]
+						| 'a'..'z' | 'A'..'Z' | '0'..'9' |  '+' | '-' | '*' | '/'
+						| '_' -> x#pr_c v.[i]
 						| ' '	-> x#pr "<s>"
 						| '\''	-> x#pr "<q>"
 						| '<'	-> x#pr "<gt>"

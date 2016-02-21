@@ -1035,10 +1035,6 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		mset_extension order ss ts
 	in
 	let comparg_ac_rec finfo order ss ts =
-prerr_wterms ss;
-prerr_string "  >  ";
-prerr_wterms ts;
-prerr_endline "?";
 		let ss, ts = delete_common ss ts in
 		let nss = List.length ss in
 		let nts = List.length ts in
@@ -1152,8 +1148,11 @@ prerr_endline "?";
 			let sss = List.map mapper (emb_candidates fname ss) in
 			let tss = List.map mapper (emb_candidates fname ts) in
 
-			let rec step2 ge gt ss' = function
-			| [] -> Cons(ge,gt)
+			let rec step2 ge gt ss' tss =
+			match tss with
+			| [] ->
+				(* ge to all proper embedding is a condition for gt *)
+				(ge, ge &^ gt)
 			| (tcw,tcs,ts') :: tss ->
 				if tcw = LB false then
 					(* this is not even a weak embedding, so don't care *)
@@ -1161,31 +1160,37 @@ prerr_endline "?";
 				else if tcs = LB false then
 				 	(* this is at best \pi(t), so go real comparison *)
 				 	let (ge2,gt2) = split (comparg_ac_rec finfo order ss' ts') context in
-				 	step2 (ge &^ (tcw =>^ ge2)) (gt &^ (tcw =>^ gt2)) ss' tss
+				 	let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
+				 	step2 ge gt ss' tss
 				else
 					let (ge3,gt3) = split (ac_rpo_compargs fname finfo ss' ts' order) context in
-					step2
-						(ge &^ (tcw =>^ smt_if tcs gt3 ge3))
-						(gt &^ (tcw =>^ smt_not tcs &^ gt3))
-						ss' tss
+					let (ge,gt) =
+						(ge &^ (tcw =>^ smt_if tcs gt3 ge3),
+						 gt |^ (tcw =>^ (smt_not tcs &^ gt3)))
+					in
+					step2 ge gt ss' tss
 			in
-			let rec step1 ge gt =
-			function 
-			| [] -> Cons(ge,gt)
+			let rec step1 ge gt sss =
+			match sss with
+			| [] ->
+				(ge,gt)
 			| (scw,scs,ss') :: sss ->
 				if scw = LB false then
-					(* if this is not even a weak embedding, so don't care *)
+					(* this is not even a weak embedding, so don't care *)
 					step1 ge gt sss
 				else if scs = LB false then
 				 	(* this is at best only weak embedding, so go to the next step *)
-				 	let (ge2,gt2) = split (step2 (LB true) (LB true) ss' tss) context in
-				 	step1 (ge |^ (scw &^ ge2)) (gt |^ (scw &^ gt2)) sss
+				 	let (ge2,gt2) = step2 (LB true) (LB false) ss' tss in
+				 	let (ge,gt) = (ge |^ (scw &^ ge2), gt |^ (scw &^ gt2)) in
+				 	step1 ge gt sss
 				else
 					let (ge3,gt3) = split (ac_rpo_compargs fname finfo ss' ts order) context in
 					(* if this is strict embedding, weak order results strict order *)
 					step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
 			in
-			step1 (LB false) (LB false) sss
+			let (ge,gt) = step1 (LB false) (LB false) sss in
+
+			Cons(ge,gt);
 		)
 	in
 	let ac_unmark_name name =
