@@ -45,6 +45,7 @@ type acdp_mode =
 | ACDP_GK01
 | ACDP_ALM10
 | ACDP_new
+| ACDP_union
 type ac_mark_mode =
 | AC_unmark
 | AC_mark
@@ -157,7 +158,7 @@ let order_default =
 	refer_w = true;
 	reset_mode = RESET_reset;
 	use_scope = true;
-	use_scope_ratio = 3;
+	use_scope_ratio = 0;
 	remove_all = false;
 	smt_tool = z3cmd;
 	peek_in = false;
@@ -405,11 +406,14 @@ while !i < argc do
 				match s with
 				| "MU98" ->
 					params.acdp_mode <- ACDP_GK01;
-					params.ac_mark_mode <- AC_unmark;
-				| "KT98" -> params.acdp_mode <- ACDP_KT98;
+					params.ac_mark_mode <- AC_unmark; (* the marked variant is buggy *)
+				| "KT98" ->
+					params.acdp_mode <- ACDP_KT98;
+					params.ac_mark_mode <- AC_unmark; (* not yet supported *)
 				| "GK01" -> params.acdp_mode <- ACDP_GK01;
 				| "ALM10" -> params.acdp_mode <- ACDP_ALM10;
 				| "new" -> params.acdp_mode <- ACDP_new;
+				| "union" -> params.acdp_mode <- ACDP_union;
 				| "u" -> params.ac_mark_mode <- AC_unmark;
 				| "m" -> params.ac_mark_mode <- AC_mark;
 				| "g" -> params.ac_mark_mode <- AC_guard;

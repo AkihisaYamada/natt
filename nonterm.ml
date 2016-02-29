@@ -15,7 +15,7 @@ let prerr_dp i l r =
 	prerr_endline "  ->>";
 	;;
 
-let prerr_loop (dg:dg) u =
+let prerr_loop (dg : 'a dg) u =
 	let rec sub pos =
 		function
 		| [] -> ()
@@ -36,7 +36,7 @@ let prerr_loop (dg:dg) u =
 	in
 	sub 1
 
-let estimate_paths len (trs:trs) (dg:dg) scc =
+let estimate_paths len (trs : 'a trs) (dg : 'a dg) scc =
 	let subdg = dg#get_subdg scc in
 	let rec sub n i k =
 		if n > len then []
@@ -54,7 +54,7 @@ let estimate_paths len (trs:trs) (dg:dg) scc =
 	in
 	sub 0
 
-let find_loop lim (trs:trs) (estimator:Estimator.t) (dg:dg) scc =
+let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
 	let iterer len nlim i1 =
 		let dp1 = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =

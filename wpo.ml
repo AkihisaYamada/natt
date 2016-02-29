@@ -13,10 +13,8 @@ let supply_index v i = v ^ "_" ^ string_of_int i
 
 let rec ac_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
 	f#equals g &&
-	match f#ty with
-	| Th "C" -> eq_mset ss ts
-	| Th "AC" -> eq_mset ss ts
-	| _ -> List.for_all2 ac_eq ss ts
+	if f#is_commutative then eq_mset ss ts
+	else List.for_all2 ac_eq ss ts
 and delete_one ts1 s =
 	function
 	| [] -> None
@@ -45,6 +43,8 @@ let delete_common =
 type finfo =
 {
 	symtype : symtype;
+	is_associative : bool;
+	is_commutative : bool;
 	arity : int;
 	mutable max : bool;
 	mutable maxpol : bool;
@@ -63,18 +63,20 @@ type finfo =
 	mutable subterm_penalty_exp : int -> exp;
 	mutable prec_exp : exp;
 }
-let default_finfo symtype arity =
+let default_finfo f =
 {
-	symtype = symtype;
-	arity = arity;
+	symtype = f#ty;
+	arity = f#arity;
+	is_commutative = f#is_commutative;
+	is_associative = f#is_associative;
 	max = false;
 	maxpol = false;
 	maxfilt_exp = k_comb (LB false);
 	status_mode = S_none;
 	argfilt_exp = k_comb Nil;
 	argfilt_list_exp = Nil;
-	is_const_exp = LB(arity = 0);
-	is_quasi_const_exp = LB(arity = 0);
+	is_const_exp = LB(f#arity = 0);
+	is_quasi_const_exp = LB(f#arity = 0);
 	perm_exp = k_comb (k_comb (LB false));
 	permed_exp = k_comb (LB false);
 	mapped_exp = k_comb (LB false);
@@ -85,7 +87,7 @@ let default_finfo symtype arity =
 	prec_exp = LI 0;
 }
 
-class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
+class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 
 	(* SMT variables *)
 
@@ -176,7 +178,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 			fw
 		in
 		fun fname finfo ->
-			if not p.ac_w && finfo.symtype = Th "AC" then begin
+			if not p.ac_w && finfo.is_associative then begin
 				finfo.weight_exp <- LI 0
 			end else begin
 				let v =
@@ -217,9 +219,10 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		match finfo.symtype with
 		| Th "C"	->
 			finfo.subterm_coef_exp <- k_comb (makemat (sub ("sc_" ^ fname)));
+		| Th "A"
 		| Th "AC"	->
 			let coef =
-				if p.sc_mode = W_none then
+				if not p.dp || p.sc_mode = W_none then
 					LI 1
 				else
 					PB(solver#new_variable ("sc_" ^ fname) Bool)
@@ -263,6 +266,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 					finfo.maxpol <- false;
 					finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
 				end;
+			| Th "A"
 			| Th "AC" ->
 				if p.Params.max_poly &&
 					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
@@ -402,7 +406,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		match p.prec_mode with
 		| PREC_none -> fun _ _ -> ()
 		| _ -> fun fname finfo ->
-			(if finfo.symtype = Th "AC" then add_prec_ac else add_prec_default) fname finfo
+			(if finfo.is_associative then add_prec_ac else add_prec_default) fname finfo
 	in
 	(* Precedence over symbols *)
 	let spo =
@@ -468,14 +472,16 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 			fun fname finfo ->
 				let v = "af_" ^ fname in
 				match finfo.symtype with
-				| Fun		->
+				| Fun
+				| Th "A" ->
 					let vf i = supply_index v i in
 					let ef i = EV(vf i) in
 					for i = 1 to finfo.arity do
 						iterer finfo vf i;
 					done;
 					finfo.argfilt_exp <- ef;
-				| Th _		->
+				| Th "AC"
+				| Th "C" ->
 					let vf _ = v in
 					let ef _ = EV(v) in
 					iterer finfo vf 1;
@@ -646,7 +652,8 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 				 else p.Params.status_mode);
 			match finfo.symtype with
 			| Th "C" -> sub_c fname finfo;
-			| Th "AC" ->
+			| Th "AC"
+			| Th "A" ->
 				if max_status finfo && (p.max_mode <> MAX_all || p.sp_mode <> W_none) then begin
 					(* in this case, we cannot ensure monotonicity... *)
 					finfo.status_mode <- S_empty;
@@ -666,7 +673,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		in
 		fun fname finfo ->
 			match finfo.symtype with
-			| Th "C" -> finfo.mset_status_exp <- LB true;
+			| Th "C"
 			| Th "AC" -> finfo.mset_status_exp <- LB true;
 			| _ -> if finfo.arity > 1 then finfo.mset_status_exp <- sub fname;
 	in
@@ -827,7 +834,8 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 				let vc = Hashtbl.create 4 in
 				let (vc,e) =
 					match fty with
-					| Th "AC"	-> sub_ac (subterm_coef finfo 1) vc (weight finfo) (-2) (LI 0) vces
+					| Th "AC"
+					| Th "A"	-> sub_ac (subterm_coef finfo 1) vc (weight finfo) (-2) (LI 0) vces
 					| Th "C"	-> sub_c (subterm_coef finfo 1) vc (weight finfo) (LI 0) vces
 					| _			-> sub_lex (subterm_coef finfo) 1 vc (weight finfo) vces
 				in
@@ -1093,7 +1101,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		| AC_rec -> comparg_ac_rec
 		| _ -> comparg_ac_KV03
 	in
-	(*
+	(* For AC-RPO.
 	 * $(cw,cs,ts) \in emb_candidates f ss$ indicates that f(ts) is
 	 * a strict embedding of \pi(f(ss)) if cs && cw holds, and
 	 * \pi(f(ss)) iteself if not cs but cw.
@@ -1159,7 +1167,7 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 					step2 ge gt ss' tss
 				else if tcs = LB false then
 				 	(* this is at best \pi(t), so go real comparison *)
-				 	let (ge2,gt2) = split (comparg_ac_rec finfo order ss' ts') context in
+				 	let (ge2,gt2) = split (comparg_ac finfo order ss' ts') context in
 				 	let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
 				 	step2 ge gt ss' tss
 				else
@@ -1196,8 +1204,8 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	let ac_unmark_name name =
 		if marked_name name then unmark_name name else name
 	in
-	let ac_compargs =
-		if p.adm then
+	let flat_compargs =
+		if not p.dp && p.adm then
 			fun fname gname finfo order ss ts ->
 				if ac_unmark_name fname = ac_unmark_name gname then
 					comparg_ac finfo order ss ts
@@ -1211,22 +1219,23 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 					ac_rpo_compargs fname finfo ss ts order
 				else not_ordered
 	in
-	(* compargss for f and g *)
+	(* compargs for f and g *)
 	let compargs =
 		fun fname gname finfo ginfo ->
 			match finfo.symtype, ginfo.symtype with
-			| Fun, Fun			-> default_compargs finfo ginfo
+			| Fun, Fun	-> default_compargs finfo ginfo
 			| Th "C", Th "C"	->
 				fun order ss ts ->
 					smt_if
 						(mapped finfo 1)
 						(smt_if (mapped ginfo 1) (mset_extension order ss ts) strictly_ordered)
 						(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
+			| Th "A", Th "A"
 			| Th "AC", Th "AC"	->
 				fun order ss ts ->
 					smt_if
 						(mapped finfo 1)
-						(smt_if (mapped ginfo 1) (ac_compargs fname gname finfo order ss ts) strictly_ordered)
+						(smt_if (mapped ginfo 1) (flat_compargs fname gname finfo order ss ts) strictly_ordered)
 						(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
 			| _					-> (fun _ _ _ -> not_ordered)
 	in
@@ -1718,363 +1727,356 @@ class processor p (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	let gt_r_v i = "gt" ^ string_of_int i in
 	let ge_r_v i = "ge" ^ string_of_int i in
 
-	object (x)
+object (x)
 
-		val mutable initialized = false
-		val mutable use_scope = p.use_scope
-		val mutable use_scope_last_size = 0
+	val mutable initialized = false
+	val mutable use_scope = p.use_scope
+	val mutable use_scope_last_size = 0
+	val mutable dp_flag_table = Hashtbl.create 256
+	val mutable rule_flag_table = Hashtbl.create 256
 
-		method using_usable = p.dp && p.usable
+	method using_usable = p.dp && p.usable
 
-		method init current_usables scc =
-			initialized <- true;
-			debug (fun _ -> prerr_string " Initializing.";);
+	method init current_usables scc =
+		initialized <- true;
+		debug (fun _ -> prerr_string " Initializing.";);
 
-			if p.use_scope_ratio > 0 then begin
-				let rules_size = List.length current_usables in
-				use_scope_last_size <- trs#get_size;
-				use_scope <-
-					(use_scope_last_size - rules_size) * p.use_scope_ratio < rules_size;
-			end;
-			if use_scope then begin
-				debug(fun _ -> prerr_string " `Scope' mode.");
-				dplist := dg#get_dps;
-				usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
-			end else begin
-				dplist := IntSet.fold (fun i dps -> (i, dg#find_dp i) :: dps) scc [];
-				usables := List.map (fun i -> (i, trs#find_rule i)) current_usables;
-			end;
+		if p.use_scope_ratio > 0 then begin
+			let rules_size = List.length current_usables in
+			use_scope_last_size <- trs#get_size;
+			use_scope <-
+				(use_scope_last_size - rules_size) * p.use_scope_ratio < rules_size;
+		end;
+		if use_scope then begin
+			debug(fun _ -> prerr_string " `Scope' mode.");
+			dplist := dg#get_dps;
+			usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
+		end else begin
+			dplist := IntSet.fold (fun i dps -> (i, dg#find_dp i) :: dps) scc [];
+			usables := List.map (fun i -> (i, trs#find_rule i)) current_usables;
+		end;
 
-			(* generating the signature *)
-			Hashtbl.clear sigma;
-			let transform_finfo f =
-				let f = trs#find_sym f in
-				default_finfo f#ty f#arity
-			in
-			let rec sub (Node(f,ss)) =
-				if not f#is_var && not (Hashtbl.mem sigma f#name) then
-					Hashtbl.replace sigma f#name (transform_finfo f);
-				List.iter sub ss;
-			in
-			List.iter (fun (_,rule) -> sub rule#l; sub rule#r;) !usables;
-			let sub_dp (Node(f,ss)) =
-				if not (Hashtbl.mem sigma f#name) then
-					Hashtbl.add sigma f#name (transform_finfo f);
-				List.iter sub ss;
-			in
-			List.iter (fun (_,dp) -> sub_dp dp#l; sub_dp dp#r;) !dplist;
+		(* generating the signature *)
+		Hashtbl.clear sigma;
+		let iterer f =
+			if not f#is_var then Hashtbl.add sigma f#name (default_finfo f);
+		in
+		trs#iter_syms iterer;
 
-			(* count nesting *)
-			if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
-				let rec nest_term (Node(f,ss)) =
-					if f#is_var then
-						Mset.empty
-					else
-						Mset.union (Mset.singleton f#name)
-							(List.fold_left Mset.join Mset.empty (List.map nest_term ss))
-				in
-				let nest_rule rule = Mset.join (nest_term rule#l) (nest_term rule#r) in
-				let nest_rules =
-					fun rules ->
-						List.fold_left Mset.join Mset.empty
-							(List.map (fun (_,rule) -> nest_rule rule) rules)
-				in
-				nest_map := Mset.join (nest_rules !usables) (nest_rules !dplist)
-			end;
-
-			if p.prec_mode <> PREC_none then
-				(* set max precedence *)
-				pmax := LI (Hashtbl.length sigma);
-
-			(* choice of max_status *)
-			let set_max =
-				let set_max_finfo fname finfo =
-					not finfo.max &&
-					finfo.arity > 1 &&
-					(p.max_nest = 0 || nest fname <= p.max_nest) &&
-					(
-						debug2 (fun _ -> prerr_char ' '; output_name stderr fname;);
-						finfo.max <- true;
-						true
-					)
-				in
-				function
-				| MAX_dup	->
-					let rec annote_vs (Node(f,ss)) =
-						let args = List.map annote_vs ss in
-						let argvss = List.map get_weight args in
-						let vs =
-							if f#is_var then [Mset.singleton f#name]
-							else if (lookup f).max then
-								List.concat argvss
-							else
-								List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
-						in
-						WT(f,args,vs)
-					in
-					let vcond svss tvss =
-						List.for_all (fun tvs -> List.exists (Mset.subseteq tvs) svss) tvss
-					in
-					let rec sub (WT(f,ss,svss) as s) (WT(g,ts,tvss)) =
-						List.iter (sub s) ts;
-						if	not (vcond svss tvss) &&
-							set_max_finfo g#name (lookup g)
-						then raise Continue;
-					in
-					let annote_sub (_,lr) =
-						sub (annote_vs lr#l) (annote_vs lr#r);
-					in
-					let rec loop rulelist =
-						try List.iter annote_sub rulelist with Continue -> loop rulelist
-					in
-					loop
-				| MAX_all ->
-					fun _ ->
-						Hashtbl.iter (fun fname finfo -> ignore (set_max_finfo fname finfo)) sigma;
-				| _	->
-					fun _ -> ();
-			in
-
-			debug2 (fun _ -> prerr_string "\n    Max symbols: {");
-			set_max p.max_mode !usables;
-			set_max p.max_mode !dplist;
-			debug2 (fun _ -> prerr_endline " }");
-
-			solver#set_logic
-			(	"QF_" ^
-				(if p.sc_mode = W_num then "N" else "L") ^
-				(if weight_ty = Real then "R" else "I") ^
-				"A"
-			);
-
-			begin
-				match p.mcw_mode with
-				| MCW_num  -> solver#add_variable mcw_v weight_ty;
-				| MCW_bool -> solver#add_variable mcw_v Bool;
-				| _ -> ();
-			end;
-			solver#add_assertion (mcw >=^ mcw_val);
-
-			if p.maxcons then
-				solver#add_variable maxcons_v Bool;
-
-			Hashtbl.iter add_symbol sigma;
-
-			if p.prec_mode = PREC_strict then begin
-				(* asserting no equivalence in precedence *)
-				let rec subsub pf =
-					function
-					| [] -> ()
-					| pg::pgs ->
-						solver#add_assertion (smt_not (pf =^ pg));
-						subsub pf pgs;
-				in
-				let rec sub =
-					function
-					| []		-> ()
-					| pf::pfs	-> subsub pf pfs; sub pfs
-				in
-				sub (Hashtbl.fold (fun _ finfo vs -> prec finfo::vs) sigma [])
-			end;
-
-			if p.prec_mode <> PREC_none then begin
-				(* special treatment of AC symbols *)
-				let iterer fname finfo =
-					if finfo.symtype = Th "AC" then begin
-						(* marked AC symbols have the precedence of unmarked one *)
-						if marked_name fname then begin
-							finfo.prec_exp <- (lookup_name (unmark_name fname)).prec_exp;
-						end;
-					end;
-				in
-				Hashtbl.iter iterer sigma;
-			end;
-
-			List.iter (fun (i,_) -> add_usable i) !usables;
-			try
-				debug2 (fun _ -> prerr_string "    Rules: {"; flush stderr;);
-				let iterer (i,rule) =
-					debug2 (fun _ -> prerr_char ' '; prerr_int i; flush stderr;);
-					let (WT(_,_,lw) as la) = annote rule#l in
-					let (WT(_,_,rw) as ra) = annote rule#r in
-
-					if p.dp then begin
-						if p.usable_w then begin
-							solver#add_assertion
-								(usable_w i =>^ set_usable argfilt usable_w rule#r);
-							solver#add_assertion
-								(usable i =>^ set_usable permed usable rule#r);
-							let wge, wgt = split (wo lw rw) solver in
-							let wge = solver#refer Bool wge in
-							solver#add_assertion (usable_w i =>^ wge);
-							if wge = LB false then begin
-								solver#add_definition (ge_r_v i) Bool (LB false);
-								solver#add_definition (gt_r_v i) Bool (LB false);
-							end else begin
-								let (rge,rgt) = split (wpo2 la ra) solver in
-								solver#add_definition (ge_r_v i) Bool (wge &^ rge);
-								solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
-							end;
-						end else if p.usable then begin
-							solver#add_assertion
-								(usable i =>^ set_usable argfilt usable rule#r);
-							solver#add_assertion 
-								(usable i =>^ weakly (frame la ra));
-						end else begin
-							solver#add_assertion (weakly (frame la ra));
-						end;
-					end else if p.remove_all then begin
-						solver#add_assertion (strictly (frame la ra));
-					end else begin
-						(* rule removal mode *)
-						let (ge,gt) = split (frame la ra) solver in
-						solver#add_assertion (usable i =>^ ge);
-						solver#add_definition (gt_r_v i) Bool gt;
-					end;
-				in
-				List.iter iterer !usables;
-				debug2 (fun _ -> prerr_endline " }");
-
-				debug2 (fun _ -> prerr_string "    DPs: {"; flush stderr;);
-				let iterer i dp =
-					debug2 (fun _ -> prerr_string " #"; prerr_int i; flush stderr;);
-					let (ge,gt) = split (frame (annote dp#l) (annote dp#r)) solver in
-					solver#add_definition (ge_v i) Bool ge;
-					solver#add_definition (gt_v i) Bool gt;
-				in
-				if use_scope then
-					dg#iter_dps iterer
+		(* count nesting *)
+		if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
+			let rec nest_term (Node(f,ss)) =
+				if f#is_var then
+					Mset.empty
 				else
-					IntSet.iter (fun i -> iterer i (dg#find_dp i)) scc;
-				debug2 (fun _ -> prerr_endline " }");
-			with Inconsistent ->
-				debug2 (fun _ -> prerr_string " ... }");
-				debug (fun _ -> prerr_endline " inconsistency detected.");
+					Mset.union (Mset.singleton f#name)
+						(List.fold_left Mset.join Mset.empty (List.map nest_term ss))
+			in
+			let nest_rule rule = Mset.join (nest_term rule#l) (nest_term rule#r) in
+			let nest_rules =
+				fun rules ->
+					List.fold_left Mset.join Mset.empty
+						(List.map (fun (_,rule) -> nest_rule rule) rules)
+			in
+			nest_map := Mset.join (nest_rules !usables) (nest_rules !dplist)
+		end;
 
-		method reset =
-			begin
-				match p.reset_mode with
-				| RESET_reset -> solver#reset;
-				| RESET_reboot -> solver#reboot;
-			end;
-			initialized <- false;
+		if p.prec_mode <> PREC_none then
+			(* set max precedence *)
+			pmax := LI (Hashtbl.length sigma);
 
-		method push current_usables scc =
-			if initialized then begin
-				if p.use_scope_ratio > 0 then
-					let curr_size = trs#get_size in
-					if (use_scope_last_size - curr_size) * p.use_scope_ratio > curr_size then
-					begin
-						x#reset;
-						x#init current_usables scc;
+		(* choice of max_status *)
+		let set_max =
+			let set_max_finfo fname finfo =
+				not finfo.max &&
+				finfo.arity > 1 &&
+				(p.max_nest = 0 || nest fname <= p.max_nest) &&
+				(
+					debug2 (fun _ -> prerr_char ' '; output_name stderr fname;);
+					finfo.max <- true;
+					true
+				)
+			in
+			function
+			| MAX_dup	->
+				let rec annote_vs (Node(f,ss)) =
+					let args = List.map annote_vs ss in
+					let argvss = List.map get_weight args in
+					let vs =
+						if f#is_var then [Mset.singleton f#name]
+						else if (lookup f).max then
+							List.concat argvss
+						else
+							List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
+					in
+					WT(f,args,vs)
+				in
+				let vcond svss tvss =
+					List.for_all (fun tvs -> List.exists (Mset.subseteq tvs) svss) tvss
+				in
+				let rec sub (WT(f,ss,svss) as s) (WT(g,ts,tvss)) =
+					List.iter (sub s) ts;
+					if	not (vcond svss tvss) &&
+						set_max_finfo g#name (lookup g)
+					then raise Continue;
+				in
+				let annote_sub (_,lr) =
+					sub (annote_vs lr#l) (annote_vs lr#r);
+				in
+				let rec loop rulelist =
+					try List.iter annote_sub rulelist with Continue -> loop rulelist
+				in
+				loop
+			| MAX_all ->
+				fun _ ->
+					Hashtbl.iter (fun fname finfo -> ignore (set_max_finfo fname finfo)) sigma;
+			| _	->
+				fun _ -> ();
+		in
+
+		debug2 (fun _ -> prerr_string "\n    Max symbols: {");
+		set_max p.max_mode !usables;
+		set_max p.max_mode !dplist;
+		debug2 (fun _ -> prerr_endline " }");
+
+		solver#set_logic
+		(	"QF_" ^
+			(if p.sc_mode = W_num then "N" else "L") ^
+			(if weight_ty = Real then "R" else "I") ^
+			"A"
+		);
+
+		begin
+			match p.mcw_mode with
+			| MCW_num  -> solver#add_variable mcw_v weight_ty;
+			| MCW_bool -> solver#add_variable mcw_v Bool;
+			| _ -> ();
+		end;
+		solver#add_assertion (mcw >=^ mcw_val);
+
+		if p.maxcons then
+			solver#add_variable maxcons_v Bool;
+
+		Hashtbl.iter add_symbol sigma;
+
+		if p.prec_mode = PREC_strict then begin
+			(* asserting no equivalence in precedence *)
+			let rec subsub pf =
+				function
+				| [] -> ()
+				| pg::pgs ->
+					solver#add_assertion (smt_not (pf =^ pg));
+					subsub pf pgs;
+			in
+			let rec sub =
+				function
+				| []		-> ()
+				| pf::pfs	-> subsub pf pfs; sub pfs
+			in
+			sub (Hashtbl.fold (fun _ finfo vs -> prec finfo::vs) sigma [])
+		end;
+
+		if p.prec_mode <> PREC_none then begin
+			(* special treatment of associative symbols *)
+			let iterer fname finfo =
+				if finfo.is_associative then begin
+					(* marked associative symbols have the precedence of unmarked one *)
+					if marked_name fname then begin
+						finfo.prec_exp <- (lookup_name (unmark_name fname)).prec_exp;
 					end;
-			end else begin
-				x#init current_usables scc;
-			end;
-			if use_scope then
-				solver#push;
-		method pop =
-			if use_scope then
-				solver#pop
-			else
-				x#reset;
+				end;
+			in
+			Hashtbl.iter iterer sigma;
+		end;
+		List.iter (fun (i,_) -> add_usable i) !usables;
 
-		method reduce (dg:Dp.dg) current_usables sccref =
+	method private add_rule i =
+		if not (Hashtbl.mem rule_flag_table i) then
+		try
+			Hashtbl.add rule_flag_table i ();
+			let rule = trs#find_rule i in
+			debug2 (fun os ->
+				output_string os ("    Initializing rule " ^ string_of_int i ^ "\n");
+			);
+			let (WT(_,_,lw) as la) = annote rule#l in
+			let (WT(_,_,rw) as ra) = annote rule#r in
+			if p.dp then begin
+				if p.usable_w then begin
+					solver#add_assertion
+						(usable_w i =>^ set_usable argfilt usable_w rule#r);
+					solver#add_assertion
+						(usable i =>^ set_usable permed usable rule#r);
+					let wge, wgt = split (wo lw rw) solver in
+					let wge = solver#refer Bool wge in
+					solver#add_assertion (usable_w i =>^ wge);
+					if wge = LB false then begin
+						solver#add_definition (ge_r_v i) Bool (LB false);
+						solver#add_definition (gt_r_v i) Bool (LB false);
+					end else begin
+						let (rge,rgt) = split (wpo2 la ra) solver in
+						solver#add_definition (ge_r_v i) Bool (wge &^ rge);
+						solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
+					end;
+				end else if p.usable then begin
+					solver#add_assertion
+						(usable i =>^ set_usable argfilt usable rule#r);
+					solver#add_assertion 
+						(usable i =>^ weakly (frame la ra));
+				end else begin
+					solver#add_assertion (weakly (frame la ra));
+				end;
+			end else if p.remove_all then begin
+				solver#add_assertion (strictly (frame la ra));
+			end else begin
+				(* rule removal mode *)
+				let (ge,gt) = split (frame la ra) solver in
+				solver#add_assertion (usable i =>^ ge);
+				solver#add_definition (gt_r_v i) Bool gt;
+			end;
+		with Inconsistent ->
+			debug (fun _ -> prerr_endline " inconsistency detected.");
+
+	method private add_dp i =
+		if not (Hashtbl.mem dp_flag_table i) then begin
+			Hashtbl.add dp_flag_table i ();
+			debug2 (fun os ->
+				output_string os ("    initializing DP #" ^ string_of_int i ^ "\n");
+			);
+			let dp = dg#find_dp i in
+			let (ge,gt) = split (frame (annote dp#l) (annote dp#r)) solver in
+			solver#add_definition (ge_v i) Bool ge;
+			solver#add_definition (gt_v i) Bool gt;
+			(* flag usable rules *)
+			if p.usable_w then begin
+				solver#add_assertion (set_usable_inner argfilt usable_w dp#r);
+				solver#add_assertion (set_usable_inner permed usable dp#r);
+			end else begin
+				solver#add_assertion (set_usable_inner argfilt usable dp#r);
+			end;
+		end;
+
+	method reset =
+		begin
+			match p.reset_mode with
+			| RESET_reset -> solver#reset;
+			| RESET_reboot -> solver#reboot;
+		end;
+		Hashtbl.clear dp_flag_table;
+		Hashtbl.clear rule_flag_table;
+		initialized <- false;
+
+	method push current_usables scc =
+		if initialized then begin
+			if p.use_scope_ratio > 0 then
+				let curr_size = trs#get_size in
+				if (use_scope_last_size - curr_size) * p.use_scope_ratio > curr_size then
+				begin
+					x#reset;
+					x#init current_usables scc;
+				end;
+		end else begin
+			x#init current_usables scc;
+		end;
+		List.iter x#add_rule current_usables;
+		IntSet.iter x#add_dp scc;
+		if use_scope then
+			solver#push;
+
+	method pop =
+		if use_scope then
+			solver#pop
+		else
+			x#reset;
+
+	method reduce (dg : 'a dg) current_usables sccref =
+		comment
+		(fun _ ->
+			prerr_string (name_order p);
+			putdot ();
+		);
+		try
+			x#push current_usables !sccref;
+			comment putdot;
+			let some_gt =
+				IntSet.fold
+				(fun i some_gt ->
+					solver#add_assertion (EV (ge_v i));
+					EV (gt_v i) |^ some_gt
+				) !sccref (LB false)
+			in
+			solver#add_assertion some_gt;
+			comment putdot;
+			solver#check;
+			comment (fun _ -> prerr_string " removes:");
+			IntSet.iter
+			(fun i ->
+				if solver#get_bool (EV(gt_v i)) then begin
+					dg#remove_dp i;
+					comment(fun _ -> prerr_string " #"; prerr_int i;);
+					sccref := IntSet.remove i !sccref;
+				end;
+			) !sccref;
+			comment (fun _ -> prerr_newline ());
+			proof output_proof;
+			cpf output_cpf;
+			x#pop;
+			true
+		with Inconsistent ->
+			comment (fun _ -> prerr_string " ");
+			x#pop;
+			false
+
+	method direct current_usables =
+		try
 			comment
 			(fun _ ->
+				prerr_string "Direct ";
 				prerr_string (name_order p);
+				prerr_string " ";
 				putdot ();
 			);
-			try
-				x#push current_usables !sccref;
+			x#push current_usables IntSet.empty;
+
+			comment putdot;
+			(* usable i should be true until i is removed. *)
+			List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
+
+			if p.remove_all then begin
 				comment putdot;
-				let some_gt =
-					IntSet.fold
-					(fun i some_gt ->
-						solver#add_assertion (EV(ge_v i));
-						let dp = dg#find_dp i in
-						if p.usable_w then begin
-							solver#add_assertion (set_usable_inner argfilt usable_w dp#r);
-							solver#add_assertion (set_usable_inner permed usable dp#r);
-						end else begin
-							solver#add_assertion (set_usable_inner argfilt usable dp#r);
-						end;
-						EV(gt_v i) |^ some_gt
-					) !sccref (LB false)
-				in
-				solver#add_assertion some_gt;
+				solver#check;
+				comment (fun _ -> prerr_endline " orients all.");
+				trs#iter_rules (fun i _ -> trs#remove_rule i);
+			end else begin
+				solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
 				comment putdot;
 				solver#check;
 				comment (fun _ -> prerr_string " removes:");
-				IntSet.iter
+				List.iter
 				(fun i ->
-					if solver#get_bool (EV(gt_v i)) then begin
-						dg#remove_dp i;
-						comment(fun _ -> prerr_string " #"; prerr_int i;);
-						sccref := IntSet.remove i !sccref;
+					if solver#get_bool (EV(gt_r_v i)) then begin
+						trs#remove_rule i;
+						comment(fun _ -> prerr_string " "; prerr_int i;);
 					end;
-				) !sccref;
-				comment (fun _ -> prerr_newline ());
-				proof output_proof;
-				cpf output_cpf;
-				x#pop;
-				true
-			with Inconsistent ->
-				comment (fun _ -> prerr_string " ");
-				x#pop;
-				false
-
-		method direct current_usables =
-			try
-				comment
-				(fun _ ->
-					prerr_string "Direct ";
-					prerr_string (name_order p);
-					prerr_string " ";
-					putdot ();
-				);
-				x#push current_usables IntSet.empty;
-
-				comment putdot;
-				(* usable i should be true until i is removed. *)
-				List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
-
-				if p.remove_all then begin
-					comment putdot;
-					solver#check;
-					comment (fun _ -> prerr_endline " orients all.");
-					trs#iter_rules (fun i _ -> trs#remove_rule i);
-				end else begin
-					solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
-					comment putdot;
-					solver#check;
-					comment (fun _ -> prerr_string " removes:");
-					List.iter
-					(fun i ->
-						if solver#get_bool (EV(gt_r_v i)) then begin
-							trs#remove_rule i;
-							comment(fun _ -> prerr_string " "; prerr_int i;);
-						end;
-					) current_usables;
-					comment(fun _ -> prerr_newline ());
-				end;
-				proof output_proof;
-				cpf (fun os ->
-					output_string os "<ruleRemoval>
- <orderingConstraintProof>
-  <redPair>
+				) current_usables;
+				comment(fun _ -> prerr_newline ());
+			end;
+			proof output_proof;
+			cpf (fun os ->
+				output_string os "<ruleRemoval>
+<orderingConstraintProof>
+<redPair>
 ";
-					output_cpf os;
-					output_string os "  </redPair>
- </orderingConstraintProof>
+				output_cpf os;
+				output_string os "  </redPair>
+</orderingConstraintProof>
 ";
-					trs#output_xml os;
-					output_string os
+				trs#output_xml os;
+				output_string os
 " <trsTerminationProof><rIsEmpty/></trsTerminationProof>
 </ruleRemoval>
 ";
-				);
-				x#pop;
-				true
-			with Inconsistent -> x#pop; false
-	end;;
+			);
+			x#pop;
+			true
+		with Inconsistent -> x#pop; false
+end;;

@@ -4,7 +4,7 @@ open Trs
 open Dp
 open Params
 
-let uncurry (a:sym_detailed) nargs (trs:trs) (dg:dg) =
+let uncurry (a : #sym_detailed) nargs (trs : 'a trs) (dg : 'a dg) =
 	let aarity_tbl = Hashtbl.create 64 in
 	let aarity fname =
 		try Hashtbl.find aarity_tbl fname
@@ -94,7 +94,7 @@ let uncurry (a:sym_detailed) nargs (trs:trs) (dg:dg) =
 
 exception Next
 
-let auto_uncurry (trs:trs) (dg:dg) =
+let auto_uncurry (trs : 'a trs) (dg : 'a dg) =
 	let folder (a:sym_detailed) a_s =
 		try
 			if a#ty <> Fun || a#is_const then begin

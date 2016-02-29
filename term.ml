@@ -7,16 +7,36 @@ type symtype = Var | Fun | Th of string | Special
 
 type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
 
-class type sym =
-	object ('a)
-		inherit output
-		inherit output_xml
-		method is_var : bool
-		method is_fun : bool
-		method ty : symtype
-		method name : string
-		method equals : 'a. (<name:string;..> as 'a) -> bool
-		method output : out_channel -> unit
+let output_name os name =
+	let n = String.length name in
+	let rec sub i =
+		if i < n then begin
+			match name.[i] with
+			| '\\' -> output_string os "\\\\"; sub (i+1);
+			| '#' -> output_string os "\\#"; sub (i+1);
+			| '^' -> output_string os "\\^"; sub (i+1);
+			| ' ' -> output_char os name.[i+1]; sub (i+2);
+			| c -> output_char os c; sub (i+1);
+		end;
+	in
+	sub 0
+
+class virtual sym =
+	object (x:'x)
+		val virtual mutable ty : symtype
+		val virtual mutable name : string
+		method is_var = ty = Var
+		method is_fun = not x#is_var
+		method is_theoried = match ty with Th _ -> true | _ -> false
+		method is_associative = ty = Th "AC" || ty = Th "A"
+		method is_commutative = ty = Th "AC" || ty = Th "C"
+		method ty = ty
+		method set_ty ty' = ty <- ty'
+		method name = name
+		method equals : 'a. (<name:string;..> as 'a) -> bool =
+			fun y -> name = y#name
+		method output os = output_name os name
+		method output_xml = x#output
 	end;;
 
 let root (Node(f,_)) = f
@@ -32,34 +52,12 @@ let size : 'a term -> int =
 	in
 	sub1 0
 
-let output_name os name =
-	let n = String.length name in
-	let rec sub i =
-		if i < n then begin
-			match name.[i] with
-			| '\\' -> output_string os "\\\\"; sub (i+1);
-			| '#' -> output_string os "\\#"; sub (i+1);
-			| '^' -> output_string os "\\^"; sub (i+1);
-			| ' ' -> output_char os name.[i+1]; sub (i+2);
-			| c -> output_char os c; sub (i+1);
-		end;
-	in
-	sub 0
 
 class sym_basic ty0 name0 =
 	object (x:'x)
+		inherit sym
 		val mutable ty = ty0
-		val name = name0
-		method is_var = ty = Var
-		method is_fun = ty <> Var
-		method is_theoried = match ty with Th _ -> true | _ -> false
-		method ty : symtype = ty
-		method set_ty ty' = ty <- ty'
-		method name : string = name
-		method output os = output_name os name
-		method output_xml = x#output
-		method equals : 'a. (<name:string;..> as 'a) -> bool =
-			fun y -> name = y#name
+		val mutable name = name0
 	end;;
 
 let var vname = Node(new sym_basic Var vname, [])
@@ -216,7 +214,7 @@ let rec output_xml_term os =
 (*** rules ***)
 type strength = StrictRule | MediumRule | WeakRule
 
-class rule s (l:#sym_basic term) (r:#sym_basic term) =
+class ['a] rule s (l:(#sym as 'a) term) (r:'a term) =
 	object (x)
 		val lhs : sym_basic term = l
 		val rhs : sym_basic term = r
@@ -255,3 +253,5 @@ let rule l r = new rule StrictRule l r
 let weak_rule l r = new rule WeakRule l r
 let medium_rule l r = new rule MediumRule l r
 
+let map_rule : ((#sym as 'a) term -> 'a term) -> 'a rule -> 'a rule =
+	fun f rule -> new rule rule#strength (f rule#l) (f rule#r)

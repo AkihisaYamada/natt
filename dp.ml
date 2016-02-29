@@ -26,9 +26,9 @@ let mark_term_KT98 =
 			Node(mark_sym f, List.map (sub f) ss) else s
 	in
 	fun (Node(f,ss) as s) ->
-		match f#ty with
-		| Th "AC" -> Node(mark_sym f, List.map (sub f) ss)
-		| _ -> mark_root s
+		if f#is_associative then
+			Node(mark_sym f, List.map (sub f) ss)
+		else mark_root s
 
 let guard_term (Node(f,ss) as s) =
 	Node(new sym_basic Fun (mark_name f#name), [s])
@@ -43,12 +43,25 @@ let mark_term_ac =
 let mark_term (Node(f,ss) as s) =
 	if f#is_theoried then mark_term_ac s else mark_root s
 
-
-let ext_ac f t = Node(f, [t; var "_1"])
+let extended_rules =
+	let x = var "_1" in
+	let y = var "_2" in
+	fun lr ->
+		let f = root lr#l in
+		match f#ty with
+		| Th "AC" -> [ new rule lr#strength (app f [lr#l; x]) (app f [lr#r; x]) ]
+		| Th "A" -> [
+			new rule lr#strength (app f [lr#l; x]) (app f [lr#r; x]);
+			new rule lr#strength (app f [x; lr#l]) (app f [x; lr#r]);
+			new rule lr#strength (app f [x; app f [lr#l; y]]) (app f [x; app f [lr#r; y]])
+		]
+		| Th "C" -> []
+		| Th s -> raise (No_support ("extension for theory: " ^ s))
+		| _ -> []
 
 (* Adding marked symbols *)
 
-let add_marked_symbol_default (trs:trs) f =
+let add_marked_symbol_default (trs : #sym trs) f =
 	let f' = trs#get_sym (mark_sym f) in
 	f'#set_arity f#arity;;
 
@@ -60,7 +73,7 @@ let add_marked_symbol_ac =
 		let f' = trs#get_sym_name (mark_name f#name) in
 		f'#set_arity 1;;
 
-let add_marked_symbols (trs:trs) =
+let add_marked_symbols (trs : #sym trs) =
 	let iterer f =
 		if f#is_defined then begin
 			if f#ty = Fun then begin
@@ -72,118 +85,6 @@ let add_marked_symbols (trs:trs) =
 	in
 	trs#iter_syms iterer;;
 
-let make_dp_table (trs:trs) minimal dp_table =
-	(* Relative: Moving duplicating or non-dominant weak rules to *medium* rules *)
-	while
-		trs#fold_rules (fun i rule ret ->
-			if rule#is_weak && (rule#is_duplicating || not(trs#relative_const rule#r)) then (
-				trs#replace_rule i (medium_rule rule#l rule#r);
-				true)
-			else ret
-		) false do () done;
-	(* minimality can be assumed if all weak rules are size preserving *)
-	let tester i rule =
-		rule#is_weak && rule#is_size_increasing && (
-			log (fun _ ->
-				prerr_string "Detected size-increasing weak rule ";
-				prerr_int i;
-				prerr_endline ". Disabling minimality.";
-			); true)
-	in
-	if trs#exists_rule tester then begin
-		minimal := false;
-	end;
-
-	(* Main process *)
-	let cnt = ref 0 in
-	let add_dp lr =
-		cnt := !cnt + 1;
-		Hashtbl.add dp_table (!cnt) lr;
-	in
-	
-	add_marked_symbols trs;
-
-	(* Generating dependency pairs *)
-	let rec generate_dp_sub strength s (Node(g,ts) as t) =
-		if trs#strictly_defines g && not (strict_subterm t s) then begin
-			add_dp (new rule strength s (mark_term t));
-		end;
-		List.iter (generate_dp_sub strength s) ts;
-	in
-	let generate_dp_default i rule =
-		generate_dp_sub rule#strength (mark_term rule#l) rule#r
-	in
-	let generate_dp =
-		match params.acdp_mode with
-		| ACDP_new -> generate_dp_default
-		| ACDP_KT98 ->
-			fun i rule ->
-				let f = root rule#l in
-				generate_dp_default i rule;
-				if f#ty = Th "AC" then begin
-					let xl = ext_ac f rule#l in
-					let xr = ext_ac f rule#r in
-					add_dp (new rule rule#strength (mark_term xl) (mark_term xr));
-				end;
-		| _ ->
-			fun i rule ->
-				let f = root rule#l in
-				generate_dp_default i rule;
-				if f#ty = Th "AC" then begin
-					let xl = ext_ac f rule#l in
-					let xr = ext_ac f rule#r in
-					generate_dp_default i (new rule rule#strength xl xr);
-				end;
-	in
-	trs#iter_rules (fun i rule -> if not rule#is_weak then generate_dp i rule;);
-
-	(* Additional rules for AC *)
-	let add_eq s t =
-		trs#add_rule (weak_rule s t);
-		problem trs#output_last_rule;
-	in
-	let ac_mark_handle f =
-		if f#ty = Th "AC" && f#is_defined then begin
-			let u s t = app f [s;t] in
-			let m =
-				if params.ac_mark_mode = AC_mark then
-					fun s t -> mark_root (u s t)
-				else u
-			in
-			let x = var "_1" in
-			let y = var "_2" in
-			let z = var "_3" in
-			match params.acdp_mode with
-			| ACDP_KT98 ->
-				add_eq (m (m x y) z) (m (u x y) z); (* AC-marked condition *)
-				add_eq (m (u x y) z) (m (m x y) z);
-				add_eq (u (u x y) z) (u x y); (* AC-deletion property *)
-				if params.ac_mark_mode = AC_mark then begin
-					(* AC-deletion property is needed also for marked ones! *)
-					add_eq (m (m x y) z) (m x y);
-				end;
-			| ACDP_GK01 ->
-				if params.ac_mark_mode = AC_mark then begin
-					add_eq (m (u x y) z) (m x (u y z));
-(*					add_eq (m x (u y z)) (m (u x y) z);
-*)				end;
-				minimal := false; (* Minimality cannot be assumed *)
-			| ACDP_ALM10 ->
-				if params.ac_mark_mode = AC_mark then begin
-					add_eq (m (u x y) z) (m x (u y z));
-(*					add_eq (m x (u y z)) (m (u x y) z);
-*)				end;
-				add_eq (m (u x y) z) (m x y);
-			| ACDP_new ->
-				if params.ac_mark_mode = AC_mark then begin
-					add_dp (weak_rule (m (u x y) z) (m x (u y z)));
-(*					add_dp (weak_rule (m x (u y z)) (m (u x y) z));
-*)				end;
-				add_dp (weak_rule (m (u x y) z) (m y z));
-(*				add_dp (weak_rule (m x (u y z)) (m x y));
-*)		end;
-	in
-	trs#iter_syms ac_mark_handle;;
 
 
 (* For the new AC-DP *)
@@ -195,41 +96,6 @@ let add_marked_symbols_ac trs =
 	in
 	trs#iter_syms iterer;;
 
-let make_ac_ext (trs:trs) dp_table =
-	let cnt = ref 0 in
-	let add_dp rule =
-		cnt := !cnt + 1;
-		Hashtbl.add dp_table (!cnt) rule;
-	in
-	let generate_dp i rule =
-		let f = root rule#l in
-		if rule#is_strict && f#ty = Th "AC" then begin
-			let xl = ext_ac f rule#l in
-			let xr = ext_ac f rule#r in
-			add_dp (new rule rule#strength (mark_term xl) (mark_term xr));
-		end;
-	in
-	trs#iter_rules generate_dp;
-	let ac_mark_handle f =
-		if f#is_defined && f#ty = Th "AC" then begin
-			let u s t = app f [s;t] in
-			let m =
-				if params.ac_mark_mode = AC_mark then fun s t -> mark_root (u s t)
-				else u
-			in
-			let x = var "_1" in
-			let y = var "_2" in
-			let z = var "_3" in
-			if params.ac_mark_mode = AC_mark then begin
-				add_dp (weak_rule (m (u x y) z) (m x (u y z)));
-(*				add_dp (weak_rule (m x (u y z)) (m (u x y) z));
-*)			end;
-			add_dp (weak_rule (m (u x y) z) (m y z));
-(*			add_dp (weak_rule (m x (u y z)) (m x y));
-*)		end;
-	in
-	trs#iter_syms ac_mark_handle;
-	add_marked_symbols_ac trs;;
 
 
 
@@ -248,28 +114,6 @@ module SubDG =
 module SubComponents = Graph.Components.Make(SubDG)
 
 
-(* Estimated dependency graph *)
-
-let make_dg (trs:trs) (estimator:Estimator.t) dp_table dg =
-	log estimator#output_sym_graph;
-	let edged_KT98 src tgt =
-		if (root src#l)#ty = Th "AC" then
-			List.exists (fun r' -> estimator#connects r' tgt#l) (top_ac_subterms src#r)
-		else estimator#connects src#r tgt#l
-	in
-	let edged =
-		if params.acdp_mode = ACDP_KT98 then edged_KT98
-		else fun src tgt -> estimator#connects src#r tgt#l
-	in
-	Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
-	Hashtbl.iter
-	(fun i1 dp1 ->
-		Hashtbl.iter
-		(fun i2 dp2 -> if edged dp1 dp2 then DG.add_edge dg i1 i2)
-		dp_table
-	)
-	dp_table;;
-
 let notsingle dg =
 	function
 	| [v] -> DG.mem_edge dg v v
@@ -281,16 +125,217 @@ let get_sccs dg =
 let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
-class dg (trs:trs) (estimator:Estimator.t) =
+class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
-		val min = ref true
+		val mutable minimal = true
 		val dp_table = Hashtbl.create 256
 		val dg = DG.create ()
-		method init = make_dp_table trs min dp_table; make_dg trs estimator dp_table dg;
-		method init_ac_ext = make_ac_ext trs dp_table; make_dg trs estimator dp_table dg;
-		method minimal = !min
+		val mutable dp_cnt = 0
+		val mutable need_extended_rules =
+			trs#is_theoried && params.acdp_mode = ACDP_new
+
+		method add_dp lr =
+			dp_cnt <- dp_cnt + 1;
+			Hashtbl.add dp_table dp_cnt lr;
+
+		method init =
+			(* Relative: Moving duplicating or non-dominant weak rules to *medium* rules *)
+			while trs#fold_rules (fun i rule ret ->
+					if rule#is_weak &&
+						(rule#is_duplicating || not(trs#relative_const rule#r)) then (
+						trs#replace_rule i (medium_rule rule#l rule#r);
+						true)
+					else ret
+				) false
+			do () done;
+			(* minimality can be assumed if all weak rules are size preserving *)
+			let tester i rule =
+				rule#is_weak && rule#is_size_increasing && (
+					log (fun _ ->
+						prerr_string "Detected size-increasing weak rule ";
+						prerr_int i;
+						prerr_endline ". Disabling minimality.";
+					); true)
+			in
+			if trs#exists_rule tester then begin
+				minimal <-false;
+			end;
+			(* Main process *)
+			add_marked_symbols trs;
+			(* Generating dependency pairs *)
+			let rec generate_dp_sub strength s (Node(g,ts) as t) =
+				if trs#strictly_defines g && not (strict_subterm t s) then begin
+					x#add_dp (new rule strength s (mark_term t));
+				end;
+				List.iter (generate_dp_sub strength s) ts;
+			in
+			let generate_dp_default i rule =
+				generate_dp_sub rule#strength (mark_term rule#l) rule#r
+			in
+			let generate_dp =
+				match params.acdp_mode with
+				| ACDP_new -> generate_dp_default
+				| ACDP_union -> fun i rule ->
+					generate_dp_default i rule;
+					if (root rule#l)#is_theoried then begin
+						let iterer xrule = x#add_dp (map_rule mark_term xrule) in
+						List.iter iterer (extended_rules rule);
+					end;
+				| ACDP_KT98 -> fun i rule ->
+					generate_dp_default i rule;
+					if (root rule#l)#is_theoried then begin
+						let iterer xrule = x#add_dp (map_rule mark_term xrule) in
+						List.iter iterer (extended_rules rule);
+					end;
+				| ACDP_ALM10
+				| ACDP_GK01 -> fun i rule ->
+					generate_dp_default i rule;
+					if (root rule#l)#is_theoried then begin
+						List.iter (generate_dp_default i) (extended_rules rule);
+					end;
+			in
+			trs#iter_rules (fun i rule -> if not rule#is_weak then generate_dp i rule;);
+		
+			(* Additional rules for AC *)
+			let add_eq s t =
+				trs#add_rule (weak_rule s t);
+				problem trs#output_last_rule;
+			in
+			let v1 = var "_1" in
+			let y = var "_2" in
+			let z = var "_3" in
+			let ac_mark_handle f =
+				if f#is_associative && f#is_defined then begin
+					let u s t = app f [s;t] in
+					let m =
+						if params.ac_mark_mode = AC_mark then
+							fun s t -> mark_root (u s t)
+						else u
+					in
+					match params.acdp_mode with
+					| ACDP_KT98 ->
+						(* AC-deletion property *)
+						add_eq (u (u v1 y) z) (u v1 y);
+						if not f#is_commutative then begin
+							add_eq (u v1 (u y z)) (u y z);
+						end;
+						(* AC-marked condition *)
+						add_eq (m (m v1 y) z) (m (u v1 y) z);
+						add_eq (m (u v1 y) z) (m (m v1 y) z);
+						(* AC-deletion property is needed also for marked ones! *)
+						add_eq (m (m v1 y) z) (m v1 y);
+						if not f#is_commutative then begin
+							add_eq (m v1 (m y z)) (m v1 (u y z));
+							add_eq (m v1 (u y z)) (m v1 (m y z));
+							add_eq (m v1 (m y z)) (m y z);
+						end;
+					| ACDP_GK01 ->
+						if params.ac_mark_mode = AC_mark then begin
+							add_eq (m (u v1 y) z) (m v1 (u y z));
+							if not f#is_commutative then begin
+								add_eq (m v1 (u y z)) (m (u v1 y) z);
+							end;
+						end;
+						minimal <- false; (* Minimality cannot be assumed *)
+					| ACDP_ALM10 ->
+						if params.ac_mark_mode = AC_mark then begin
+							add_eq (m (u v1 y) z) (m v1 (u y z));
+							if not f#is_commutative then begin
+								add_eq (m v1 (u y z)) (m (u v1 y) z);
+							end;
+						end;
+						add_eq (m (u v1 y) z) (m v1 y);
+						if not f#is_commutative then begin
+							add_eq (m v1 (u y z)) (m y z);
+						end;
+					| ACDP_union
+					| ACDP_new ->
+						x#add_dp (weak_rule (m (u v1 y) z) (m v1 (u y z)));
+						x#add_dp (weak_rule (m (u v1 y) z) (m y z));
+						if not f#is_commutative then begin
+							x#add_dp (weak_rule (m v1 (u y z)) (m (u v1 y) z));
+							x#add_dp (weak_rule (m v1 (u y z)) (m v1 y));
+						end;
+				end;
+			in
+			trs#iter_syms ac_mark_handle;
+			x#make_dg;
+
+(* Estimated dependency graph *)
+
+		method private make_dg =
+			log estimator#output_sym_graph;
+			let edged_KT98 src tgt =
+				if (root src#l)#is_associative then
+					List.exists (fun r' -> estimator#connects r' tgt#l) (top_ac_subterms src#r)
+				else estimator#connects src#r tgt#l
+			in
+			let edged =
+				if params.acdp_mode = ACDP_KT98 then edged_KT98
+				else fun src tgt ->
+					let Node(f,ss) = src#r in
+					let Node(g,ts) = tgt#l in
+					f#equals g &&
+					if f#is_commutative then
+						(* commutativity is taken specially *)
+						match ss, ts with
+						| [s1;s2], [t1;t2] ->
+							(estimator#narrows s1 t1 && estimator#narrows s2 t2) ||
+							(estimator#narrows s1 t2 && estimator#narrows s2 t1)
+						| _ -> raise (No_support "nonbinary commutative symbol")
+					else List.for_all2 estimator#narrows ss ts
+			in
+			Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
+			Hashtbl.iter
+			(fun i1 dp1 ->
+				Hashtbl.iter
+				(fun i2 dp2 -> if edged dp1 dp2 then DG.add_edge dg i1 i2)
+				dp_table
+			)
+			dp_table;
+
+		method private make_ac_ext =
+			let generate_dp i rule =
+				if (root rule#l)#is_theoried then begin
+					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
+					List.iter iterer (extended_rules rule);
+				end;
+			in
+			trs#iter_rules generate_dp;
+			let ac_mark_handle f =
+				if f#is_defined && f#is_associative then begin
+					let u s t = app f [s;t] in
+					let m =
+						if params.ac_mark_mode = AC_mark then fun s t -> mark_root (u s t)
+						else u
+					in
+					let v1 = var "_1" in
+					let y = var "_2" in
+					let z = var "_3" in
+					if params.ac_mark_mode = AC_mark then begin
+						x#add_dp (weak_rule (m (u v1 y) z) (m v1 (u y z)));
+						if not f#is_commutative then begin
+							x#add_dp (weak_rule (m v1 (u y z)) (m (u v1 y) z));
+						end;
+					end;
+					x#add_dp (weak_rule (m (u v1 y) z) (m y z));
+					if not f#is_commutative then begin
+						x#add_dp (weak_rule (m v1 (u y z)) (m v1 y));
+					end;
+				end;
+			in
+			trs#iter_syms ac_mark_handle;
+			x#make_dg;
+
+		method next = (* if there is a next problem, then init it and say true *)
+			if need_extended_rules then (
+				x#make_ac_ext;
+				need_extended_rules <- false;
+				true
+			) else false
+		method minimal = minimal
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
 		method get_subsccs dpset = ll2ls (get_subsccs dg dpset)

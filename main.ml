@@ -10,7 +10,7 @@ type result =
 | NO
 
 (* static usable rules *)
-let static_usable_rules (trs:trs) (estimator:Estimator.t) (dg:dg) used_dpset =
+let static_usable_rules (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) used_dpset =
 	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,ts) as t) =
@@ -37,7 +37,7 @@ let static_usable_rules (trs:trs) (estimator:Estimator.t) (dg:dg) used_dpset =
 
 let uncurry =
 	if params.uncurry then
-		fun (trs:trs) (dg:dg) ->
+		fun (trs : 'a trs) (dg : 'a dg) ->
 			comment (fun _ -> prerr_string "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
 			if appsyms = [] then
@@ -55,7 +55,7 @@ let uncurry =
 		fun _ _ -> false
 
 
-let relative_test (trs:trs) =
+let relative_test (trs : 'a trs) =
 	trs#exists_rule (fun i rule ->
 		if rule#is_weak && rule#is_duplicating then (
 			comment (fun os ->
@@ -76,20 +76,18 @@ let relative_test (trs:trs) =
 		) else false
 	);;
 
-let theory_test (trs:trs) =
+let theory_test (trs : 'a trs) =
 	let ths = trs#get_ths in
-	if StrSet.is_empty ths then false
-	else
-		let ths = StrSet.remove "C" ths in
-		let ths = StrSet.remove "AC" ths in
-		if StrSet.is_empty ths then true
-		else (
-			warning (fun _ -> prerr_endline ("Unacceptable theories: " ^ StrSet.fold (^) ths ""));
-			raise Unknown
-		)
+	let ths = StrSet.remove "A" ths in
+	let ths = StrSet.remove "C" ths in
+	let ths = StrSet.remove "AC" ths in
+	if not (StrSet.is_empty ths) then begin
+		warning (fun _ -> prerr_endline ("Unacceptable theories: " ^ StrSet.fold (^) ths ""));
+		raise Unknown;
+	end;;
 
 (* extra variable test *)
-let extra_test (trs:trs) =
+let extra_test (trs : 'a trs) =
 	let iterer i rule =
 		if rule#has_extra_variable then begin
 			proof
@@ -104,7 +102,7 @@ let extra_test (trs:trs) =
 	trs#iter_rules iterer;;
 
 (* remove trivial relative rules *)
-let trivial_test (trs:trs) =
+let trivial_test (trs : 'a trs) =
 	let iterer i rule =
 		if rule#l = rule#r then begin
 			if rule#is_strict then begin
@@ -131,7 +129,7 @@ let trivial_test (trs:trs) =
 let dummy_estimator = new Estimator.t (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
-let rule_remove (trs:trs) =
+let rule_remove (trs : 'a trs) =
 	if Array.length params.orders_removal > 0 then begin
 		let proc_list =
 			let folder p procs =
@@ -160,14 +158,13 @@ let rule_remove (trs:trs) =
 	end;;
 
 (* reduction pair processor *)
-let dp_remove (trs:trs) (estimator:Estimator.t) (dg:dg) =
+let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 	let sccs = ref dg#get_sccs in
 	let remove_unusable () =
 		let init = ref true in
 		let used_dpset = List.fold_left IntSet.union IntSet.empty !sccs in
 		let curr_len = IntSet.cardinal used_dpset in
-		if !init || curr_len < dg#get_size then
-		begin
+		if !init || curr_len < dg#get_size then begin
 			log (fun _ -> prerr_string "Removing unrelated DPs: {");
 			init := false;
 			let dp_remover i _ =
@@ -230,7 +227,14 @@ let dp_remove (trs:trs) (estimator:Estimator.t) (dg:dg) =
 		match !sccs with
 		| [] ->
 			cpf (fun os -> output_string os "</proof>";);
-			if !given_up then raise Unknown else raise Success
+			if dg#next then begin
+				problem (fun os ->
+					output_string os "Next Dependency Pairs:\n";
+					dg#output_dps os;
+				);
+				sccs := dg#get_sccs;
+				loop ();
+			end else raise (if !given_up then Unknown else Success)
 		| scc::rest ->
 			problem
 			(fun _ ->
@@ -260,7 +264,7 @@ let dp_remove (trs:trs) (estimator:Estimator.t) (dg:dg) =
 	loop ();;
 
 
-let prove_termination (trs:trs) =
+let prove_termination (trs : 'a trs) =
 	problem (fun os ->
 		output_string os "Input TRS:\n";
 		trs#output os;
@@ -277,7 +281,7 @@ let prove_termination (trs:trs) =
 "
 	);
 
-	let theoried = theory_test trs in
+	theory_test trs;
 
 	let ret = try
 
@@ -293,6 +297,8 @@ let prove_termination (trs:trs) =
 		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 
 		let estimator = new Estimator.t trs in
+		log estimator#output_sym_graph;
+
 		let dg = new dg trs estimator in
 		dg#init;
 		problem (fun _ ->
@@ -301,18 +307,7 @@ let prove_termination (trs:trs) =
 		);
 		log dg#output_edges;
 
-		if theoried && params.acdp_mode = ACDP_new then begin
-			try dp_remove trs estimator dg with Success ->
-			let dg = new Dp.dg trs estimator in
-			dg#init_ac_ext;
-			problem (fun _ ->
-				prerr_endline "AC Extensions:";
-				dg#output_dps stderr;
-			);
-			dp_remove trs estimator dg;
-		end else begin
-			dp_remove trs estimator dg;
-		end;
+		dp_remove trs estimator dg;
 
 		raise Unknown;
 	with
@@ -342,103 +337,103 @@ in
 class main =
 	let err msg = prerr_endline ("Error: " ^ msg ^ "!"); exit 1 in
 	let warn msg = warning(fun _ -> prerr_endline ("Warning: " ^ msg ^ ".")) in
-	object (x)
-		val trs = new trs
+object (x)
+	val trs = new trs
 
-		method no_ac = not(StrSet.mem "AC" trs#get_ths)
+	method no_ac = not(StrSet.mem "AC" trs#get_ths)
 
-		method duplicating = trs#exists_rule (fun _ rule -> rule#is_duplicating)
+	method duplicating = trs#exists_rule (fun _ rule -> rule#is_duplicating)
 
-		method run =
-			if params.file = "" then
-				trs#read_stdin
-			else
-				trs#read params.file;
+	method run =
+		if params.file = "" then
+			trs#read_stdin
+		else
+			trs#read params.file;
 
-			cpf (fun os ->
-				output_string os
+		cpf (fun os ->
+			output_string os
 "<?xml version=\"1.0\"?>
 <?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>
 <certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\">
 ";
-			);
+		);
 
-			begin match params.mode with
-			| MODE_higher_xml ->
-				trs#output_xml_ho stdout;
-			| MODE_through ->
-				trs#output stdout;
-			| MODE_flat ->
-				trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
-				trs#output stdout;
-			| MODE_uncurry ->
-				ignore (App.auto_uncurry trs (new dg (new trs) (new Estimator.t (new trs))));
-				trs#output stdout;
-			| MODE_simple ->
-				if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then
-					err "Not simple";
-			| MODE_dup	->
-				if x#duplicating then err "Duplicating TRS";
-				warn "Non-duplicating TRS";
-				exit 0;
-			| MODE_id	->
-				trs#iter_rules (fun i rule -> if term_eq rule#l rule#r then trs#remove_rule i);
-				trs#output_wst stdout;
-			| MODE_dist	->
+		begin match params.mode with
+		| MODE_higher_xml ->
+			trs#output_xml_ho stdout;
+		| MODE_through ->
+			trs#output stdout;
+		| MODE_flat ->
+			trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
+			trs#output stdout;
+		| MODE_uncurry ->
+			ignore (App.auto_uncurry trs (new dg (new trs) (new Estimator.t (new trs))));
+			trs#output stdout;
+		| MODE_simple ->
+			if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then
+				err "Not simple";
+		| MODE_dup	->
+			if x#duplicating then err "Duplicating TRS";
+			warn "Non-duplicating TRS";
+			exit 0;
+		| MODE_id	->
+			trs#iter_rules (fun i rule -> if term_eq rule#l rule#r then trs#remove_rule i);
+			trs#output_wst stdout;
+		| MODE_dist	->
 (*				let tester _ rule =
-					match rule#r with
-					| Node(Th "AC",_,
-						[Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
-						 Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
-						]) ->
-						(match rule#l with
-						 | Node(Th "AC",_,
-						 	[Node(Var,_,_);
-							 Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
-							]) -> true
-						 | Node(Th "AC",_,
-							[Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
-							 Node(Var,_,_);
-							]) -> true
-						 | _ -> false
-						)
-					| _ -> false
-				in
-				if trs#exists_rule tester then
-					print_endline "Distribution like rule"
-				else if x#duplicating then
-					print_endline "Duplicating TRS"
-				else
-					print_endline "";
+				match rule#r with
+				| Node(Th "AC",_,
+					[Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
+					 Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
+					]) ->
+					(match rule#l with
+					 | Node(Th "AC",_,
+					 	[Node(Var,_,_);
+						 Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
+						]) -> true
+					 | Node(Th "AC",_,
+						[Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
+						 Node(Var,_,_);
+						]) -> true
+					 | _ -> false
+					)
+				| _ -> false
+			in
+			if trs#exists_rule tester then
+				print_endline "Distribution like rule"
+			else if x#duplicating then
+				print_endline "Duplicating TRS"
+			else
+				print_endline "";
 *)()
-			| MODE_relative_test ->
-				if relative_test trs then exit 1;
-			| _ ->
-				Array.iter
-					(fun p ->
-						if not p.remove_all && nonmonotone p then
-							err "Rule removal processor must be monotone";
-					) params.orders_removal;
-				let ans = prove_termination trs in
+		| MODE_relative_test ->
+			if relative_test trs then exit 1;
+		| _ ->
+			Array.iter
+				(fun p ->
+					if not p.remove_all && nonmonotone p then
+						err "Rule removal processor must be monotone";
+				) params.orders_removal;
+			let ans = prove_termination trs in
 (*				cpf (fun os ->
-					output_string os
-					(	match ans with
-						| YES	-> "<yes>"
-						| NO	-> "<no>"
-						| MAYBE	-> "<maybe>"
-					);
-					output_char os '\n';
+				output_string os
+				(	match ans with
+					| YES	-> "<yes>"
+					| NO	-> "<no>"
+					| MAYBE	-> "<maybe>"
 				);
+				output_char os '\n';
+			);
 *)				cpf (fun os -> output_string os "</certificationProblem>\n");
-				if not params.cpf then
-					print_endline
-					(	match ans with
-						| YES	-> "YES"
-						| NO	-> "NO"
-						| MAYBE	-> "MAYBE"
-					);
-			end;
-	end;;
+			if not params.cpf then
+				print_endline
+				(	match ans with
+					| YES	-> "YES"
+					| NO	-> "NO"
+					| MAYBE	-> "MAYBE"
+				);
+		end;
+end;;
 
 begin
 	try

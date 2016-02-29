@@ -16,7 +16,7 @@ module Ths = StrSet
 module Syms = StrSet
 module Rules = IntSet
 
-class sym_detailed f =
+class sym_detailed (f:#sym) =
 	object (x:'a)
 		inherit sym_basic f#ty f#name
 		val mutable arity = if f#is_var then Arity 0 else Unknown
@@ -64,10 +64,10 @@ let hashtbl_for_all test hashtbl =
 	with Success -> false
 
 (* the class for TRSs *)
-class trs =
+class ['a] trs =
 	object (x)
 		val sym_table = Hashtbl.create 64(* the symbol table *)
-		val rule_table : (int,rule) Hashtbl.t = Hashtbl.create 256
+		val rule_table : (int, (#sym as 'a) rule) Hashtbl.t = Hashtbl.create 256
 		val mutable rule_cnt = 0
 		val mutable strict_rule_cnt = 0
 		val mutable ths = Ths.empty(* the set of used built-in theories *)
@@ -75,8 +75,9 @@ class trs =
 		method get_size = Hashtbl.length rule_table
 		method get_size_strict = strict_rule_cnt
 		method get_ths = ths
+		method is_theoried = not (Ths.is_empty ths)
 (* methods for symbols *)
-		method private add_sym : 'a. (#sym as 'a) -> sym_detailed =
+		method private add_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
 				let f' = new sym_detailed f in
 				Hashtbl.add sym_table f#name f';
@@ -88,11 +89,11 @@ class trs =
 		method find_sym_name name =
 			try Hashtbl.find sym_table name
 			with Not_found -> new sym_detailed (new sym_basic Fun name)
-		method get_sym : 'a. (#sym as 'a) -> sym_detailed =
+		method get_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
 				if f#is_var then new sym_detailed f else
 				try Hashtbl.find sym_table f#name with Not_found -> x#add_sym f
-		method find_sym : 'a. (#sym as 'a) -> sym_detailed =
+		method find_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
 				try Hashtbl.find sym_table f#name with Not_found -> new sym_detailed f
 		method iter_syms iterer = Hashtbl.iter (fun _ -> iterer) sym_table
@@ -102,18 +103,18 @@ class trs =
 		method strictly_defines_name name =
 			try not (Rules.is_empty (Hashtbl.find sym_table name)#defined_by)
 			with Not_found -> false
-		method strictly_defines : 'a. (#sym as 'a) -> bool =
+		method strictly_defines : 'b. (#sym as 'b) -> bool =
 			fun f -> f#is_fun && x#strictly_defines_name f#name
-		method defines : 'a. (#sym as 'a) -> bool =
+		method defines : 'b. (#sym as 'b) -> bool =
 			fun f ->
 				f#is_fun &&
 				try let f = Hashtbl.find sym_table f#name in
 					f#is_defined || f#is_weakly_defined
 				with Not_found -> false
-		method const_term : 'a. (#sym as 'a) term -> bool =
+		method const_term : 'b. (#sym as 'b) term -> bool =
 			fun (Node(f,ss)) ->
 				not (x#defines f) && List.for_all x#const_term ss
-		method relative_const : 'a. (#sym as 'a) term -> bool =
+		method relative_const : 'b. (#sym as 'b) term -> bool =
 			fun (Node(f,ss)) ->
 				not (x#strictly_defines f) && List.for_all x#relative_const ss
 (* methods for rules *)
@@ -121,7 +122,7 @@ class trs =
 		method iter_rules f = Hashtbl.iter f rule_table
 		method for_all_rules f = hashtbl_for_all f rule_table
 		method exists_rule f = hashtbl_exists f rule_table
-		method fold_rules : 'a. (int -> rule -> 'a -> 'a) -> 'a -> 'a =
+		method fold_rules : 'b. (int -> 'a rule -> 'b -> 'b) -> 'b -> 'b =
 			fun f a -> Hashtbl.fold f rule_table a
 		method private add_rule_i i rule =
 			let f = x#get_sym (root rule#l) in

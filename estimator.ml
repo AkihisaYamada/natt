@@ -7,29 +7,30 @@ open Params
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
 
+class ['a] t (trs : 'a #trs) =
 
-let init_sym_g (trs:#trs) =
-	let sym_g = SymG.create () in
-	SymG.add_vertex sym_g  ""; (* this vertex represents arbitrary symbol *)
-	let add_sym f =
-		if f#is_fun then begin
-			SymG.add_vertex sym_g f#name;
-			SymG.add_edge sym_g "" f#name;
-		end;
+	let init_sym_g =
+		let sym_g = SymG.create () in
+		SymG.add_vertex sym_g  ""; (* this vertex represents arbitrary symbol *)
+		let add_sym f =
+			if f#is_fun then begin
+				SymG.add_vertex sym_g f#name;
+				SymG.add_edge sym_g "" f#name;
+			end;
+		in
+		trs#iter_syms add_sym;
+		let add_edge _ rule =
+			let f = root rule#l in
+			let g = root rule#r in
+			SymG.add_edge sym_g f#name (if g#is_var then "" else g#name);
+		in
+		trs#iter_rules add_edge;
+		ignore (SymGoper.add_transitive_closure sym_g);
+		sym_g
 	in
-	trs#iter_syms add_sym;
-	let add_edge _ lr =
-		let Node(f,_) = lr#l in
-		let Node(g,_) = lr#r in
-		SymG.add_edge sym_g f#name (if g#is_var then "" else g#name);
-	in
-	trs#iter_rules add_edge;
-	ignore (SymGoper.add_transitive_closure sym_g);
-	sym_g
 
-class t (trs:#trs) =
 	object (x)
-		val sym_g = init_sym_g trs
+		val sym_g = init_sym_g
 		method trans_sym f g =
 			SymG.mem_edge sym_g f#name "" || SymG.mem_edge sym_g f#name g#name
 (* estimations *)

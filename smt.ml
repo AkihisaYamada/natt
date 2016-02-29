@@ -389,7 +389,7 @@ class virtual context =
 			x#new_variable x#temp_name ty
 
 		method private refer_sub ty e =
-			if not consistent || is_simple e then e
+			if not params.tmpvar || not consistent || is_simple e then e
 			else
 				match e with
 				| Vec es	-> Vec(List.map (x#refer_sub ty) es)
