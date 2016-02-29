@@ -1414,40 +1414,39 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		| _ -> false
 	in
 	let output_proof =
-		let prerr_perm fname finfo =
-			prerr_string "sigma(";
-			output_name stderr fname;
-			prerr_string ") = ";
+		let output_perm os fname finfo =
+			output_string os "sigma(";
+			output_name os fname;
+			output_string os ") = ";
 			let punct = ref "" in
 			let rbr =
 				if solver#get_bool (argfilt_list finfo) then
 					if solver#get_bool (mset_status finfo) then
-						(prerr_string "{";"}")
-					else (prerr_string "[";"]")
+						(output_string os "{";"}")
+					else (output_string os "[";"]")
 				else ""
 			in
 			let n = finfo.arity in
 			for j = 1 to n do
 				for i = 1 to n do
 					if solver#get_bool (perm finfo i j) then begin
-						prerr_string !punct;
+						output_string os (!punct ^ string_of_int i);
 						punct := ",";
-						prerr_int i;
 					end;
 				done;
 			done;
-			prerr_string rbr;
+			output_string os rbr;
 		in
-		let prerr_interpret =
-			let prerr_exp_append =
+		let output_interpret =
+			let output_exp_append os =
 				function
-				| Neg exp -> prerr_string " - "; prerr_exp exp;
-				| exp -> prerr_string " + "; prerr_exp exp;
+				| Neg exp -> output_string os " - "; output_exp os exp;
+				| exp -> output_string os " + "; output_exp os exp;
 			in
-			fun fname finfo ->
-				prerr_string "I(";
-				output_name stderr fname;
-				prerr_string ") = ";
+			fun os fname finfo ->
+				output_string os "I(";
+				output_name os fname;
+				output_string os ") = ";
 				let n = finfo.arity in
 				let sc =
 					if finfo.symtype = Fun then subterm_coef finfo
@@ -1460,36 +1459,34 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 						if not (zero coef) then begin
 							let coef =
 								match coef with
-								| Neg coef -> prerr_string (if !init then "-" else " - "); coef
-								| _ -> prerr_string (if !init then "" else " + "); coef
+								| Neg coef -> output_string os (if !init then "-" else " - "); coef
+								| _ -> if not !init then output_string os " + "; coef
 							in
 							if not (one coef) then begin
-								prerr_exp coef;
-								prerr_string " * ";
+								output_exp os coef;
+								output_string os " * ";
 							end;
-							prerr_string "x";
-							prerr_int i;
+							output_string os ("x" ^ string_of_int i);
 							init := false;
 						end;
 					done;
 					let w = solver#get_value (weight finfo) in
 					if !init then
-						prerr_exp w
+						output_exp os w
 					else if not (zero w) then
-						prerr_exp_append w;
+						output_exp_append os w;
 				in
 				if max_status finfo then begin
 					let usemax = solver#get_bool (argfilt_list finfo) in
 					for i = 1 to n do
 						let pen = solver#get_value (subterm_penalty finfo i) in
 						if solver#get_bool (maxfilt finfo i) then begin
-							prerr_string (if !init then if usemax then "max(" else "" else ", ");
-							prerr_string "x";
-							prerr_int i;
+							output_string os (if !init then if usemax then "max(" else "" else ", ");
+							output_string os ("x" ^ string_of_int i);
 							if not (zero pen) then begin
 								match pen with
-								| Neg pen -> prerr_string " - "; prerr_exp pen;
-								| _ -> prerr_string " + "; prerr_exp pen;
+								| Neg pen -> output_string os " - "; output_exp os pen;
+								| _ -> output_string os " + "; output_exp os pen;
 							end;
 							init := false;
 						end;
@@ -1498,35 +1495,30 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 						if finfo.maxpol then
 							pr_sum ()
 						else
-							prerr_exp mcw
+							output_exp os mcw
 					end else begin
 						if finfo.maxpol then begin
-							prerr_string ", ";
+							output_string os ", ";
 							init := true;
 							pr_sum ();
 						end;
 						if p.w_neg then begin
-							prerr_string ", ";
-							prerr_exp mcw;
+							output_string os ", ";
+							output_exp os mcw;
 						end;
-						if usemax then prerr_string ")";
+						if usemax then output_string os ")";
 					end;
 				end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
-					prerr_string "max(";
+					output_string os "max(";
 					pr_sum ();
-					prerr_string ", ";
-					prerr_exp mcw;
-					prerr_string ")";
+					output_string os ", ";
+					output_exp os mcw;
+					output_string os ")";
 				end else
 					pr_sum ();
 		in
-		let prerr_symbol fname finfo =
+		let output_symbol os fname finfo =
 			let flag = ref false in
-			if p.w_mode <> W_none then begin
-				prerr_string "\t";
-				prerr_interpret fname finfo;
-				flag := true;
-			end;
 			if
 				(
 					p.ext_mset && p.ext_lex ||
@@ -1535,17 +1527,22 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				) &&
 				finfo.arity <> 0
 			then begin
-				prerr_string "\t";
-				prerr_perm fname finfo;
+				output_string os "\t";
+				output_perm os fname finfo;
 				flag := true;
 			end;
-			if !flag then prerr_newline ();
+			if p.w_mode <> W_none then begin
+				output_string os "\t";
+				output_interpret os fname finfo;
+				flag := true;
+			end;
+			if !flag then output_string os "\n";
 		in
-		let prerr_prec =
+		let output_prec =
 			if p.prec_mode = PREC_none then
 				fun _ -> ()
 			else
-				fun _ ->
+				fun os ->
 					let equiv = if p.prec_mode = PREC_quasi then " = " else ", " in
 					let rec sub =
 						function
@@ -1554,10 +1551,10 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 							output_name stderr fname;
 						| (fname,i)::(gname,j)::ps ->
 							output_name stderr fname;
-							if i = j then prerr_string equiv else prerr_string " > ";
+							output_string os (if i = j then equiv else " > ");
 							sub ((gname,j)::ps)
 					in
-					prerr_string "    PREC: ";
+					output_string os "    PREC: ";
 					sub
 					(	List.sort
 						(fun (_,i) (_,j) -> compare j i)
@@ -1571,41 +1568,41 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 							[]
 						)
 					);
-					prerr_newline ();
+					output_string os "\n";
 		in
-		let prerr_usable =
+		let output_usable =
 			if p.dp && dg#minimal && p.usable || params.debug then
 				let folder is (i,_) =
 					if solver#get_bool (usable i) then i::is else is
 				in
-				fun () ->
-					prerr_string "    USABLE RULES: {";
+				fun os ->
+					output_string os "    USABLE RULES: {";
 					Abbrev.output_ints stderr " " (List.fold_left folder [] !usables);
-					prerr_endline " }";
+					output_string os " }\n";
 			else
-				fun () -> ()
+				fun _ -> ()
 		in
-		let prerr_usable_w =
+		let output_usable_w =
 			if p.dp && p.usable_w && p.w_mode <> W_none then
 				let folder is (i,_) =
 					if solver#get_bool (usable_w i) then i::is else is
 				in
-				fun () ->
-					prerr_string "    USABLE RULES(WEIGHT): {";
+				fun os ->
+					output_string os "    USABLE RULES(WEIGHT): {";
 					Abbrev.output_ints stderr " " (List.fold_left folder [] !usables);
-					prerr_endline " }";
+					output_string os " }\n";
 			else
-				fun () -> ()
+				fun os -> ()
 		in
-		fun _ ->
-			Hashtbl.iter prerr_symbol sigma;
-			prerr_prec ();
-			prerr_usable ();
-			prerr_usable_w ();
+		fun os ->
+			Hashtbl.iter (output_symbol os) sigma;
+			output_prec os;
+			output_usable os;
+			output_usable_w os;
 			if p.mcw_mode = MCW_num then begin
-				prerr_string "    w0 = ";
-				prerr_exp (solver#get_value mcw);
-				prerr_newline ();
+				output_string os "    w0 = ";
+				output_exp os (solver#get_value mcw);
+				output_string os "\n";
 			end;
 	in
 	(* Print CPF proof *)
@@ -1997,28 +1994,29 @@ object (x)
 		try
 			x#push current_usables !sccref;
 			comment putdot;
-			let some_gt =
-				IntSet.fold
-				(fun i some_gt ->
-					solver#add_assertion (EV (ge_v i));
-					EV (gt_v i) |^ some_gt
-				) !sccref (LB false)
+			let folder i ret =
+				solver#add_assertion (EV (ge_v i));
+				EV (gt_v i) |^ ret
 			in
-			solver#add_assertion some_gt;
+			solver#add_assertion (IntSet.fold folder !sccref (LB false));
 			comment putdot;
 			solver#check;
-			comment (fun _ -> prerr_string " removes:");
-			IntSet.iter
-			(fun i ->
-				if solver#get_bool (EV(gt_v i)) then begin
-					dg#remove_dp i;
-					comment(fun _ -> prerr_string " #"; prerr_int i;);
-					sccref := IntSet.remove i !sccref;
-				end;
-			) !sccref;
-			comment (fun _ -> prerr_newline ());
+			comment (fun os -> output_string os " succeeded.\n");
 			proof output_proof;
 			cpf output_cpf;
+			let folder i ret =
+				if solver#get_bool (EV(gt_v i)) then (
+					dg#remove_dp i;
+					sccref := IntSet.remove i !sccref;
+					i :: ret
+				) else ret
+			in
+			let rem_dps = IntSet.fold folder !sccref [] in
+			proof (fun os ->
+				output_string os "    Removed DPs:";
+				Abbrev.output_ints os " #" rem_dps;
+				output_string os "\n";
+			);
 			x#pop;
 			true
 		with Inconsistent ->

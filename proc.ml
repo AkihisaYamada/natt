@@ -67,12 +67,12 @@ class finalized finalizer =
 			at_exit (fun _ -> !rfin x)
 	end
 
-class stderr_outputter =
+class ostream os =
 	object
 		inherit outputter
-		method output_string = prerr_string
-		method output_char = prerr_char
-		method flush = flush stderr
+		method output_string = output_string os
+		method output_char = output_char os
+		method flush = flush os
 		method close = ()
 	end;;
 

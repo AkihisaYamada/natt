@@ -727,15 +727,17 @@ class virtual sexp_printer =
 			| Mat(ess)		-> pr "["; withpunc (withpunc pr_e ",") ";" ess; pr "]";
 	end;;
 
-let prerr_exp =
+let output_exp os =
 	(object
 			inherit sexp_printer
 			inherit Proc.printer
-			inherit Proc.stderr_outputter
-			method pr_v = prerr_string
+			inherit Proc.ostream os
+			method pr_v = output_string os
 			method pr_ds = raise (No_support "SMT")
 		end
 	)#pr_e
+
+let prerr_exp = output_exp stderr
 
 let smt_apply =
 	function

@@ -7,6 +7,6 @@
 	+(x,0) -> x
 	mat_pow(x,0) -> I
 	mat_pow(x,+(y,y)) -> mat_pow(mat_mult(x,x),y)
-	mat_pow(x,+(1,+(y,y))) -> mat_mult(x, mat_pow(x,+(y,y)))
+	mat_pow(x,+(1,+(y,y))) -> mat_mult(x, mat_pow(mat_mult(x,x),y))
 	mat_mult(x,sprod(y,z)) -> mat_mult(sprod(y,x),z)
 )
