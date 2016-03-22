@@ -1,7 +1,7 @@
 open Util
 open Term
 open Subst
-
+open Xml
 
 type arity = Unknown | Arity of int
 
@@ -227,10 +227,24 @@ class ['a] trs =
 			in
 			x#iter_rules iterer_rule;
 			output_string os ")\n";
-		method output_xml_rules os =
-			output_string os "<rules>";
-			x#iter_rules (fun _ rule -> rule#output_xml os);
-			output_string os "</rules>";
+		method output_ths_xml os =
+			let iterer_A f =
+				match f#ty with
+				| Th "AC" | Th "A" -> Xml.enclose "name" f#output_xml os
+				| _ -> ()
+			in
+			let iterer_C f =
+				match f#ty with
+				| Th "AC" | Th "C" -> Xml.enclose "name" f#output_xml os
+				| _ -> ()
+			in
+			Xml.enclose "Asymbols" (fun os -> x#iter_syms iterer_A) os;
+			Xml.enclose "Csymbols" (fun os -> x#iter_syms iterer_C) os;
+		method output_xml_rules =
+			Xml.enclose "rules" (fun os -> x#iter_rules (fun _ rule -> rule#output_xml os))
+		method output_xml =
+			Xml.enclose "trs" x#output_xml_rules >> x#output_ths_xml
+
 		method output_xml_ho_signature os =
 			output_string os "<higherOrderSignature>";
 			let first = ref true in
@@ -272,10 +286,6 @@ class ['a] trs =
 			output_string os "<trs>";
 			x#output_xml_rules os;
 			x#output_xml_ho_signature os;
-			output_string os "</trs>";
-		method output_xml os =
-			output_string os "<trs>";
-			x#output_xml_rules os;
 			output_string os "</trs>";
 
 	end;;

@@ -194,21 +194,18 @@ let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wt
 let rec output_xml_term os =
 	let rec sub =
 		function
-		| []	-> output_string os "</arg></funapp>"
-		| t::ts -> output_string os "</arg><arg>"; output_xml_term os t; sub ts
+		| []	-> Xml.cls "arg" os; Xml.cls "funapp" os;
+		| t::ts -> Xml.cls "arg" os; Xml.opn "arg" os; output_xml_term os t; sub ts
 	in
 	fun (Node(f,ts)) ->
 		if f#is_var then begin
-			output_string os "<var>";
-			f#output_xml os;
-			output_string os "</var>";
+			Xml.enclose "var" f#output_xml os;
 		end else begin
-			output_string os "<funapp><name>";
-			f#output_xml os;
-			output_string os "</name>";
+			Xml.opn "funapp" os;
+			Xml.enclose "name" f#output_xml os;
 			match ts with
-			| []	-> if f#is_fun then output_string os "</funapp>";
-			| t::ts	-> output_string os "<arg>"; output_xml_term os t; sub ts
+			| []	-> if f#is_fun then Xml.cls "funapp" os;
+			| t::ts	-> Xml.opn "arg" os; output_xml_term os t; sub ts
 		end
 
 (*** rules ***)

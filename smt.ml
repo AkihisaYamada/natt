@@ -637,12 +637,14 @@ class virtual solver_frame =
 
 class virtual sexp_printer =
 	object (x)
-		inherit Proc.printer
+		inherit Io.printer
 		method virtual pr_v : string -> unit
 		method virtual pr_ds : dec list -> unit
 		method pr_e e =
-			let pr = x#pr in
+			let pr = x#output_string in
 			let pr_e = x#pr_e in
+			let pr_i = x#output_int in
+			let pr_f = x#output_float in
 			let rec withpunc put punc =
 				function
 				| []	-> ();
@@ -679,8 +681,8 @@ class virtual sexp_printer =
 			| Nil			-> pr "()";
 			| NegInf		-> pr "-INF";
 			| EV v			-> x#pr_v v;
-			| LI i			-> if i < 0 then (pr "(- "; x#pr_i (-i); pr ")";) else x#pr_i i;
-			| LR r			-> x#pr_f r;
+			| LI i			-> if i < 0 then (pr "(- "; pr_i (-i); pr ")";) else pr_i i;
+			| LR r			-> if r < 0.0 then (pr "(- "; pr_f (-. r); pr ")";) else pr_f r;
 			| LB b			-> pr (if b then "true" else "false");
 			| Add(e1,e2)	-> pr "(+ "; pr_add e1; pr " "; pr_add e2; pr ")";
 			| Sub(e1,e2)	-> pr "(- "; pr_e e1; pr " "; pr_e e2; pr ")";
@@ -730,8 +732,8 @@ class virtual sexp_printer =
 let output_exp os =
 	(object
 			inherit sexp_printer
-			inherit Proc.printer
-			inherit Proc.ostream os
+			inherit Io.printer
+			inherit Io.wrap_out os
 			method pr_v = output_string os
 			method pr_ds = raise (No_support "SMT")
 		end
@@ -850,7 +852,7 @@ let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 
 class virtual smt_lib_2_0 =
 	object (x)
-		inherit Proc.io
+		inherit Io.t
 		inherit solver_frame
 		inherit sexp_printer
 		inherit parser
@@ -858,6 +860,8 @@ class virtual smt_lib_2_0 =
 
 		val mutable initialized = false
 
+		method pr = x#output_string
+		method pr_c = x#output_char
 
 		method exit =
 			if initialized then begin
@@ -1003,31 +1007,31 @@ class virtual smt_lib_2_0 =
 			| d::ds	-> x#pr "("; pr_d d; x#pr ") "; x#pr_ds ds;
 	end
 
-let create_solver debug_to debug_in debug_out tool options =
-	match debug_in, debug_out with
+let create_solver debug_to debug_in debug_out command options =
+(*	match debug_in, debug_out with
 	| true, true ->
 		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.debug_printer debug_to
-			inherit Proc.debug_in debug_to tool options as proc
+			inherit Proc.t command options as proc
+			inherit Io.debug_out proc debug_to
+			inherit Io.debug_in proc debug_to
 		end
 	| true, false ->
 		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.printer
-			inherit Proc.debug_in debug_to tool options as proc
+			inherit Proc.t command options as proc
+			inherit Io.debug_in proc debug_to
 		end
 	| false, true ->
 		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.debug_printer debug_to
-			inherit Proc.t tool options as proc
+			inherit Proc.t command options as proc
+			inherit Io.debug_out proc debug_to
 		end
 	| _ ->
-		object (x)
+*)		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.printer
-			inherit Proc.t tool options as proc
+			inherit Proc.t command options as proc
 		end;;
 
 let debug_exp e = if params.debug2 then (prerr_exp e; e) else e

@@ -1629,8 +1629,8 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		in
 		let pr_precstat fname finfo =
 			pr " <precedenceStatusEntry>\n";
-			pr "  <name>"; pr fname; pr "</name>\n";
-			pr "  <arity>"; pr (string_of_int finfo.arity); pr "</arity>\n";
+			Xml.enclose "name" (fun os -> output_name os fname) os;
+			Xml.enclose "arity" (Xml.puts (string_of_int finfo.arity)) os;
 			pr_prec finfo;
 			pr_status finfo;
 			pr " </precedenceStatusEntry>\n";

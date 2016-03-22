@@ -3,6 +3,7 @@ open Term
 open Trs
 open Dp
 open Util
+open Xml
 
 type result =
 | YES
@@ -218,6 +219,8 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		in
 		List.exists remove_by_proc proc_list
 	in
+
+	cpf (Xml.opn "acDPTerminationProof");
 	let rec loop () =
 		comment (fun _ ->
 			prerr_string "Number of SCCs: ";
@@ -226,15 +229,15 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		remove_unusable ();
 		match !sccs with
 		| [] ->
-			cpf (fun os -> output_string os "</proof>";);
 			if dg#next then begin
-				problem (fun os ->
-					output_string os "Next Dependency Pairs:\n";
-					dg#output_dps os;
-				);
+				cpf (Xml.enclose "acDPTerminationProof" dg#output_dps_xml);
+				problem (puts "Next Dependency Pairs:\n" >> dg#output_dps);
 				sccs := dg#get_sccs;
 				loop ();
-			end else raise (if !given_up then Unknown else Success)
+			end else begin
+				cpf (Xml.cls "acDPTerminationProof");
+				raise (if !given_up then Unknown else Success);
+			end
 		| scc::rest ->
 			problem
 			(fun _ ->
@@ -253,8 +256,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					log dg#output_edges;
 					loop ();
 				end else begin
-					comment
-					(fun _ ->
+					comment (fun _ ->
 						prerr_endline "failed.";
 					);
 					Nonterm.find_loop params.max_loop trs estimator dg scc;
@@ -263,73 +265,80 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 	in
 	loop ();;
 
+let dp_prove (trs : 'a trs) =
+	let estimator = new Estimator.t trs in
+	log estimator#output_sym_graph;
+
+	cpf (Xml.opn "acDependencyPairs");
+(*	cpf (Xml.enclose "markedSymbols" (fun os -> output_string os "true");
+*)	let dg = new dg trs estimator in
+	dg#init;
+	cpf (
+		Xml.enclose "equations" (
+			Xml.enclose "rules" (fun os ->
+				trs#iter_rules (fun _ rule -> if rule#is_weak then rule#output_xml os;)
+			)
+		) >>
+		Xml.enclose "dpEquations" (
+			Xml.enclose "rules" (fun os ->
+				dg#iter_dps (fun _ dp -> if dp#is_weak then dp#output_xml os;)
+			)
+		) >>
+		Xml.enclose "dps" (
+			Xml.enclose "rules" (fun os ->
+				dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml os;)
+			)
+		)
+	);
+	problem (puts "Dependency Pairs:\n" >> dg#output_dps);
+	log dg#output_edges;
+
+	try dp_remove trs estimator dg with it ->
+	cpf (Xml.cls "acDependencyPairs");
+	raise it
+
+
 
 let prove_termination (trs : 'a trs) =
 	problem (fun os ->
 		output_string os "Input TRS:\n";
 		trs#output os;
 	);
-	cpf (fun os ->
-		output_string os "<input>\n <trsInput>\n";
-		trs#output_xml os;
-		output_string os 
-" </trsInput>
-</input>
-<cpfVersion>2.2</cpfVersion>
-<proof>
- <trsTerminationProof>
-"
+	cpf (
+		Xml.enclose "input" (Xml.enclose "acRewriteSystem" trs#output_xml) >>
+		Xml.enclose "cpfVersion" (Xml.puts "2.2") >>
+		Xml.opn "proof" >>
+		Xml.opn "acTerminationProof"
 	);
 
 	theory_test trs;
 
-	let ret = try
-
-		extra_test trs;
-
-		trivial_test trs;
-
-		rule_remove trs;
-
-		if uncurry trs dummy_dg then rule_remove trs;
-
-		if params.mode = MODE_order then raise Unknown;
-		if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
-
-		let estimator = new Estimator.t trs in
-		log estimator#output_sym_graph;
-
-		let dg = new dg trs estimator in
-		dg#init;
-		problem (fun _ ->
-			prerr_endline "Dependency Pairs:";
-			dg#output_dps stderr;
-		);
-		log dg#output_edges;
-
-		dp_remove trs estimator dg;
-
-		raise Unknown;
-	with
-	| Success -> YES
-	| Unknown -> MAYBE
-	| Nonterm -> NO
-in
-	cpf (fun os -> output_string os
-" </trsTerminationProof>
-</proof>
-<origin>
- <proofOrigin>
-  <tool>
-   <name>NaTT</name>
-   <version>";
-   output_string os version;
-   output_string os
-"</version>
-  </tool>
- </proofOrigin>
-</origin>
-"
+	let ret =
+		try
+			extra_test trs;
+			trivial_test trs;
+			rule_remove trs;
+			if uncurry trs dummy_dg then rule_remove trs;
+			if params.mode = MODE_order then raise Unknown;
+			if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
+			dp_prove trs;
+			raise Unknown;
+		with
+		| Success -> YES
+		| Unknown -> MAYBE
+		| Nonterm -> NO
+	in
+	cpf (
+		Xml.cls "acTerminationProof" >>
+		Xml.cls "proof" >>
+		Xml.enclose "origin" (
+			Xml.enclose "proofOrigin" (
+				Xml.enclose "tool" (
+					Xml.enclose "name" (Xml.puts "NaTT") >>
+					Xml.enclose "version" (Xml.puts version)
+				)
+			)
+		)
 	);
 	ret
 ;;

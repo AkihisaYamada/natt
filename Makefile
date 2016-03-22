@@ -22,6 +22,8 @@ OCAML_SRCS=\
 	trs_sem.ml \
 	read.ml \
 	util.ml \
+	io.ml \
+	xml.ml \
 	matrix.ml \
 	params.ml \
 	proc.ml \

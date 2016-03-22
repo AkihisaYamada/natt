@@ -2,61 +2,6 @@ open Params
 
 exception Dead of string
 
-class virtual outputter =
-	object
-		method virtual output_string : string -> unit
-		method virtual output_char : char -> unit
-		method virtual flush : unit
-		method virtual close : unit
-	end
-
-class virtual inputter =
-	object
-		method virtual ready : bool
-		method virtual input_line : string
-	end
-
-class virtual io =
-	object
-		inherit outputter
-		inherit inputter
-	end
-
-class virtual printer =
-	object (x)
-		inherit outputter
-		method pr = x#output_string
-		method pr_c = x#output_char
-		method cr = x#pr_c ' '
-		method enter (_:int) = ()
-		method leave (_:int) = ()
-		method enter_inline = ()
-		method leave_inline = ()
-		method pr_i i = x#pr (string_of_int i)
-		method pr_f f = x#pr (string_of_float f)
-	end
-
-class virtual debug_printer os =
-	object (x)
-		inherit printer as super
-		val mutable depth = 0
-		method pr s = super#pr s; output_string os s;
-		method pr_c c = super#pr_c c; output_char os c;
-		method enter n = depth <- depth + n
-		method leave n = depth <- depth - n
-		method enter_inline = x#enter 32
-		method leave_inline = x#leave 32
-		method cr =
-			if depth < 32 then begin
-				x#pr_c '\n';
-				for i = 1 to depth do
-					output_char os ' ';
-				done;
-			end
-			else x#pr_c ' '
-	end
-
-
 class finalized finalizer =
 	let rfin = ref ignore in
 	let fin x = rfin := ignore; finalizer x; in
@@ -67,19 +12,9 @@ class finalized finalizer =
 			at_exit (fun _ -> !rfin x)
 	end
 
-class ostream os =
-	object
-		inherit outputter
-		method output_string = output_string os
-		method output_char = output_char os
-		method flush = flush os
-		method close = ()
-	end;;
-
-
 class t command opts =
 	object (x)
-		inherit io
+		inherit Io.t
 
 		val mutable pid = 0
 		val mutable in_from = Unix.stdin
@@ -150,20 +85,3 @@ class t command opts =
 			end;
 	end
 
-class debug_in debug_os command opts =
-	object (x)
-		inherit io
-		inherit t command opts as super
-
-		method input_line =
-				output_string debug_os "< ";
-				flush debug_os;
-				let s = super#input_line in
-				output_string debug_os s;
-				output_char debug_os '\n';
-				flush debug_os;
-				s
-		method flush =
-			super#flush;
-			flush debug_os;
-	end

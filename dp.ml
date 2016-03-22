@@ -330,11 +330,11 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			x#make_dg;
 
 		method next = (* if there is a next problem, then init it and say true *)
-			if need_extended_rules then (
+			need_extended_rules && (
 				x#make_ac_ext;
 				need_extended_rules <- false;
 				true
-			) else false
+			)
 		method minimal = minimal
 		method get_subdg (scc:IntSet.t) = (dg,scc)
 		method get_sccs = ll2ls (get_sccs dg)
@@ -348,6 +348,7 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
 		method output_dps os = output_tbl os "   #" dp_table
+		method output_dps_xml os = x#iter_dps (fun _ rule -> rule#output_xml os)
 		method iter_edges f = DG.iter_edges f dg
 		method output_edges os =
 			output_string os "Edges:\n";
