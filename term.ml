@@ -237,7 +237,7 @@ class ['a] rule s (l : (#sym as 'a) term) (r : 'a term) =
 			output_term pr r
 		method output_xml : 'b. (#printer as 'b) -> unit =
 			Xml.enclose "rule" (
-				Xml.enclose "lhs" (fun pr -> output_xml_term pr l) >>
+				Xml.enclose "lhs" (fun pr -> output_xml_term pr l) <<
 				Xml.enclose "rhs" (fun pr -> output_xml_term pr r)
 			)
 	end

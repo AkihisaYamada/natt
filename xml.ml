@@ -1,8 +1,8 @@
 open Io
 
-let enter_inline name = putc '<' >> puts name >> putc '>'
+let enter_inline name = putc '<' << puts name << putc '>'
 
-let leave_inline name = puts "</" >> puts name >> putc '>'
+let leave_inline name = puts "</" << puts name << putc '>'
 
 let enter name (pr:#printer) =
 	pr#cr;
@@ -14,11 +14,11 @@ let leave name (pr:#printer) =
 	pr#cr;
 	leave_inline name pr;;
 
-let enclose_inline name body = endl >> enter_inline name >> body >> leave_inline name
+let enclose_inline name body = endl << enter_inline name << body << leave_inline name
 
-let enclose name body = enter name >> body >> leave name
+let enclose name body = enter name << body << leave name
 
-let tag name = putc '<' >> puts name >> puts "/>"
+let tag name = putc '<' << puts name << puts "/>"
 
 type content = Empty | Children | String
 

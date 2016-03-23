@@ -246,7 +246,7 @@ class ['f] trs =
 		method output_xml_rules : 'a. (#Io.printer as 'a) -> unit =
 			Xml.enclose "rules" (fun pr -> x#iter_rules (fun _ rule -> rule#output_xml pr))
 		method output_xml : 'a. (#Io.printer as 'a) -> unit =
-			Xml.enclose "trs" x#output_xml_rules >> x#output_xml_ths
+			Xml.enclose "trs" x#output_xml_rules << x#output_xml_ths
 
 		method output_xml_ho_signature : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			Xml.enter "higherOrderSignature" pr;
@@ -258,7 +258,7 @@ class ['f] trs =
 						first := false;
 					end;
 					Xml.enclose "varDeclaration" (
-						v#output_xml >>
+						v#output_xml <<
 						Xml.enclose "type" (Xml.enclose "basic" (puts "o"))
 					) pr;
 				end;
@@ -289,7 +289,7 @@ class ['f] trs =
 			end;
 			Xml.leave "higherOrderSignature" pr;
 		method output_xml_ho : 'a. (#Io.printer as 'a) -> unit =
-			Xml.enclose "trs" ( x#output_xml_rules >> x#output_xml_ho_signature )
+			Xml.enclose "trs" ( x#output_xml_rules << x#output_xml_ho_signature )
 	end;;
 
 type path = int * (int list)

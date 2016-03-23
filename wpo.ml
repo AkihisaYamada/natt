@@ -1588,9 +1588,9 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				let folder is (i,_) =
 					if solver#get_bool (usable i) then i::is else is
 				in
-				puts "    USABLE RULES: {" >>
-				Abbrev.put_ints " " (List.fold_left folder [] !usables) >>
-				puts " }" >>
+				puts "    USABLE RULES: {" <<
+				Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
+				puts " }" <<
 				endl
 			else
 				fun _ -> ()
@@ -1600,9 +1600,9 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				let folder is (i,_) =
 					if solver#get_bool (usable_w i) then i::is else is
 				in
-				puts "    USABLE RULES(WEIGHT): {" >>
-				Abbrev.put_ints " " (List.fold_left folder [] !usables) >>
-				puts " }" >>
+				puts "    USABLE RULES(WEIGHT): {" <<
+				Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
+				puts " }" <<
 				endl
 			else
 				fun _ -> ()
@@ -1636,9 +1636,9 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		in
 		let pr_precstat pr fname finfo =
 			Xml.enclose "precedenceStatusEntry" (
-				Xml.enclose_inline "name" (put_name fname) >>
-				Xml.enclose_inline "arity" (put_int finfo.arity) >>
-				pr_prec finfo >>
+				Xml.enclose_inline "name" (put_name fname) <<
+				Xml.enclose_inline "arity" (put_int finfo.arity) <<
+				pr_prec finfo <<
 				pr_status finfo
 			) pr
 		in
@@ -1668,7 +1668,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					if coef <> 0 then begin
 						Xml.enclose "polynomial" (
 							Xml.enclose "product" (
-								pr_int coef >>
+								pr_int coef <<
 								Xml.enclose "polynomial" (
 									Xml.enclose_inline "variable" (
 										put_int i
@@ -1697,7 +1697,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 									Xml.enclose_inline "variable" (
 										put_int i
 									)
-								) >>
+								) <<
 								pr_int pen
 							)
 						) pr;
@@ -1715,7 +1715,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
 				Xml.enclose "polynomial" (
 					Xml.enclose "max" (
-						pr_sum >>
+						pr_sum <<
 						pr_int (smt_eval_int (solver#get_value mcw))
 					)
 				) pr;
@@ -1732,7 +1732,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			Xml.enter "interpretation" pr;
 			Xml.enclose "type" (
 				Xml.enclose "polynomial" (
-					Xml.enclose_inline "domain" (Xml.tag "naturals") >>
+					Xml.enclose_inline "domain" (Xml.tag "naturals") <<
 					Xml.enclose_inline "degree" (puts "1")
 				)
 			) pr;
@@ -1818,7 +1818,7 @@ object (x)
 				finfo.arity > 1 &&
 				(p.max_nest = 0 || nest fname <= p.max_nest) &&
 				(
-					debug2 (putc ' ' >> put_name fname);
+					debug2 (putc ' ' << put_name fname);
 					finfo.max <- true;
 					true
 				)
@@ -1921,7 +1921,7 @@ object (x)
 		try
 			Hashtbl.add rule_flag_table i ();
 			let rule = trs#find_rule i in
-			debug2 (puts "    Initializing rule " >> put_int i >> endl );
+			debug2 (puts "    Initializing rule " << put_int i << endl );
 			let (WT(_,_,lw) as la) = annote rule#l in
 			let (WT(_,_,rw) as ra) = annote rule#r in
 			if p.dp then begin
@@ -1958,12 +1958,12 @@ object (x)
 				solver#add_definition (gt_r_v i) Bool gt;
 			end;
 		with Inconsistent ->
-			debug (puts " inconsistency detected." >> endl);
+			debug (puts " inconsistency detected." << endl);
 
 	method private add_dp i =
 		if not (Hashtbl.mem dp_flag_table i) then begin
 			Hashtbl.add dp_flag_table i ();
-			debug2 (puts "    initializing DP #" >> put_int i >> endl);
+			debug2 (puts "    initializing DP #" << put_int i << endl);
 			let dp = dg#find_dp i in
 			let (ge,gt) = split (frame (annote dp#l) (annote dp#r)) solver in
 			solver#add_definition (ge_v i) Bool ge;
@@ -2011,7 +2011,7 @@ object (x)
 			x#reset;
 
 	method reduce (dg : 'a dg) current_usables sccref =
-		comment ( puts (name_order p) >> putdot );
+		comment ( puts (name_order p) << putdot );
 		try
 			x#push current_usables !sccref;
 			comment putdot;
@@ -2022,7 +2022,7 @@ object (x)
 			solver#add_assertion (IntSet.fold folder !sccref (LB false));
 			comment putdot;
 			solver#check;
-			comment (puts " succeeded." >> endl);
+			comment (puts " succeeded." << endl);
 			proof output_proof;
 			cpf output_cpf;
 			let folder i ret =
@@ -2034,8 +2034,8 @@ object (x)
 			in
 			let rem_dps = IntSet.fold folder !sccref [] in
 			proof (
-				puts "    Removed DPs:" >>
-				Abbrev.put_ints " #" rem_dps >>
+				puts "    Removed DPs:" <<
+				Abbrev.put_ints " #" rem_dps <<
 				endl
 			);
 			x#pop;
@@ -2047,7 +2047,7 @@ object (x)
 
 	method direct current_usables =
 		try
-			comment (puts "Direct " >> puts (name_order p) >> puts " " >> putdot);
+			comment (puts "Direct " << puts (name_order p) << puts " " << putdot);
 			x#push current_usables IntSet.empty;
 
 			comment putdot;
@@ -2057,7 +2057,7 @@ object (x)
 			if p.remove_all then begin
 				comment putdot;
 				solver#check;
-				comment (puts " orients all." >> endl);
+				comment (puts " orients all." << endl);
 				trs#iter_rules (fun i _ -> trs#remove_rule i);
 			end else begin
 				solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
@@ -2080,8 +2080,8 @@ object (x)
 						Xml.enclose "redPair" (
 							output_cpf
 						)
-					) >>
-					trs#output_xml >>
+					) <<
+					trs#output_xml <<
 					Xml.enclose "trsTerminationProof" (Xml.tag "rIsEmpty")
 				)
 			);

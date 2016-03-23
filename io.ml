@@ -39,7 +39,7 @@ class virtual t =
 class virtual printer =
 	object (x)
 		inherit outputter
-		method cr = x#output_char ' '
+		method cr = x#output_char '\n'
 		method enter (_:int) = ()
 		method leave (_:int) = ()
 		method enter_inline = ()
@@ -103,14 +103,13 @@ class finalized finalizer =
 			at_exit (fun _ -> !rfin x)
 	end
 
-
 let cerr = new pretty_printer (new wrap_out stderr) 32
 let cout = new pretty_printer (new wrap_out stdout) 32
 
 let puts s pr = pr#output_string s
 let putc c pr = pr#output_char c
 let put_int i pr = pr#output_int i
-let endl pr = pr#cr
+let endl pr = pr#cr; pr#flush
 
-let (>>) f g pr = f pr; g pr
+let (<<) f g pr = f pr; g pr
 

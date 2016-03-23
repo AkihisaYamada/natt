@@ -65,23 +65,23 @@ let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
 					match Subst.matches l2 l1 with
 					| Some(u2) ->
 						let print_loop =
-							put_dp i1 l1 r1 >>
-							put_loop dg u1 loop >>
-							puts "  Looping with: " >>
+							put_dp i1 l1 r1 <<
+							put_loop dg u1 loop <<
+							puts "  Looping with: " <<
 							u2#output
 						in
 						if strict then begin
-							comment (puts " found." >> endl);
+							comment (puts " found." << endl);
 							proof print_loop;
 							raise Nonterm;
 						end else begin
 							let l3 = u2#subst l2 in
 							if duplicating l1 l3 then begin
-								proof (puts "  Duplicating loop." >> endl);
+								proof (puts "  Duplicating loop." << endl);
 								proof print_loop;
 								raise Nonterm;
 							end else begin
-								debug2 (puts "... only weak rules." >> endl);
+								debug2 (puts "... only weak rules." << endl);
 							end;
 						end;
 					| _ -> ();
@@ -115,5 +115,5 @@ let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
 		for len = 1 to lim do
 			IntSet.iter (iterer len (max 0 (params.max_narrowing - IntSet.cardinal scc))) scc;
 		done;
-		comment (puts "failed." >> endl);
+		comment (puts "failed." << endl);
 	end
