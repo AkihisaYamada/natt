@@ -12,22 +12,6 @@ exception Continue
 let k_comb x _ = x
 let supply_index v i = v ^ "_" ^ string_of_int i
 
-let rec ac_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
-	f#equals g &&
-	if f#is_commutative then eq_mset ss ts
-	else List.for_all2 ac_eq ss ts
-and delete_one ts1 s =
-	function
-	| [] -> None
-	| t::ts -> if ac_eq s t then Some(ts1@ts) else delete_one (t::ts1) s ts
-and eq_mset ss ts =
-	match ss with
-	| [] -> ts = []
-	| s::ss' ->
-		match delete_one [] s ts with
-		| None -> false
-		| Some ts' -> eq_mset ss' ts'
-
 
 (* delete common elements from ss and ts *)
 let delete_common =
@@ -128,8 +112,12 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		match w_mode with
 		| W_num -> fun v -> solver#new_variable v weight_ty
 		| W_bool -> fun v -> PB(solver#new_variable v Bool)
-		| W_tri -> fun v -> If(solver#new_variable (v ^ "a") Bool, If(solver#new_variable (v ^ "b") Bool, LI 2, LI 1), LI 0)
-		| W_quad -> fun v -> makebin (solver#new_variable (v ^ "a") Bool) (solver#new_variable (v ^ "b") Bool)
+		| W_tri -> fun v ->
+			smt_if (solver#new_variable (v ^ "a") Bool)
+				(smt_if (solver#new_variable (v ^ "b") Bool) (LI 2) (LI 1))
+				(LI 0)
+		| W_quad -> fun v ->
+			makebin (solver#new_variable (v ^ "a") Bool) (solver#new_variable (v ^ "b") Bool)
 		| W_none -> fun _ -> LI 0
 	in
 	(* Minimum weight *)
@@ -218,10 +206,9 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					coef
 		in
 		match finfo.symtype with
-		| Th "C"	->
+		| Th "C" ->
 			finfo.subterm_coef_exp <- k_comb (makemat (sub ("sc_" ^ fname)));
-		| Th "A"
-		| Th "AC"	->
+		| Th "A" | Th "AC" ->
 			let coef =
 				if not p.dp || p.sc_mode = W_none then
 					LI 1
@@ -253,7 +240,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			in
 			let use_maxpol () =
 				finfo.maxpol <- true;
-				debug2 (fun _ -> prerr_string "    using maxpol for "; prerr_endline fname;);
+				debug2 (puts "    using maxpol for " << puts fname << endl);
 			in
 			match finfo.symtype with
 			| Th "C" ->
@@ -267,8 +254,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					finfo.maxpol <- false;
 					finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
 				end;
-			| Th "A"
-			| Th "AC" ->
+			| Th "A" | Th "AC" ->
 				if p.Params.max_poly &&
 					(p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
 				then begin
@@ -439,9 +425,9 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				else
 					fun _ _ -> not_ordered
 			in
-			fun (WT(f,_,_)) (WT(g,ts,_)) ->
+			fun (WT((f:#sym),_,_)) (WT((g:#sym),ts,_)) ->
 				if f#is_var then
-					if g#is_var then Cons(LB(f#name = g#name), LB false)
+					if g#is_var then Cons(LB(f#equals g), LB false)
 					else sub ts (lookup g)
 				else if g#is_var then not_ordered
 				else spo (lookup f) (lookup g)
@@ -473,21 +459,19 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			fun fname finfo ->
 				let v = "af_" ^ fname in
 				match finfo.symtype with
-				| Fun
-				| Th "A" ->
+				| Fun | Th "A" ->
 					let vf i = supply_index v i in
 					let ef i = EV(vf i) in
 					for i = 1 to finfo.arity do
 						iterer finfo vf i;
 					done;
 					finfo.argfilt_exp <- ef;
-				| Th "AC"
-				| Th "C" ->
+				| Th "AC" | Th "C" ->
 					let vf _ = v in
 					let ef _ = EV(v) in
 					iterer finfo vf 1;
 					finfo.argfilt_exp <- ef;
-				| _			-> ()
+				| _ -> ()
 	in
 	(* collapsing argument filters *)
 	let argfilt_list finfo = finfo.argfilt_list_exp in
@@ -499,8 +483,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				solver#add_variable v Bool;
 				solver#add_assertion (EV(v) |^ ES1(List.map (argfilt finfo) to_n));
 		else
-			fun _ finfo _ ->
-				finfo.argfilt_list_exp <- LB true
+			fun _ finfo _ -> finfo.argfilt_list_exp <- LB true
 	in
 
 (*** Usable rules ***)
@@ -590,13 +573,13 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				| S_none -> finfo.mapped_exp <- argfilt finfo;
 				| _ ->
 					if p.dp && (p.sc_mode <> W_none || finfo.status_mode = S_partial) then
-							let mapped_v k = supply_index ("mapped_" ^ fname) k in
-							let mapped_e k = EV(mapped_v k) in
-							for k = 1 to n do
-								solver#add_variable (mapped_v k) Bool;
-							done;
-							solver#add_assertion (OD (List.map mapped_e to_n));
-							finfo.mapped_exp <- mapped_e;
+						let mapped_v k = supply_index ("mapped_" ^ fname) k in
+						let mapped_e k = EV(mapped_v k) in
+						for k = 1 to n do
+							solver#add_variable (mapped_v k) Bool;
+						done;
+						solver#add_assertion (OD (List.map mapped_e to_n));
+						finfo.mapped_exp <- mapped_e;
 					else
 						finfo.mapped_exp <- k_comb (LB true)
 			in
@@ -652,14 +635,19 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				(if p.status_nest > 0 && nest fname > p.status_nest then S_empty
 				 else p.Params.status_mode);
 			match finfo.symtype with
-			| Th "C" -> sub_c fname finfo;
-			| Th "AC"
-			| Th "A" ->
-				if max_status finfo && (p.max_mode <> MAX_all || p.sp_mode <> W_none) then begin
+			| Th th ->
+				if (p.max_mode <> MAX_all || p.sp_mode <> W_none) &&
+					(th = "A" || th = "AC") &&
+					max_status finfo
+				then begin
 					(* in this case, we cannot ensure monotonicity... *)
 					finfo.status_mode <- S_empty;
 				end;
-				sub_c fname finfo;
+				if th = "C" || th = "AC" then begin
+					sub_c fname finfo;
+				end else begin
+					sub_lex fname finfo finfo.arity to_n;
+				end;
 			| _ -> sub_lex fname finfo finfo.arity to_n;
 	in
 
@@ -2015,11 +2003,19 @@ object (x)
 		try
 			x#push current_usables !sccref;
 			comment putdot;
-			let folder i ret =
-				solver#add_assertion (EV (ge_v i));
-				EV (gt_v i) |^ ret
-			in
-			solver#add_assertion (IntSet.fold folder !sccref (LB false));
+			if p.remove_all then begin
+				let iterer i =
+					solver#add_assertion
+					(EV (if (dg#find_dp i)#is_strict then gt_v i else ge_v i));
+				in
+				IntSet.iter iterer !sccref;
+			end else begin
+				let folder i ret =
+					solver#add_assertion (EV (ge_v i));
+					EV (gt_v i) |^ ret
+				in
+				solver#add_assertion (IntSet.fold folder !sccref (LB false));
+			end;
 			comment putdot;
 			solver#check;
 			comment (puts " succeeded." << endl);
@@ -2033,11 +2029,7 @@ object (x)
 				) else ret
 			in
 			let rem_dps = IntSet.fold folder !sccref [] in
-			proof (
-				puts "    Removed DPs:" <<
-				Abbrev.put_ints " #" rem_dps <<
-				endl
-			);
+			proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
 			x#pop;
 			true
 		with Inconsistent ->
@@ -2077,9 +2069,7 @@ object (x)
 			cpf (
 				Xml.enclose "ruleRemoval" (
 					Xml.enclose "orderingConstraintProof" (
-						Xml.enclose "redPair" (
-							output_cpf
-						)
+						Xml.enclose "redPair" output_cpf
 					) <<
 					trs#output_xml <<
 					Xml.enclose "trsTerminationProof" (Xml.tag "rIsEmpty")

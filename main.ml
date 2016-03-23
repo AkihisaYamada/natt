@@ -216,7 +216,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				pr#output_string " }\n    ";
 			);
 			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
-				comment (puts "only weak rules.");
+				comment (puts "only weak rules." << endl);
 				sccs := rest;
 				loop ();
 			end else begin

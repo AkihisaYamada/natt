@@ -66,6 +66,23 @@ let rec term_eq (Node(f,ss) : #sym term) (Node(g,ts)) =
 let rec wterm_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
 	f#equals g && List.for_all2 wterm_eq ss ts
 
+let rec ac_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
+	f#equals g &&
+	if f#is_commutative then eq_mset ss ts
+	else List.for_all2 ac_eq ss ts
+and delete_one ts1 s =
+	function
+	| [] -> None
+	| t::ts -> if ac_eq s t then Some(ts1@ts) else delete_one (t::ts1) s ts
+and eq_mset ss ts =
+	match ss with
+	| [] -> ts = []
+	| s::ss' ->
+		match delete_one [] s ts with
+		| None -> false
+		| Some ts' -> eq_mset ss' ts'
+
+(* subterm relation *)
 let rec strict_subterm (s:#sym term) (Node(_,ts)) =
 	List.exists (subterm s) ts
 and subterm (s:#sym term) t = term_eq s t || strict_subterm s t
@@ -94,11 +111,8 @@ let dupvarlist =
 	let rec sub ret (Node((f:#sym),ts)) =
 		if f#is_var then
 			let lvars, dupvars = ret in
-			(	try
-					(list_remove f#equals lvars, dupvars)
-				with
-				| Not_found -> (lvars, f::dupvars)
-			)
+			try (list_remove f#equals lvars, dupvars)
+			with Not_found -> (lvars, f::dupvars)
 		else sublist ret ts
 	and sublist ret =
 		function
@@ -108,6 +122,7 @@ let dupvarlist =
 	fun l r ->
 		let lvars, dupvars = sub (varlist l, []) r in
 		dupvars
+
 let duplicating l r = dupvarlist l r <> []
 
 (* the set of variables in a term *)
@@ -126,7 +141,7 @@ let varset =
 let rec flat =
 	let rec sub (f:#sym) ss =
 		function
-		| []	-> Node(f, List.rev ss)
+		| [] -> Node(f, List.rev ss)
 		| (Node(g,ts) as t)::us ->
 			if f#equals g then
 				sub f ss (ts@us)

@@ -385,14 +385,10 @@ while !i < argc do
 			with Not_found ->
 				(String.sub arg 1 (len - 1), None)
 		in
-		match opt,optarg with
-		| "-help", _ ->
-			prerr_help (); exit 0;
-		| "-all", None ->
-			if p.dp then err "--all cannot applied here!";
-			p.remove_all <- true;
-		| "-Tempvar",None ->
-			params.tmpvar <- false;
+		match opt, optarg with
+		| "-help", _ -> prerr_help (); exit 0;
+		| "-all", None -> p.remove_all <- true;
+		| "-Tempvar", None -> params.tmpvar <- false;
 		| "-Sort", None -> params.sort_scc <- SORT_none;
 		| "-sort", _ ->
 			begin
