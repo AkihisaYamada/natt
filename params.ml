@@ -713,11 +713,11 @@ let guard test os =
 		fun proc -> proc os
 	else
 		fun _ -> ()
-let warning = guard params.warning stderr
-let comment = guard params.comment stderr
-let problem = guard params.problem stderr
-let cpf = guard params.cpf stdout
-let proof = guard params.proof stderr
-let log = guard params.log stderr
-let debug = guard params.debug stderr
-let debug2 = guard params.debug2 stderr
+let warning = guard params.warning Io.cerr
+let comment = guard params.comment Io.cerr
+let problem = guard params.problem Io.cerr
+let cpf = guard params.cpf Io.cout
+let proof = guard params.proof Io.cerr
+let log = guard params.log Io.cerr
+let debug = guard params.debug Io.cerr
+let debug2 = guard params.debug2 Io.cerr

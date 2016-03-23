@@ -7,7 +7,7 @@ open Params
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
 
-class ['a] t (trs : 'a #trs) =
+class ['f] t (trs : 'f #trs) =
 
 	let init_sym_g =
 		let sym_g = SymG.create () in
@@ -31,16 +31,20 @@ class ['a] t (trs : 'a #trs) =
 
 	object (x)
 		val sym_g = init_sym_g
-		method trans_sym f g =
+		method trans_sym :
+		'a 'b. (#sym as 'a) -> (#sym as 'b) -> bool = fun f g ->
 			SymG.mem_edge sym_g f#name "" || SymG.mem_edge sym_g f#name g#name
 (* estimations *)
-		method narrows (Node(f,ss) as s) (Node(g,ts) as t) =
+		method narrows :
+		'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun (Node(f,ss) as s) (Node(g,ts) as t) ->
 			f#is_var ||
 			g#is_var ||
 			x#is_redex_candidate s && x#trans_sym f g ||
 			x#connects s t
-		method connects : sym_basic term -> sym_basic term -> bool =
-			fun (Node(f,ss)) (Node(g,ts)) ->
+		method connects :
+		'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun (Node(f,ss)) (Node(g,ts)) ->
 			f#equals g &&
 			(	match f#ty with
 				| Fun -> List.for_all2 x#narrows ss ts
@@ -53,7 +57,8 @@ class ['a] t (trs : 'a #trs) =
 					)
 				| _ -> true
 			)
-		method is_redex_candidate (Node(f,ss)) =
+		method is_redex_candidate :
+		'a. (#sym as 'a) term -> bool = fun (Node(f,ss)) ->
 			let tester i =
 				let Node(_,ls) = (trs#find_rule i)#l in
 				List.for_all2 x#narrows ss ls
@@ -61,7 +66,8 @@ class ['a] t (trs : 'a #trs) =
 			let f = trs#find_sym f in
 			Rules.exists tester f#weakly_defined_by ||
 			Rules.exists tester f#defined_by
-		method find_matchable s =
+		method find_matchable :
+		'a. (#sym as 'a) term -> Rules.elt list = fun s ->
 			let f = trs#find_sym (root s) in
 			let folder i ret =
 				if x#connects s (trs#find_rule i)#l then i::ret else ret
@@ -69,7 +75,9 @@ class ['a] t (trs : 'a #trs) =
 			Rules.fold folder f#weakly_defined_by
 			(Rules.fold folder f#defined_by [])
 
-		method estimate_paths lim (Node(f,_) as s) (Node(g,_) as t) =
+		method estimate_paths :
+		'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> (int * int list) list =
+		fun lim (Node(f,_) as s) (Node(g,_) as t) ->
 			if term_eq s t || f#is_var || g#is_var then
 				[(0,[])]
 			else if lim > 0 then
@@ -83,10 +91,9 @@ class ['a] t (trs : 'a #trs) =
 				[]
 		
 		method instantiate_edge :
-			int ref -> int -> sym_basic term -> sym_basic term ->
-				(int * sym_basic Subst.t) list =
-			fun cnt ->
-			let rec sub1 lim (s : #sym term) t =
+		int ref -> int -> 'f term -> 'f term -> (int * 'f Subst.t) list =
+		fun cnt ->
+			let rec sub1 lim s t =
 				let paths = x#estimate_paths (min 4 lim) s t in
 				let folder ret (c,is) =
 					let cus = instantiate_path (lim-c) s is t in
@@ -139,11 +146,13 @@ class ['a] t (trs : 'a #trs) =
 				if f#equals g then sub2 lim ss ts else []
 
 
-		method output_sym_graph os =
-			output_string os "Symbol transition graph:\n";
+		method output_sym_graph :
+		'a. (#Io.printer as 'a) -> unit = fun pr ->
+			pr#output_string "Symbol transition graph:";
+			pr#enter 4;
 			let collapsable = ref [] in
 			let stable = ref [] in
-			let iterer f =
+			let iterer (f:#sym_detailed) =
 				if f#is_defined then begin
 					if SymG.mem_edge sym_g f#name "" then begin
 						collapsable := f :: !collapsable;
@@ -152,22 +161,26 @@ class ['a] t (trs : 'a #trs) =
 						if succ = [] then begin
 							stable := f :: !stable;
 						end else begin
-							output_string os "  ";
-							f#output os;
-							output_string os "\t-->";
+							pr#cr;
+							f#output pr;
+							pr#output_string "\t-->";
 							List.iter
-								(fun gname -> output_char os ' '; output_string os gname;) succ;
-							output_char os '\n';
+								(fun gname -> pr#output_char ' '; pr#output_string gname;) succ;
 						end;
 					end;
 				end;
 			in
-			let pr f = output_char os ' '; f#output os; in
 			trs#iter_syms iterer;
-			output_string os "  Collapsable symbols: {";
-			List.iter pr !collapsable;
-			output_string os " }\n  Stable symbols: {";
-			List.iter pr !stable;
-			output_string os " }\n";
+			pr#leave 2;
+			pr#cr;
+			pr#output_string "Collapsable symbols: {";
+			List.iter (fun (f : #sym) -> pr#output_char ' '; f#output pr;) !collapsable;
+			pr#output_string " }";
+			pr#cr;
+			pr#output_string "Stable symbols: {";
+			List.iter (fun (f : #sym) -> pr#output_char ' '; f#output pr;) !stable;
+			pr#output_string " }";
+			pr#leave 2;
+			pr#cr;
 	end;;
 

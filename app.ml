@@ -4,7 +4,7 @@ open Trs
 open Dp
 open Params
 
-let uncurry (a : #sym_detailed) nargs (trs : 'a trs) (dg : 'a dg) =
+let uncurry (a : #sym_detailed) nargs (trs : sym trs) (dg : sym dg) =
 	let aarity_tbl = Hashtbl.create 64 in
 	let aarity fname =
 		try Hashtbl.find aarity_tbl fname
@@ -45,7 +45,7 @@ let uncurry (a : #sym_detailed) nargs (trs : 'a trs) (dg : 'a dg) =
 	in
 
 	let uncurry_top (f,ss,d,aa) =
-		let f' = if d > 0 then new sym_basic f#ty (uncurry_name f#name d) else f in
+		let f' = if d > 0 then new sym f#ty (uncurry_name f#name d) else f in
 		Node(f',ss)
 	in
 	let rec uncurry_term s = uncurry_top (uncurry_sub s)
@@ -76,16 +76,17 @@ let uncurry (a : #sym_detailed) nargs (trs : 'a trs) (dg : 'a dg) =
 	in
 	let iterer fname aa =
 		if aa > 0 then begin
-			let n = (trs#find_sym_name fname)#arity in
+			let f = trs#find_sym_name fname in
+			let n = f#arity in
 			let args = ref (varlist "_" 1 n) in
-			let r = ref (Node(new sym_basic Fun fname, !args)) in
+			let r = ref (app (f :> sym) !args) in
 			for i = 1 to aa do
 				let fi = trs#get_sym_name (uncurry_name fname i) in
 				fi#set_arity (n + i * nargs);
 				let new_args = varlist "_" (n + i * nargs) nargs in
-				let l = app a (!r :: new_args) in
+				let l = app (a :> sym) (!r :: new_args) in
 				args := !args @ new_args;
-				r := app fi !args;
+				r := app (fi :> sym) !args;
 				trs#add_rule (weak_rule l !r);
 			done;
 		end;
@@ -125,12 +126,14 @@ let auto_uncurry (trs : 'a trs) (dg : 'a dg) =
 			trs#iter_rules iterer_r;
 			dg#iter_dps iterer_r;
 
-			debug (fun os ->
-				output_string os "  evaluating ";
-				a#output os;
-				output_string os (": " ^
-					string_of_int !ngoods ^ " vs. " ^
-					string_of_int !nbads ^ "\n");
+			debug (fun pr ->
+				pr#cr;
+				pr#output_string "evaluating ";
+				a#output pr;
+				pr#output_string ": ";
+				pr#output_int !ngoods;
+				pr#output_string " vs. ";
+				pr#output_int !nbads;
 			);
 
 			if !ngoods = 0 (*|| !ngoods < !nbads*) then begin
@@ -146,5 +149,7 @@ let auto_uncurry (trs : 'a trs) (dg : 'a dg) =
 	in
 	let app_candidates = List.sort compare_occurrence trs#get_defsyms in
 *)
-	debug (fun os -> output_string os "\n");
-	trs#fold_syms folder []
+	debug (fun pr -> pr#enter 2;);
+	let ret = trs#fold_syms folder [] in
+	debug (fun pr -> pr#leave 2;);
+	ret

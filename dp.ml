@@ -16,7 +16,7 @@ let string_prefix s t =
 
 let marked_name name = string_prefix name (escape '#')
 
-let mark_sym f = new sym_basic f#ty (mark_name f#name)
+let mark_sym f = new sym f#ty (mark_name f#name)
 
 let mark_root (Node(f,ss)) = Node(mark_sym f, ss)
 
@@ -31,7 +31,7 @@ let mark_term_KT98 =
 		else mark_root s
 
 let guard_term (Node(f,ss) as s) =
-	Node(new sym_basic Fun (mark_name f#name), [s])
+	Node(new sym Fun (mark_name f#name), [s])
 
 let mark_term_ac =
 	match params.ac_mark_mode with
@@ -206,9 +206,9 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			let v1 = var "_1" in
 			let y = var "_2" in
 			let z = var "_3" in
-			let ac_mark_handle f =
+			let ac_mark_handle (f:#sym_detailed) =
 				if f#is_associative && f#is_defined then begin
-					let u s t = app f [s;t] in
+					let u s t = app (f:>sym) [s;t] in
 					let m =
 						if params.ac_mark_mode = AC_mark then
 							fun s t -> mark_root (u s t)
@@ -306,7 +306,7 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			trs#iter_rules generate_dp;
 			let ac_mark_handle f =
 				if f#is_defined && f#is_associative then begin
-					let u s t = app f [s;t] in
+					let u s t = app (f:>sym) [s;t] in
 					let m =
 						if params.ac_mark_mode = AC_mark then fun s t -> mark_root (u s t)
 						else u
@@ -347,19 +347,26 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
 		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
-		method output_dps os = output_tbl os "   #" dp_table
-		method output_dps_xml os = x#iter_dps (fun _ rule -> rule#output_xml os)
+		method output_dps : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			output_tbl pr "   #" dp_table
+		method output_dps_xml : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			x#iter_dps (fun _ rule -> rule#output_xml pr)
 		method iter_edges f = DG.iter_edges f dg
-		method output_edges os =
-			output_string os "Edges:\n";
+		method output_edges : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			pr#output_string "Edges:";
+			pr#enter 2;
 			let iterer i _ =
 				let succ = DG.succ dg i in
 				if succ <> [] then begin
-					output_string os ("  #" ^ string_of_int i ^ " -->");
-					Abbrev.output_ints os " #" succ;
-					output_char os '\n';
+					pr#cr;
+					pr#output_char '#';
+					pr#output_int i;
+					pr#output_string " -->";
+					Abbrev.put_ints " #" succ pr;
 				end;
 			in
 			x#iter_dps iterer;
+			pr#leave 2;
+			pr#cr;
 
 	end;;

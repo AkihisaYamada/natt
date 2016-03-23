@@ -1,5 +1,6 @@
 open Util
 open Params
+open Io
 
 type 'a term = Node of 'a * 'a term list
 
@@ -7,24 +8,24 @@ type symtype = Var | Fun | Th of string | Special
 
 type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
 
-let output_name os name =
+let put_name name (pr:#Io.outputter) =
 	let n = String.length name in
 	let rec sub i =
 		if i < n then begin
 			match name.[i] with
-			| '\\' -> output_string os "\\\\"; sub (i+1);
-			| '#' -> output_string os "\\#"; sub (i+1);
-			| '^' -> output_string os "\\^"; sub (i+1);
-			| ' ' -> output_char os name.[i+1]; sub (i+2);
-			| c -> output_char os c; sub (i+1);
+			| '\\' -> pr#output_string "\\\\"; sub (i+1);
+			| '#' -> pr#output_string "\\#"; sub (i+1);
+			| '^' -> pr#output_string "\\^"; sub (i+1);
+			| ' ' -> pr#output_char name.[i+1]; sub (i+2);
+			| c -> pr#output_char c; sub (i+1);
 		end;
 	in
 	sub 0
 
-class virtual sym =
+class sym ty0 name0 =
 	object (x:'x)
-		val virtual mutable ty : symtype
-		val virtual mutable name : string
+		val mutable ty = ty0
+		val mutable name = name0
 		method is_var = ty = Var
 		method is_fun = not x#is_var
 		method is_theoried = match ty with Th _ -> true | _ -> false
@@ -33,10 +34,12 @@ class virtual sym =
 		method ty = ty
 		method set_ty ty' = ty <- ty'
 		method name = name
-		method equals : 'a. (<name:string;..> as 'a) -> bool =
-			fun y -> name = y#name
-		method output os = output_name os name
-		method output_xml = x#output
+		method equals : 'b. (<name:string;..> as 'b) -> bool = fun y ->
+			name = y#name
+		method output : 'b. (#outputter as 'b) -> unit = put_name name
+		method output_xml : 'b. (#printer as 'b) -> unit =
+			if x#is_var then Xml.enclose_inline "var" x#output
+			else Xml.enclose_inline "name" x#output
 	end;;
 
 let root (Node(f,_)) = f
@@ -53,15 +56,8 @@ let size : 'a term -> int =
 	sub1 0
 
 
-class sym_basic ty0 name0 =
-	object (x:'x)
-		inherit sym
-		val mutable ty = ty0
-		val mutable name = name0
-	end;;
-
-let var vname = Node(new sym_basic Var vname, [])
-let app f args = Node((f:>sym_basic), args)
+let var vname = Node(new sym Var vname, [])
+let app f args = Node(f, args)
 
 (* equality *)
 let rec term_eq (Node(f,ss) : #sym term) (Node(g,ts)) =
@@ -174,47 +170,48 @@ let top_ac_subterms (Node(f,ss) as s) =
 let escape c = " " ^ String.make 1 c
 
 (* printers *)
-let rec output_term os =
+let rec output_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 	let rec sub =
 		function
-		| []	-> output_string os ")"
-		| t::ts -> output_string os ","; output_term os t; sub ts
+		| []	-> pr#output_char ')'
+		| t::ts -> pr#output_char ','; output_term pr t; sub ts
 	in
 	fun (Node(f,ts)) ->
-		f#output os;
+		f#output pr;
 		match ts with
-		| []	-> if f#is_fun then output_string os "()";
-		| t::ts	-> output_string os "("; output_term os t; sub ts
-let prerr_term t = output_term stderr t
-let prerr_terms ts = List.iter (fun t -> output_term stderr t; prerr_string " ") ts
-let prerr_wterm wt = output_term stderr (erase wt)
+		| []	-> if f#is_fun then pr#output_string "()";
+		| t::ts	-> pr#output_char '('; output_term pr t; sub ts
+
+let prerr_term t = output_term Io.cerr t
+let prerr_terms ts = List.iter (fun t -> prerr_term t; prerr_string "  ") ts
+let prerr_wterm wt = prerr_term (erase wt)
 let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wts
 
 (* xml printers *)
-let rec output_xml_term os =
+let rec output_xml_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 	let rec sub =
 		function
-		| []	-> Xml.cls "arg" os; Xml.cls "funapp" os;
-		| t::ts -> Xml.cls "arg" os; Xml.opn "arg" os; output_xml_term os t; sub ts
+		| []	-> Xml.leave "arg" pr; Xml.leave "funapp" pr;
+		| t::ts -> Xml.leave "arg" pr; Xml.enter "arg" pr; output_xml_term pr t; sub ts
 	in
 	fun (Node(f,ts)) ->
 		if f#is_var then begin
-			Xml.enclose "var" f#output_xml os;
+			f#output_xml pr;
 		end else begin
-			Xml.opn "funapp" os;
-			Xml.enclose "name" f#output_xml os;
+			Xml.enter "funapp" pr;
+			f#output_xml pr;
 			match ts with
-			| []	-> if f#is_fun then Xml.cls "funapp" os;
-			| t::ts	-> Xml.opn "arg" os; output_xml_term os t; sub ts
+			| []	-> if f#is_fun then Xml.leave "funapp" pr;
+			| t::ts	-> Xml.enter "arg" pr; output_xml_term pr t; sub ts
 		end
 
 (*** rules ***)
 type strength = StrictRule | MediumRule | WeakRule
 
-class ['a] rule s (l:(#sym as 'a) term) (r:'a term) =
+class ['a] rule s (l : (#sym as 'a) term) (r : 'a term) =
 	object (x)
-		val lhs : sym_basic term = l
-		val rhs : sym_basic term = r
+		val lhs : sym term = l
+		val rhs : sym term = r
 		val strength = s
 		method l = lhs
 		method r = rhs
@@ -230,20 +227,19 @@ class ['a] rule s (l:(#sym as 'a) term) (r:'a term) =
 			let rvars = varlist r in
 			List.exists (fun rvar -> not (List.mem rvar lvars)) rvars
 
-		method output os =
-			output_term os l;
-			output_string os (
+		method output : 'b. (#outputter as 'b) -> unit = fun pr ->
+			output_term (pr :> #outputter) l;
+			pr#output_string (
 				match s with
 				| StrictRule -> " -> "
 				| WeakRule -> " ->= "
 				| _ -> " ->? ");
-			output_term os r
-		method output_xml os =
-			output_string os "<rule><lhs>";
-			output_xml_term os l;
-			output_string os "</lhs><rhs>";
-			output_xml_term os r;
-			output_string os "</rhs></rule>"
+			output_term pr r
+		method output_xml : 'b. (#printer as 'b) -> unit =
+			Xml.enclose "rule" (
+				Xml.enclose "lhs" (fun pr -> output_xml_term pr l) >>
+				Xml.enclose "rhs" (fun pr -> output_xml_term pr r)
+			)
 	end
 
 let rule l r = new rule StrictRule l r

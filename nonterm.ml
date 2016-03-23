@@ -3,19 +3,16 @@ open Params
 open Term
 open Trs
 open Dp
+open Io
 
-let prerr_dp i l r =
-	prerr_string "\t";
-	prerr_term l;
-	prerr_endline "  ->";
-	prerr_string "  #";
-	prerr_int i;
-	prerr_string "\t";
-	prerr_term r;
-	prerr_endline "  ->>";
-	;;
+let put_dp i l r pr =
+	let pr_i = pr#output_int in
+	let pr_s = pr#output_string in
+	let pr_term = output_term pr in
+	pr_s "\t"; pr_term l; pr_s "  ->"; pr#cr;
+	pr_s "  #"; pr_i i; pr_s "\t"; pr_term r; pr_s "  ->>"; pr#cr
 
-let prerr_loop (dg : 'a dg) u =
+let put_loop (dg : 'a dg) u loop pr =
 	let rec sub pos =
 		function
 		| [] -> ()
@@ -23,18 +20,18 @@ let prerr_loop (dg : 'a dg) u =
 			let dp = dg#find_dp i in
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v dp#l) in
-			prerr_string "   \t";
-			prerr_term l;
-			prerr_newline ();
+			pr#output_string "   \t";
+			output_term pr l;
+			pr#cr;
 		| i::is ->
 			let dp = dg#find_dp i in
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v dp#l) in
 			let r = u#subst (Subst.vrename v dp#r) in
-			prerr_dp i l r;
+			put_dp i l r pr;
 			sub (pos+1) is;
 	in
-	sub 1
+	sub 1 loop
 
 let estimate_paths len (trs : 'a trs) (dg : 'a dg) scc =
 	let subdg = dg#get_subdg scc in
@@ -67,24 +64,24 @@ let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
 					let l2 = u1#subst l2 in
 					match Subst.matches l2 l1 with
 					| Some(u2) ->
-						let print_loop _ =
-							prerr_dp i1 l1 r1;
-							prerr_loop dg u1 loop;
-							prerr_string "  Looping with: ";
-							u2#output stderr;
+						let print_loop =
+							put_dp i1 l1 r1 >>
+							put_loop dg u1 loop >>
+							puts "  Looping with: " >>
+							u2#output
 						in
 						if strict then begin
-							comment (fun _ -> prerr_endline " found.");
+							comment (puts " found." >> endl);
 							proof print_loop;
 							raise Nonterm;
 						end else begin
 							let l3 = u2#subst l2 in
 							if duplicating l1 l3 then begin
-								proof (fun _ -> prerr_endline "  Duplicating loop.");
+								proof (puts "  Duplicating loop." >> endl);
 								proof print_loop;
 								raise Nonterm;
 							end else begin
-								debug2(fun _ -> prerr_endline "... only weak rules.");
+								debug2 (puts "... only weak rules." >> endl);
 							end;
 						end;
 					| _ -> ();
@@ -101,23 +98,22 @@ let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
 				List.iter iterer (estimator#instantiate_edge cnt nlim (u1#subst r2) l3);
 		in
 		let iterer2 loop =
-			debug2
-			(fun _ ->
-				prerr_string "    Checking loop: #";
-				prerr_int i1;
-				List.iter (fun i -> prerr_string " -> #"; prerr_int i;) loop;
-				flush stderr;
+			debug2 (fun pr ->
+				pr#output_string "    Checking loop: #";
+				pr#output_int i1;
+				List.iter (fun i -> pr#output_string " -> #"; pr#output_int i;) loop;
+				pr#flush;
 			);
 			sub 1 loop (new Subst.t) dp1#l dp1#r loop (dg#find_dp i1)#is_strict;
-			debug2 (fun _ -> prerr_newline ());
+			debug2 endl;
 		in
 		List.iter iterer2 (estimate_paths len trs dg scc i1 i1);
 	in
 	if lim > 0 then begin
-		comment (fun _ -> prerr_string "  Finding a loop... "; flush stderr);
-		debug2 (fun _ -> prerr_newline ());
+		comment (puts "  Finding a loop... ");
+		debug2 endl;
 		for len = 1 to lim do
 			IntSet.iter (iterer len (max 0 (params.max_narrowing - IntSet.cardinal scc))) scc;
 		done;
-		comment (fun _ -> prerr_endline "failed.");
+		comment (puts "failed." >> endl);
 	end

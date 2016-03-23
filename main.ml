@@ -4,6 +4,7 @@ open Trs
 open Dp
 open Util
 open Xml
+open Io
 
 type result =
 | YES
@@ -38,16 +39,15 @@ let static_usable_rules (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg)
 
 let uncurry =
 	if params.uncurry then
-		fun (trs : 'a trs) (dg : 'a dg) ->
-			comment (fun _ -> prerr_string "Uncurrying");
+		fun (trs : #sym trs) (dg : #sym dg) ->
+			comment (puts "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
 			if appsyms = [] then
-				(comment (fun _ -> prerr_endline " ... failed."); false)
-			else
-			(	comment
-				(fun os ->
-					List.iter (fun a -> output_string os " "; a#output os) appsyms;
-					output_string os "\n";
+				(comment (puts " ... failed." >> endl); false)
+			else (
+				comment (fun (pr : #printer) ->
+					List.iter (fun (a : #sym) -> pr#output_char ' '; a#output pr) appsyms;
+					pr#cr;
 				);
 				problem trs#output;
 				true
@@ -59,20 +59,10 @@ let uncurry =
 let relative_test (trs : 'a trs) =
 	trs#exists_rule (fun i rule ->
 		if rule#is_weak && rule#is_duplicating then (
-			comment (fun os ->
-				output_string os "Weak rule e";
-				output_string os (string_of_int i);
-				output_string os " is duplicating\n";
-				flush os;
-			);
+			comment (puts "Weak rule e" >> put_int i >> puts " is duplicating" >> endl);
 			true
 		) else if not(trs#const_term rule#r) then (
-			comment (fun os ->
-				output_string os "Weak rule e";
-				output_string os (string_of_int i);
-				output_string os " calls a strict rule\n";
-				flush os;
-			);
+			comment (puts "Weak rule e" >> put_int i >> puts " calls a strict rule" >> endl);
 			true
 		) else false
 	);;
@@ -91,12 +81,7 @@ let theory_test (trs : 'a trs) =
 let extra_test (trs : 'a trs) =
 	let iterer i rule =
 		if rule#has_extra_variable then begin
-			proof
-			(fun _ ->
-				prerr_string "Extra variable in rule ";
-				prerr_int i;
-				prerr_endline ".";
-			);
+			proof (puts "Extra variable in rule " >> put_int i >> puts "." >> endl);
 			raise Nonterm;
 		end;
 	in
@@ -107,18 +92,10 @@ let trivial_test (trs : 'a trs) =
 	let iterer i rule =
 		if rule#l = rule#r then begin
 			if rule#is_strict then begin
-				proof (fun _ ->
-					prerr_string "Trivially nonterminating rule ";
-					prerr_int i;
-					prerr_endline "."
-				);
+				proof (puts "Trivially nonterminating rule " >> put_int i >> puts "." >> endl);
 				raise Nonterm;
 			end else if rule#is_weak then begin
-				proof (fun _ ->
-					prerr_string "Removing trivial weak rule e";
-					prerr_int i;
-					prerr_endline ".";
-				);
+				proof (puts "Removing trivial weak rule " >> put_int i >> puts "." >> endl);
 				trs#remove_rule i;
 			end;
 		end;
@@ -143,16 +120,12 @@ let rule_remove (trs : 'a trs) =
 		in
 		let rec loop () =
 			let rules = trs#fold_rules (fun i _ is -> i::is) [] in
-			comment (fun _ ->
-				prerr_string "Number of strict rules: ";
-				prerr_int trs#get_size_strict;
-				prerr_newline ();
-			);
+			comment (puts "Number of strict rules: " >> put_int trs#get_size_strict >> endl);
 			if trs#get_size_strict = 0 then raise Success
 			else if remove_strict rules then begin
 				loop ();
 			end else begin
-				comment (fun _ -> prerr_endline " failed.");
+				comment (puts " failed." >> endl);
 			end;
 		in
 		loop ();
@@ -166,17 +139,17 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		let used_dpset = List.fold_left IntSet.union IntSet.empty !sccs in
 		let curr_len = IntSet.cardinal used_dpset in
 		if !init || curr_len < dg#get_size then begin
-			log (fun _ -> prerr_string "Removing unrelated DPs: {");
+			log (puts "Removing unrelated DPs: {");
 			init := false;
 			let dp_remover i _ =
 				if not (IntSet.mem i used_dpset) then
 				begin
-					log (fun _ -> prerr_string " #"; prerr_int i;);
+					log (puts " #" >> put_int i);
 					dg#remove_dp i;
 				end;
 			in
 			dg#iter_dps dp_remover;
-			log (fun _ -> prerr_endline " }");
+			log (puts " }" >> endl);
 (*
 			log (fun _ -> prerr_string "Removing unusable rules: {");
 			let (_,unusables) = static_usable_rules trs dg used_dpset in
@@ -220,12 +193,9 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		List.exists remove_by_proc proc_list
 	in
 
-	cpf (Xml.opn "acDPTerminationProof");
+	cpf (Xml.enter "acDPTerminationProof");
 	let rec loop () =
-		comment (fun _ ->
-			prerr_string "Number of SCCs: ";
-			prerr_int (List.length !sccs);
-			prerr_newline (););
+		comment (puts "Number of SCCs: " >> put_int (List.length !sccs) >> endl);
 		remove_unusable ();
 		match !sccs with
 		| [] ->
@@ -235,18 +205,18 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				sccs := dg#get_sccs;
 				loop ();
 			end else begin
-				cpf (Xml.cls "acDPTerminationProof");
+				cpf (Xml.leave "acDPTerminationProof");
 				raise (if !given_up then Unknown else Success);
 			end
 		| scc::rest ->
 			problem
-			(fun _ ->
-				prerr_string "  SCC {";
-				Abbrev.output_int_set stderr " #" scc;
-				prerr_string " }\n    ";
+			(fun pr ->
+				pr#output_string "  SCC {";
+				Abbrev.put_int_set " #" scc pr;
+				pr#output_string " }\n    ";
 			);
 			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
-				comment (fun _ -> prerr_endline "only weak rules.");
+				comment (puts "only weak rules.");
 				sccs := rest;
 				loop ();
 			end else begin
@@ -256,9 +226,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					log dg#output_edges;
 					loop ();
 				end else begin
-					comment (fun _ ->
-						prerr_endline "failed.";
-					);
+					comment (puts "failed." >> endl);
 					Nonterm.find_loop params.max_loop trs estimator dg scc;
 				end
 			end
@@ -269,7 +237,7 @@ let dp_prove (trs : 'a trs) =
 	let estimator = new Estimator.t trs in
 	log estimator#output_sym_graph;
 
-	cpf (Xml.opn "acDependencyPairs");
+	cpf (Xml.enter "acDependencyPairs");
 (*	cpf (Xml.enclose "markedSymbols" (fun os -> output_string os "true");
 *)	let dg = new dg trs estimator in
 	dg#init;
@@ -294,21 +262,18 @@ let dp_prove (trs : 'a trs) =
 	log dg#output_edges;
 
 	try dp_remove trs estimator dg with it ->
-	cpf (Xml.cls "acDependencyPairs");
+	cpf (Xml.leave "acDependencyPairs");
 	raise it
 
 
 
 let prove_termination (trs : 'a trs) =
-	problem (fun os ->
-		output_string os "Input TRS:\n";
-		trs#output os;
-	);
+	problem (puts "Input TRS:" >> endl >> trs#output);
 	cpf (
 		Xml.enclose "input" (Xml.enclose "acRewriteSystem" trs#output_xml) >>
-		Xml.enclose "cpfVersion" (Xml.puts "2.2") >>
-		Xml.opn "proof" >>
-		Xml.opn "acTerminationProof"
+		Xml.enclose_inline "cpfVersion" (puts "2.2") >>
+		Xml.enter "proof" >>
+		Xml.enter "acTerminationProof"
 	);
 
 	theory_test trs;
@@ -329,13 +294,13 @@ let prove_termination (trs : 'a trs) =
 		| Nonterm -> NO
 	in
 	cpf (
-		Xml.cls "acTerminationProof" >>
-		Xml.cls "proof" >>
+		Xml.leave "acTerminationProof" >>
+		Xml.leave "proof" >>
 		Xml.enclose "origin" (
 			Xml.enclose "proofOrigin" (
 				Xml.enclose "tool" (
-					Xml.enclose "name" (Xml.puts "NaTT") >>
-					Xml.enclose "version" (Xml.puts version)
+					Xml.enclose_inline "name" (puts "NaTT") >>
+					Xml.enclose_inline "version" (puts version)
 				)
 			)
 		)
@@ -359,25 +324,24 @@ object (x)
 		else
 			trs#read params.file;
 
-		cpf (fun os ->
-			output_string os
-"<?xml version=\"1.0\"?>
-<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>
-<certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\">
-";
+		cpf (fun pr ->
+			pr#output_string "<?xml version=\"1.0\"?>";
+			pr#cr;
+			pr#output_string "<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>";
+			Xml.enter "certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\"" pr;
 		);
 
 		begin match params.mode with
 		| MODE_higher_xml ->
-			trs#output_xml_ho stdout;
+			trs#output_xml_ho cout;
 		| MODE_through ->
-			trs#output stdout;
+			trs#output cout;
 		| MODE_flat ->
 			trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
-			trs#output stdout;
+			trs#output cout;
 		| MODE_uncurry ->
 			ignore (App.auto_uncurry trs (new dg (new trs) (new Estimator.t (new trs))));
-			trs#output stdout;
+			trs#output cout;
 		| MODE_simple ->
 			if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then
 				err "Not simple";
@@ -387,7 +351,7 @@ object (x)
 			exit 0;
 		| MODE_id	->
 			trs#iter_rules (fun i rule -> if term_eq rule#l rule#r then trs#remove_rule i);
-			trs#output_wst stdout;
+			trs#output_wst cout;
 		| MODE_dist	->
 (*				let tester _ rule =
 				match rule#r with
@@ -433,7 +397,7 @@ object (x)
 				);
 				output_char os '\n';
 			);
-*)				cpf (fun os -> output_string os "</certificationProblem>\n");
+*)				cpf (Xml.leave "certificationProblem" >> endl);
 			if not params.cpf then
 				print_endline
 				(	match ans with

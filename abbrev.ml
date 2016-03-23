@@ -2,20 +2,18 @@ open Util
 
 let continuous_int i j = abs(i - j) < 2
 let continuous_index (i,_) (j,_) = continuous_int i j
-let output_dots os = output_string os ".."
-let output_int os i = output_string os (string_of_int i)
-let output_index os (i,_) = output_int os i
-let output_space os = output_char os ' '
+let output_index pr (i,_) = pr#output_int i
+let output_space pr = pr#output_char ' '
 
-class ['a] t os printer prefix infix continuous =
+class ['a] t (pr : #Io.printer) body prefix infix continuous =
 	object (self)
 		val mutable curr = None
 		method put =
 			match curr with
 			| None -> ()
 			| Some(len,x) ->
-				if len < 2 then prefix os else infix os;
-				printer os x;
+				if len < 2 then prefix pr else infix pr;
+				body x pr;
 		method add (y:'a) =
 			match curr with
 			| None ->
@@ -35,13 +33,13 @@ class ['a] t os printer prefix infix continuous =
 			curr <- None;
 	end
 
-class for_int os prefix =
-	[int] t os output_int (fun os -> output_string os prefix) output_dots continuous_int
+class for_int pr prefix =
+	[int] t pr Io.put_int (Io.puts prefix) (Io.puts "..") continuous_int
 
-let output_ints os prefix is =
+let put_ints prefix is pr =
 	let folder abbr i = abbr#add i in
-	(List.fold_left folder (new for_int os prefix) (List.sort compare is))#close
+	(List.fold_left folder (new for_int pr prefix) (List.sort compare is))#close
 
-let output_int_set os prefix iset =
+let put_int_set prefix iset pr =
 	let folder i abbr = abbr#add i in
-	(IntSet.fold folder iset (new for_int os prefix))#close
+	(IntSet.fold folder iset (new for_int pr prefix))#close

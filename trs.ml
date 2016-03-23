@@ -1,7 +1,7 @@
 open Util
 open Term
 open Subst
-open Xml
+open Io
 
 type arity = Unknown | Arity of int
 
@@ -18,7 +18,7 @@ module Rules = IntSet
 
 class sym_detailed (f:#sym) =
 	object (x:'a)
-		inherit sym_basic f#ty f#name
+		inherit sym f#ty f#name
 		val mutable arity = if f#is_var then Arity 0 else Unknown
 		val mutable defined_by = Rules.empty
 		val mutable weakly_defined_by = Rules.empty
@@ -39,16 +39,16 @@ class sym_detailed (f:#sym) =
 		method is_const = not x#is_weakly_defined
 	end;;
 
-let output_tbl_index os prefix (i,rule) =
-	output_string os prefix;
-	output_string os (string_of_int i);
-	output_string os ": ";
-	rule#output os;
-	output_char os '\n';
-	flush os;;
+let output_tbl_index (pr : #Io.printer) prefix (i, (rule : #sym rule)) =
+	pr#output_string "  ";
+	pr#output_string prefix;
+	pr#output_int i;
+	pr#output_string ": ";
+	rule#output pr;
+	pr#cr;;
 
-let output_tbl os prefix ruletbl =
-	List.iter (output_tbl_index os prefix)
+let output_tbl (pr : #Io.printer) prefix ruletbl =
+	List.iter (output_tbl_index pr prefix)
 	(List.sort (fun (i,_) (j,_) -> i - j) (Hashtbl.fold (fun i lr l -> (i,lr)::l) ruletbl []))
 
 let hashtbl_exists test hashtbl =
@@ -64,10 +64,10 @@ let hashtbl_for_all test hashtbl =
 	with Success -> false
 
 (* the class for TRSs *)
-class ['a] trs =
+class ['f] trs =
 	object (x)
 		val sym_table = Hashtbl.create 64(* the symbol table *)
-		val rule_table : (int, (#sym as 'a) rule) Hashtbl.t = Hashtbl.create 256
+		val rule_table : (int, (#sym as 'f) rule) Hashtbl.t = Hashtbl.create 256
 		val mutable rule_cnt = 0
 		val mutable strict_rule_cnt = 0
 		val mutable ths = Ths.empty(* the set of used built-in theories *)
@@ -85,10 +85,10 @@ class ['a] trs =
 				f'
 		method get_sym_name name =
 			try Hashtbl.find sym_table name
-			with Not_found -> x#add_sym (new sym_basic Fun name)
+			with Not_found -> x#add_sym (new sym Fun name)
 		method find_sym_name name =
 			try Hashtbl.find sym_table name
-			with Not_found -> new sym_detailed (new sym_basic Fun name)
+			with Not_found -> new sym_detailed (new sym Fun name)
 		method get_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
 				if f#is_var then new sym_detailed f else
@@ -122,7 +122,7 @@ class ['a] trs =
 		method iter_rules f = Hashtbl.iter f rule_table
 		method for_all_rules f = hashtbl_for_all f rule_table
 		method exists_rule f = hashtbl_exists f rule_table
-		method fold_rules : 'b. (int -> 'a rule -> 'b -> 'b) -> 'b -> 'b =
+		method fold_rules : 'b. (int -> 'f rule -> 'b -> 'b) -> 'b -> 'b =
 			fun f a -> Hashtbl.fold f rule_table a
 		method private add_rule_i i rule =
 			let f = x#get_sym (root rule#l) in
@@ -156,7 +156,7 @@ class ['a] trs =
 		method private trans_term (Trs_ast.Term ((_,fname),ss)) =
 			let f = x#get_sym_name fname in
 			if f#arity_is_unknown then f#set_arity (List.length ss);
-			Node( (f :> sym_basic), List.map (x#trans_term) ss)
+			Node( (f :> sym), List.map (x#trans_term) ss)
 		method private add_rule_raw =
 			function
 			| Trs_ast.Rew ([],l,r)		-> x#add_rule (rule (x#trans_term l) (x#trans_term r));
@@ -172,11 +172,11 @@ class ['a] trs =
 			| Trs_ast.Equations eqs -> List.iter (x#add_eq_raw) eqs
 			| Trs_ast.Builtin ((_,th), syms) ->
 				ths <- Ths.add th ths;
-				List.iter (fun (_,name) -> ignore (x#add_sym (new sym_basic (Th th) name))) syms
+				List.iter (fun (_,name) -> ignore (x#add_sym (new sym (Th th) name))) syms
 		method private add_decl =
 			Trs_ast.(function 
 			| VarDecl xs		->
-				List.iter (fun (_,name) -> ignore (x#add_sym (new sym_basic Var name))) xs
+				List.iter (fun (_,name) -> ignore (x#add_sym (new sym Var name))) xs
 			| TheoryDecl ths	-> List.iter (x#add_theory_raw) ths
 			| RulesDecl rs		-> List.iter (x#add_rule_raw) rs
 			| StrategyDecl _	-> ()(* raise UnknownStrategy *)
@@ -188,106 +188,108 @@ class ['a] trs =
 		method read_stdin =
 			List.iter x#add_decl (Read.check_trs "stdin" stdin);
 (* outputs *)
-		method output_ths os =
+		method output_ths : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			let iterer_th th =
-				output_string os "  ";
-				output_string os th;
-				output_string os " symbols:";
-				let iterer_syms f =
+				pr#output_string th;
+				pr#output_string " symbols:";
+				let iterer_syms (f:#sym) =
 					if f#ty = Th th then begin
-						output_string os " ";
-						f#output os;
+						pr#output_char ' ';
+						f#output pr;
 					end;
 				in
 				x#iter_syms iterer_syms;
-				output_string os "\n";
+				pr#cr;
 			in
 			Ths.iter iterer_th ths;
-		method output_rules os =
-			output_tbl os "    " rule_table;
-		method output_last_rule os =
-			output_tbl_index os "   " (rule_cnt, Hashtbl.find rule_table rule_cnt);
-		method output os =
-			x#output_ths os;
-			x#output_rules os;
-		method output_wst os =
-			output_string os "(VAR";
-			let iterer_var v =
+		method output_rules : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			output_tbl pr "    " rule_table;
+		method output_last_rule : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			output_tbl_index pr "   " (rule_cnt, Hashtbl.find rule_table rule_cnt);
+		method output : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			x#output_ths pr;
+			x#output_rules pr;
+		method output_wst : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			pr#output_string "(VAR";
+			let iterer_var (v : #sym) =
 				if v#is_var then begin
-					output_string os " ";
-					v#output os;
+					pr#output_char ' ';
+					v#output pr;
 				end
 			in
 			x#iter_syms iterer_var;
-			output_string os ")\n(RULES\n";
-			let iterer_rule _ rule =
-				output_string os "\t";
-				rule#output os;
-				output_string os "\n";
+			pr#output_char ')';
+			pr#cr;
+			pr#output_string "(RULES";
+			pr#enter 4;
+			let iterer_rule _ (rule : #sym rule) =
+				pr#cr;
+				rule#output pr;
 			in
 			x#iter_rules iterer_rule;
-			output_string os ")\n";
-		method output_ths_xml os =
-			let iterer_A f =
+			pr#output_char ')';
+			pr#leave 4;
+			pr#cr;
+		method output_xml_ths : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			let iterer_A (f:#sym) =
 				match f#ty with
-				| Th "AC" | Th "A" -> Xml.enclose "name" f#output_xml os
+				| Th "AC" | Th "A" -> Xml.enclose "name" f#output_xml pr
 				| _ -> ()
 			in
-			let iterer_C f =
+			let iterer_C (f:#sym) =
 				match f#ty with
-				| Th "AC" | Th "C" -> Xml.enclose "name" f#output_xml os
+				| Th "AC" | Th "C" -> Xml.enclose "name" f#output_xml pr
 				| _ -> ()
 			in
-			Xml.enclose "Asymbols" (fun os -> x#iter_syms iterer_A) os;
-			Xml.enclose "Csymbols" (fun os -> x#iter_syms iterer_C) os;
-		method output_xml_rules =
-			Xml.enclose "rules" (fun os -> x#iter_rules (fun _ rule -> rule#output_xml os))
-		method output_xml =
-			Xml.enclose "trs" x#output_xml_rules >> x#output_ths_xml
+			Xml.enclose "Asymbols" (fun _ -> x#iter_syms iterer_A) pr;
+			Xml.enclose "Csymbols" (fun _ -> x#iter_syms iterer_C) pr;
+		method output_xml_rules : 'a. (#Io.printer as 'a) -> unit =
+			Xml.enclose "rules" (fun pr -> x#iter_rules (fun _ rule -> rule#output_xml pr))
+		method output_xml : 'a. (#Io.printer as 'a) -> unit =
+			Xml.enclose "trs" x#output_xml_rules >> x#output_xml_ths
 
-		method output_xml_ho_signature os =
-			output_string os "<higherOrderSignature>";
+		method output_xml_ho_signature : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			Xml.enter "higherOrderSignature" pr;
 			let first = ref true in
-			let iterer_var v =
+			let iterer_var (v:#sym) =
 				if v#is_var then begin
 					if !first then begin
-						output_string os "<variableTypeInfo>";
+						Xml.enter "variableTypeInfo" pr;
 						first := false;
 					end;
-					output_string os "<varDeclaration><var>";
-					v#output_xml os;
-					output_string os "</var><type><basic>o</basic></type></varDeclaration>";
+					Xml.enclose "varDeclaration" (
+						v#output_xml >>
+						Xml.enclose "type" (Xml.enclose "basic" (puts "o"))
+					) pr;
 				end;
 			in
 			x#iter_syms iterer_var;
 			if not !first then
-				output_string os "</variableTypeInfo>";
+				Xml.leave "variableTypeInfo" pr;
 			first := true;
-			let iterer_fun f =
+			let iterer_fun (f:#sym) =
 				if f#is_fun then begin
 					if !first then begin
-						output_string os "<functionSymbolTypeInfo>";
+						Xml.enter "functionSymbolTypeInfo" pr;
 						first := false;
 					end;
-					output_string os "<funcDeclaration><name>";
-					f#output_xml os;
-					output_string os "</name><typeDeclaration>";
+					Xml.enter "funcDeclaration" pr;
+					f#output_xml pr;
+					Xml.enter "typeDeclaration" pr;
 					for i = 0 to f#arity do
-						output_string os "<type><basic>o</basic></type>";
+						Xml.enclose "type" (Xml.enclose "basic" (putc 'o')) pr;
 					done;
-					output_string os "</typeDeclaration></funcDeclaration>";
+					Xml.leave "typeDeclaration" pr;
+					Xml.leave "funcDeclaration" pr;
 				end;
 			in
 			x#iter_syms iterer_fun;
-			if not !first then
-				output_string os "</functionSymbolTypeInfo>";
-			output_string os "</higherOrderSignature>";
-		method output_xml_ho os =
-			output_string os "<trs>";
-			x#output_xml_rules os;
-			x#output_xml_ho_signature os;
-			output_string os "</trs>";
-
+			if not !first then begin
+				Xml.leave "functionSymbolTypeInfo" pr;
+			end;
+			Xml.leave "higherOrderSignature" pr;
+		method output_xml_ho : 'a. (#Io.printer as 'a) -> unit =
+			Xml.enclose "trs" ( x#output_xml_rules >> x#output_xml_ho_signature )
 	end;;
 
 type path = int * (int list)

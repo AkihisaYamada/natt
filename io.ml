@@ -46,8 +46,9 @@ class virtual printer =
 		method leave_inline = ()
 	end
 
-class pretty_printer (base :# outputter) maxdepth =
+class pretty_printer (base : #outputter) maxdepth =
 	object (x)
+		inherit printer
 		method output_string = base#output_string
 		method output_char = base#output_char
 		method flush = base#flush
@@ -101,3 +102,15 @@ class finalized finalizer =
 			Gc.finalise fin x;
 			at_exit (fun _ -> !rfin x)
 	end
+
+
+let cerr = new pretty_printer (new wrap_out stderr) 32
+let cout = new pretty_printer (new wrap_out stdout) 32
+
+let puts s pr = pr#output_string s
+let putc c pr = pr#output_char c
+let put_int i pr = pr#output_int i
+let endl pr = pr#cr
+
+let (>>) f g pr = f pr; g pr
+

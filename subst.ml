@@ -40,21 +40,22 @@ class ['a] t =
 				try let Node(g,ts) = x#find f in Node(g,ts@ss')
 				with Not_found -> Node(f,ss')
 			else Node(f,ss')
-		method output os =
+		method output : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			if Hashtbl.length table = 0 then begin
-				output_string os "[ ]\n";
+				pr#output_string "[ ]";
 			end else begin
 				let iterer fname s =
-					output_string os "    ";
-					output_name os fname;
-					output_string os " := ";
-					output_term os s;
-					output_string os "\n";
+					pr#cr;
+					put_name fname pr;
+					pr#output_string " := ";
+					output_term pr s;
 				in
-				output_string os "[\n";
+				pr#output_char '[';
+				pr#enter 2;
 				Hashtbl.iter iterer table;
-				output_string os "]\n";
-				flush os;
+				pr#output_char ']';
+				pr#leave 2;
+				pr#cr;
 			end;
 	end;;
 
@@ -104,7 +105,7 @@ let matches : (#sym as 'a) term -> 'a term -> 'a t option =
 	fun s t -> sub1 (new t) s t
 
 let vrename v =
-	let renamer f = new sym_basic f#ty (f#name ^ "_{" ^ v ^ "}") in
+	let renamer f = new sym f#ty (f#name ^ "_{" ^ v ^ "}") in
 	let rec rename renamer (Node(f,ss)) =
 		let ss' = List.map (rename renamer) ss in
 		Node((if f#is_var then renamer f else f), ss')

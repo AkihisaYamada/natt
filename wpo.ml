@@ -5,6 +5,7 @@ open Dp
 open Smt
 open Preorder
 open Params
+open Io
 
 exception Continue
 
@@ -1413,111 +1414,123 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		| Mat m -> Matrix.is_unit (LI 0) (LI 1) m
 		| _ -> false
 	in
-	let output_proof =
-		let output_perm os fname finfo =
-			output_string os "sigma(";
-			output_name os fname;
-			output_string os ") = ";
+	let output_proof (pr:#printer) =
+		let pr_s = pr#output_string in
+		let pr_i = pr#output_int in
+		let pr_exp = output_exp pr in
+		let pr_perm fname finfo =
+			pr_s "sigma(";
+			put_name fname pr;
+			pr_s ") = ";
 			let punct = ref "" in
 			let rbr =
 				if solver#get_bool (argfilt_list finfo) then
 					if solver#get_bool (mset_status finfo) then
-						(output_string os "{";"}")
-					else (output_string os "[";"]")
+						(pr_s "{";"}")
+					else (pr_s "[";"]")
 				else ""
 			in
 			let n = finfo.arity in
 			for j = 1 to n do
 				for i = 1 to n do
 					if solver#get_bool (perm finfo i j) then begin
-						output_string os (!punct ^ string_of_int i);
+						pr_s !punct;
+						pr#output_int i;
 						punct := ",";
 					end;
 				done;
 			done;
-			output_string os rbr;
+			pr_s rbr;
 		in
-		let output_interpret =
-			let output_exp_append os =
-				function
-				| Neg exp -> output_string os " - "; output_exp os exp;
-				| exp -> output_string os " + "; output_exp os exp;
+		let pr_exp_append = function
+			| Neg exp -> pr_s " - "; pr_exp exp;
+			| exp -> pr_s " + "; pr_exp exp;
+		in
+		let pr_interpret fname finfo =
+			pr_s "I(";
+			put_name fname pr;
+			pr_s ") = ";
+			let n = finfo.arity in
+			let sc =
+				if finfo.symtype = Fun then subterm_coef finfo
+				else (fun v _ -> v) (subterm_coef finfo 1)
 			in
-			fun os fname finfo ->
-				output_string os "I(";
-				output_name os fname;
-				output_string os ") = ";
-				let n = finfo.arity in
-				let sc =
-					if finfo.symtype = Fun then subterm_coef finfo
-					else (fun v _ -> v) (subterm_coef finfo 1)
-				in
-				let init = ref true in
-				let pr_sum () =
-					for i = 1 to n do
-						let coef = solver#get_value (sc i) in
-						if not (zero coef) then begin
-							let coef =
-								match coef with
-								| Neg coef -> output_string os (if !init then "-" else " - "); coef
-								| _ -> if not !init then output_string os " + "; coef
-							in
-							if not (one coef) then begin
-								output_exp os coef;
-								output_string os " * ";
-							end;
-							output_string os ("x" ^ string_of_int i);
-							init := false;
+			let init = ref true in
+			let pr_sum () =
+				for i = 1 to n do
+					let coef = solver#get_value (sc i) in
+					if not (zero coef) then begin
+						let coef =
+							match coef with
+							| Neg coef -> pr_s (if !init then "-" else " - "); coef
+							| _ -> if not !init then pr_s " + "; coef
+						in
+						if not (one coef) then begin
+							pr_exp coef;
+							pr_s " * ";
 						end;
-					done;
-					let w = solver#get_value (weight finfo) in
-					if !init then
-						output_exp os w
-					else if not (zero w) then
-						output_exp_append os w;
-				in
-				if max_status finfo then begin
-					let usemax = solver#get_bool (argfilt_list finfo) in
-					for i = 1 to n do
-						let pen = solver#get_value (subterm_penalty finfo i) in
-						if solver#get_bool (maxfilt finfo i) then begin
-							output_string os (if !init then if usemax then "max(" else "" else ", ");
-							output_string os ("x" ^ string_of_int i);
-							if not (zero pen) then begin
-								match pen with
-								| Neg pen -> output_string os " - "; output_exp os pen;
-								| _ -> output_string os " + "; output_exp os pen;
-							end;
-							init := false;
-						end;
-					done;
-					if !init then begin
-						if finfo.maxpol then
-							pr_sum ()
-						else
-							output_exp os mcw
-					end else begin
-						if finfo.maxpol then begin
-							output_string os ", ";
-							init := true;
-							pr_sum ();
-						end;
-						if p.w_neg then begin
-							output_string os ", ";
-							output_exp os mcw;
-						end;
-						if usemax then output_string os ")";
+						pr_s "x";
+						pr_i i;
+						init := false;
 					end;
-				end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
-					output_string os "max(";
-					pr_sum ();
-					output_string os ", ";
-					output_exp os mcw;
-					output_string os ")";
-				end else
-					pr_sum ();
+				done;
+				let w = solver#get_value (weight finfo) in
+				if !init then begin
+					pr_exp w;
+				end else if not (zero w) then begin
+					pr_exp_append w;
+				end;
+			in
+			if max_status finfo then begin
+				let usemax = solver#get_bool (argfilt_list finfo) in
+				for i = 1 to n do
+					let pen = solver#get_value (subterm_penalty finfo i) in
+					if solver#get_bool (maxfilt finfo i) then begin
+						if !init then begin
+							if usemax then pr_s "max(";
+						end else begin
+							pr_s ", ";
+						end;
+						pr_s "x"; pr_i i;
+						if not (zero pen) then begin
+							match pen with
+							| Neg pen -> pr_s " - "; pr_exp pen;
+							| _ -> pr_s " + "; pr_exp pen;
+						end;
+						init := false;
+					end;
+				done;
+				if !init then begin
+					if finfo.maxpol then begin
+						pr_sum ();
+					end else begin
+						pr_exp mcw;
+					end;
+				end else begin
+					if finfo.maxpol then begin
+						pr_s ", ";
+						init := true;
+						pr_sum ();
+					end;
+					if p.w_neg then begin
+						pr_s ", ";
+						pr_exp mcw;
+					end;
+					if usemax then begin
+						pr_s ")";
+					end;
+				end;
+			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
+				pr_s "max(";
+				pr_sum ();
+				pr_s ", ";
+				pr_exp mcw;
+				pr_s ")";
+			end else begin
+				pr_sum ();
+			end
 		in
-		let output_symbol os fname finfo =
+		let pr_symbol fname finfo =
 			let flag = ref false in
 			if
 				(
@@ -1527,34 +1540,34 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				) &&
 				finfo.arity <> 0
 			then begin
-				output_string os "\t";
-				output_perm os fname finfo;
+				pr_s "\t";
+				pr_perm fname finfo;
 				flag := true;
 			end;
 			if p.w_mode <> W_none then begin
-				output_string os "\t";
-				output_interpret os fname finfo;
+				pr_s "\t";
+				pr_interpret fname finfo;
 				flag := true;
 			end;
-			if !flag then output_string os "\n";
+			if !flag then pr#cr;
 		in
-		let output_prec =
+		let pr_prec =
 			if p.prec_mode = PREC_none then
 				fun _ -> ()
 			else
-				fun os ->
+				fun _ ->
 					let equiv = if p.prec_mode = PREC_quasi then " = " else ", " in
 					let rec sub =
 						function
 						| [] -> ()
 						| (fname,_)::[] ->
-							output_name stderr fname;
+							put_name fname pr;
 						| (fname,i)::(gname,j)::ps ->
-							output_name stderr fname;
-							output_string os (if i = j then equiv else " > ");
+							put_name fname pr;
+							pr_s (if i = j then equiv else " > ");
 							sub ((gname,j)::ps)
 					in
-					output_string os "    PREC: ";
+					pr_s "    PREC: ";
 					sub
 					(	List.sort
 						(fun (_,i) (_,j) -> compare j i)
@@ -1568,155 +1581,171 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 							[]
 						)
 					);
-					output_string os "\n";
+					pr#cr;
 		in
-		let output_usable =
+		let pr_usable =
 			if p.dp && dg#minimal && p.usable || params.debug then
 				let folder is (i,_) =
 					if solver#get_bool (usable i) then i::is else is
 				in
-				fun os ->
-					output_string os "    USABLE RULES: {";
-					Abbrev.output_ints stderr " " (List.fold_left folder [] !usables);
-					output_string os " }\n";
+				puts "    USABLE RULES: {" >>
+				Abbrev.put_ints " " (List.fold_left folder [] !usables) >>
+				puts " }" >>
+				endl
 			else
 				fun _ -> ()
 		in
-		let output_usable_w =
+		let pr_usable_w =
 			if p.dp && p.usable_w && p.w_mode <> W_none then
 				let folder is (i,_) =
 					if solver#get_bool (usable_w i) then i::is else is
 				in
-				fun os ->
-					output_string os "    USABLE RULES(WEIGHT): {";
-					Abbrev.output_ints stderr " " (List.fold_left folder [] !usables);
-					output_string os " }\n";
+				puts "    USABLE RULES(WEIGHT): {" >>
+				Abbrev.put_ints " " (List.fold_left folder [] !usables) >>
+				puts " }" >>
+				endl
 			else
-				fun os -> ()
+				fun _ -> ()
 		in
-		fun os ->
-			Hashtbl.iter (output_symbol os) sigma;
-			output_prec os;
-			output_usable os;
-			output_usable_w os;
-			if p.mcw_mode = MCW_num then begin
-				output_string os "    w0 = ";
-				output_exp os (solver#get_value mcw);
-				output_string os "\n";
-			end;
+		Hashtbl.iter pr_symbol sigma;
+		pr_prec ();
+		pr_usable pr;
+		pr_usable_w pr;
+		if p.mcw_mode = MCW_num then begin
+			pr_s "    w0 = ";
+			pr_exp (solver#get_value mcw);
+			pr#cr;
+		end;
 	in
 	(* Print CPF proof *)
-	let output_cpf os =
-		let pr = output_string os in
-		let pr_status finfo =
-			pr "  <status>\n";
+	let output_cpf =
+		let pr_status finfo pr =
+			Xml.enter "status" pr;
 			let n = finfo.arity in
 			for j = 1 to n do
 				for i = 1 to n do
 					if solver#get_bool (perm finfo i j) then begin
-						pr "   <position>";
-						pr (string_of_int i);
-						pr "</position>\n";
+						Xml.enclose_inline "position" (put_int i) pr;
 					end;
 				done;
 			done;
-			pr "  </status>\n";
+			Xml.leave "status" pr;
 		in
 		let pr_prec finfo =
-			pr "  <precedence>";
-			pr (string_of_int (smt_eval_int (solver#get_value (prec finfo))));
-			pr "</precedence>\n";
+			Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value (prec finfo))))
 		in
-		let pr_precstat fname finfo =
-			pr " <precedenceStatusEntry>\n";
-			Xml.enclose "name" (fun os -> output_name os fname) os;
-			Xml.enclose "arity" (Xml.puts (string_of_int finfo.arity)) os;
-			pr_prec finfo;
-			pr_status finfo;
-			pr " </precedenceStatusEntry>\n";
+		let pr_precstat pr fname finfo =
+			Xml.enclose "precedenceStatusEntry" (
+				Xml.enclose_inline "name" (put_name fname) >>
+				Xml.enclose_inline "arity" (put_int finfo.arity) >>
+				pr_prec finfo >>
+				pr_status finfo
+			) pr
 		in
-		let pr_interpret fname finfo =
-			pr "<interpret>\n <name>"; pr fname; pr "</name>\n";
+		let pr_interpret pr fname finfo =
+			Xml.enter "interpret" pr;
+			Xml.enclose_inline "name" (put_name fname) pr;
 			let n = finfo.arity in
-			pr " <arity>";
-			pr (string_of_int n);
-			pr "</arity>\n ";
+			Xml.enclose_inline "arity" (put_int n) pr;
 			let sc =
 				if finfo.symtype = Fun then subterm_coef finfo
 				else (fun v _ -> v) (subterm_coef finfo 1)
 			in
 			let pr_int i =
-				pr "<polynomial><coefficient><integer>";
-				pr (string_of_int i);
-				pr "</integer></coefficient></polynomial>";
+				Xml.enclose "polynomial" (
+					Xml.enclose "coefficient" (
+						Xml.enclose_inline "integer" (
+							put_int i
+						)
+					)
+				)
 			in
-			let pr_sum () =
-				pr "<polynomial><sum>";
+			let pr_sum pr =
+				Xml.enter "polynomial" pr;
+				Xml.enter "sum" pr;
 				for i = 1 to n do
 					let coef = smt_eval_int (solver#get_value (sc i)) in
 					if coef <> 0 then begin
-						pr "<polynomial><product>";
-						pr_int coef;
-						pr "<polynomial><variable>";
-						pr (string_of_int i);
-						pr "</variable></polynomial>";
-						pr "</product></polynomial>";
+						Xml.enclose "polynomial" (
+							Xml.enclose "product" (
+								pr_int coef >>
+								Xml.enclose "polynomial" (
+									Xml.enclose_inline "variable" (
+										put_int i
+									)
+								)
+							)
+						) pr;
 					end;
 				done;
-				pr_int (smt_eval_int (solver#get_value (weight finfo)));
-				pr "</sum></polynomial>";
+				pr_int (smt_eval_int (solver#get_value (weight finfo))) pr;
+				Xml.leave "sum" pr;
+				Xml.leave "polynomial" pr;
 			in
 			if max_status finfo then begin
 				let usemax = solver#get_bool (argfilt_list finfo) in
-				if usemax then
-					pr "<polynomial><max>";
+				if usemax then begin
+					Xml.enter "polynomial" pr;
+					Xml.enter "max" pr;
+				end;
 				for i = 1 to n do
 					let pen = smt_eval_int (solver#get_value (subterm_penalty finfo i)) in
 					if solver#get_bool (maxfilt finfo i) then begin
-						pr "<polynomial><sum><polynomial><variable>";
-						pr (string_of_int i);
-						pr "</variable></polynomial>";
-						pr_int pen;
-						pr "</sum></polynomial>";
+						Xml.enclose "polynomial" (
+							Xml.enclose "sum" (
+								Xml.enclose "polynomial" (
+									Xml.enclose_inline "variable" (
+										put_int i
+									)
+								) >>
+								pr_int pen
+							)
+						) pr;
 					end;
 				done;
-				if finfo.maxpol then
-					pr_sum ()
-				else
-					pr_int (smt_eval_int (solver#get_value mcw));
-				if usemax then pr "</max></polynomial>";
+				if finfo.maxpol then begin
+					pr_sum pr;
+				end else begin
+					pr_int (smt_eval_int (solver#get_value mcw)) pr;
+				end;
+				if usemax then begin
+					Xml.leave "max" pr;
+					Xml.leave "polynomial" pr;
+				end;
 			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
-				pr "<polynomial><max>";
-				pr_sum ();
-				pr_int (smt_eval_int (solver#get_value mcw));
-				pr "</max></polynomial>";
+				Xml.enclose "polynomial" (
+					Xml.enclose "max" (
+						pr_sum >>
+						pr_int (smt_eval_int (solver#get_value mcw))
+					)
+				) pr;
 			end else
-				pr_sum ();
-			pr "\n</interpret>\n";
+				pr_sum pr;
+			Xml.leave "interpret" pr;
 		in
-		pr "<weightedPathOrder>\n<precedenceStatus>\n";
-		Hashtbl.iter pr_precstat sigma;
-		pr
-" </precedenceStatus>
- <redPair>
-  <interpretation>
-   <type>
-    <polynomial>
-     <domain><naturals/></domain>
-     <degree>1</degree>
-    </polynomial>
-   </type>
-";
-		Hashtbl.iter pr_interpret sigma;
-		pr
-"  </interpretation>
-  </redPair>
- </weightedPathOrder>
-";
+		fun pr ->
+			Xml.enter "weightedPathOrder" pr;
+			Xml.enter "precedenceStatus" pr;
+			Hashtbl.iter (pr_precstat pr) sigma;
+			Xml.leave "precedenceStatus" pr;
+			Xml.enter "redPair" pr;
+			Xml.enter "interpretation" pr;
+			Xml.enclose "type" (
+				Xml.enclose "polynomial" (
+					Xml.enclose_inline "domain" (Xml.tag "naturals") >>
+					Xml.enclose_inline "degree" (puts "1")
+				)
+			) pr;
+			Hashtbl.iter (pr_interpret pr) sigma;
+			Xml.leave "interpretation" pr;
+			Xml.leave "redPair" pr;
+			Xml.leave "weightedPathOrder" pr;
 	in
-	let putdot _ =
-		prerr_char '.';
-		flush stderr;
+
+
+	let putdot pr =
+		pr#output_char '.';
+		pr#flush;
 	in
 
 	let gt_v i = "gt#" ^ string_of_int i in
@@ -1789,7 +1818,7 @@ object (x)
 				finfo.arity > 1 &&
 				(p.max_nest = 0 || nest fname <= p.max_nest) &&
 				(
-					debug2 (fun _ -> prerr_char ' '; output_name stderr fname;);
+					debug2 (putc ' ' >> put_name fname);
 					finfo.max <- true;
 					true
 				)
@@ -1892,9 +1921,7 @@ object (x)
 		try
 			Hashtbl.add rule_flag_table i ();
 			let rule = trs#find_rule i in
-			debug2 (fun os ->
-				output_string os ("    Initializing rule " ^ string_of_int i ^ "\n");
-			);
+			debug2 (puts "    Initializing rule " >> put_int i >> endl );
 			let (WT(_,_,lw) as la) = annote rule#l in
 			let (WT(_,_,rw) as ra) = annote rule#r in
 			if p.dp then begin
@@ -1931,14 +1958,12 @@ object (x)
 				solver#add_definition (gt_r_v i) Bool gt;
 			end;
 		with Inconsistent ->
-			debug (fun _ -> prerr_endline " inconsistency detected.");
+			debug (puts " inconsistency detected." >> endl);
 
 	method private add_dp i =
 		if not (Hashtbl.mem dp_flag_table i) then begin
 			Hashtbl.add dp_flag_table i ();
-			debug2 (fun os ->
-				output_string os ("    initializing DP #" ^ string_of_int i ^ "\n");
-			);
+			debug2 (puts "    initializing DP #" >> put_int i >> endl);
 			let dp = dg#find_dp i in
 			let (ge,gt) = split (frame (annote dp#l) (annote dp#r)) solver in
 			solver#add_definition (ge_v i) Bool ge;
@@ -1986,11 +2011,7 @@ object (x)
 			x#reset;
 
 	method reduce (dg : 'a dg) current_usables sccref =
-		comment
-		(fun _ ->
-			prerr_string (name_order p);
-			putdot ();
-		);
+		comment ( puts (name_order p) >> putdot );
 		try
 			x#push current_usables !sccref;
 			comment putdot;
@@ -2001,7 +2022,7 @@ object (x)
 			solver#add_assertion (IntSet.fold folder !sccref (LB false));
 			comment putdot;
 			solver#check;
-			comment (fun os -> output_string os " succeeded.\n");
+			comment (puts " succeeded." >> endl);
 			proof output_proof;
 			cpf output_cpf;
 			let folder i ret =
@@ -2012,10 +2033,10 @@ object (x)
 				) else ret
 			in
 			let rem_dps = IntSet.fold folder !sccref [] in
-			proof (fun os ->
-				output_string os "    Removed DPs:";
-				Abbrev.output_ints os " #" rem_dps;
-				output_string os "\n";
+			proof (
+				puts "    Removed DPs:" >>
+				Abbrev.put_ints " #" rem_dps >>
+				endl
 			);
 			x#pop;
 			true
@@ -2026,13 +2047,7 @@ object (x)
 
 	method direct current_usables =
 		try
-			comment
-			(fun _ ->
-				prerr_string "Direct ";
-				prerr_string (name_order p);
-				prerr_string " ";
-				putdot ();
-			);
+			comment (puts "Direct " >> puts (name_order p) >> puts " " >> putdot);
 			x#push current_usables IntSet.empty;
 
 			comment putdot;
@@ -2042,13 +2057,13 @@ object (x)
 			if p.remove_all then begin
 				comment putdot;
 				solver#check;
-				comment (fun _ -> prerr_endline " orients all.");
+				comment (puts " orients all." >> endl);
 				trs#iter_rules (fun i _ -> trs#remove_rule i);
 			end else begin
 				solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
 				comment putdot;
 				solver#check;
-				comment (fun _ -> prerr_string " removes:");
+				comment (puts " removes:");
 				List.iter
 				(fun i ->
 					if solver#get_bool (EV(gt_r_v i)) then begin
@@ -2056,23 +2071,19 @@ object (x)
 						comment(fun _ -> prerr_string " "; prerr_int i;);
 					end;
 				) current_usables;
-				comment(fun _ -> prerr_newline ());
+				comment endl;
 			end;
 			proof output_proof;
-			cpf (fun os ->
-				output_string os "<ruleRemoval>
-<orderingConstraintProof>
-<redPair>
-";
-				output_cpf os;
-				output_string os "  </redPair>
-</orderingConstraintProof>
-";
-				trs#output_xml os;
-				output_string os
-" <trsTerminationProof><rIsEmpty/></trsTerminationProof>
-</ruleRemoval>
-";
+			cpf (
+				Xml.enclose "ruleRemoval" (
+					Xml.enclose "orderingConstraintProof" (
+						Xml.enclose "redPair" (
+							output_cpf
+						)
+					) >>
+					trs#output_xml >>
+					Xml.enclose "trsTerminationProof" (Xml.tag "rIsEmpty")
+				)
 			);
 			x#pop;
 			true

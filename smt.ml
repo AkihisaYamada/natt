@@ -729,17 +729,25 @@ class virtual sexp_printer =
 			| Mat(ess)		-> pr "["; withpunc (withpunc pr_e ",") ";" ess; pr "]";
 	end;;
 
-let output_exp os =
-	(object
-			inherit sexp_printer
-			inherit Io.printer
-			inherit Io.wrap_out os
-			method pr_v = output_string os
-			method pr_ds = raise (No_support "SMT")
-		end
-	)#pr_e
+class sexp_printer_wrap (base : #Io.printer) = object
+	inherit sexp_printer
+	inherit Io.printer
+	(* Tedious! Can't be done elegantly? *)
+	method output_string = base#output_string
+	method output_char = base#output_char
+	method output_int = base#output_int
+	method flush = base#flush
+	method close = base#close
+	method cr = base#cr
+	method enter = base#enter
+	method leave = base#leave
+	method pr_v = base#output_string
+	method pr_ds = raise (No_support "SMT")
+end;;
 
-let prerr_exp = output_exp stderr
+let output_exp (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e
+
+let prerr_exp = output_exp Io.cerr
 
 let smt_apply =
 	function
