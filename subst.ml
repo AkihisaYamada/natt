@@ -42,20 +42,20 @@ class ['a] t =
 			else Node(f,ss')
 		method output : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			if Hashtbl.length table = 0 then begin
-				pr#output_string "[ ]";
+				pr#puts "[ ]";
 			end else begin
 				let iterer fname s =
-					pr#cr;
+					pr#endl;
 					put_name fname pr;
-					pr#output_string " := ";
+					pr#puts " := ";
 					output_term pr s;
 				in
-				pr#output_char '[';
+				pr#putc '[';
 				pr#enter 2;
 				Hashtbl.iter iterer table;
-				pr#output_char ']';
+				pr#putc ']';
 				pr#leave 2;
-				pr#cr;
+				pr#endl;
 			end;
 	end;;
 

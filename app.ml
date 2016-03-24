@@ -127,13 +127,13 @@ let auto_uncurry (trs : 'a trs) (dg : 'a dg) =
 			dg#iter_dps iterer_r;
 
 			debug (fun pr ->
-				pr#cr;
-				pr#output_string "evaluating ";
+				pr#endl;
+				pr#puts "evaluating ";
 				a#output pr;
-				pr#output_string ": ";
-				pr#output_int !ngoods;
-				pr#output_string " vs. ";
-				pr#output_int !nbads;
+				pr#puts ": ";
+				pr#put_int !ngoods;
+				pr#puts " vs. ";
+				pr#put_int !nbads;
 			);
 
 			if !ngoods = 0 (*|| !ngoods < !nbads*) then begin

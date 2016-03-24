@@ -641,10 +641,10 @@ class virtual sexp_printer =
 		method virtual pr_v : string -> unit
 		method virtual pr_ds : dec list -> unit
 		method pr_e e =
-			let pr = x#output_string in
+			let pr = x#puts in
 			let pr_e = x#pr_e in
-			let pr_i = x#output_int in
-			let pr_f = x#output_float in
+			let pr_i = x#put_int in
+			let pr_f = x#put_float in
 			let rec withpunc put punc =
 				function
 				| []	-> ();
@@ -653,17 +653,17 @@ class virtual sexp_printer =
 			in
 			let rec pr_and =
 				function
-				| And(e1,e2) -> pr_and e1; x#cr; pr_and e2;
+				| And(e1,e2) -> pr_and e1; x#endl; pr_and e2;
 				| e	-> pr_e e;
 			in
 			let rec pr_or =
 				function
-				| Or(e1,e2) -> pr_or e1; x#cr; pr_or e2;
+				| Or(e1,e2) -> pr_or e1; x#endl; pr_or e2;
 				| e	-> pr_e e;
 			in
 			let rec pr_xor =
 				function
-				| Xor(e1,e2) -> pr_xor e1; x#cr; pr_xor e2;
+				| Xor(e1,e2) -> pr_xor e1; x#endl; pr_xor e2;
 				| e	-> pr_e e;
 			in
 			let rec pr_add =
@@ -697,18 +697,24 @@ class virtual sexp_printer =
 			| Gt(e1,e2)		-> pr "(> "; pr_e e1; pr " "; pr_e e2; pr ")";
 			| Le(e1,e2)		-> pr "(<= "; pr_e e1; pr " "; pr_e e2; pr ")";
 			| Lt(e1,e2)		-> pr "(< "; pr_e e1; pr " "; pr_e e2; pr ")";
-			| And(e1,e2)	-> x#enter 5; pr "(and "; pr_and e1; x#cr; pr_and e2; pr ")"; x#leave 5;
-			| Or(e1,e2)		-> x#enter 4; pr "(or "; pr_or e1; x#cr; pr_or e2; pr ")"; x#leave 4;
-			| Xor(e1,e2)	-> x#enter 5; pr "(xor "; pr_xor e1; x#cr; pr_xor e2; pr ")"; x#leave 5;
+			| And(e1,e2)	-> x#enter 5;
+							   pr "(and "; pr_and e1; x#endl; pr_and e2; pr ")";
+							   x#leave 5;
+			| Or(e1,e2)		-> x#enter 4;
+							   pr "(or "; pr_or e1; x#endl; pr_or e2; pr ")";
+							   x#leave 4;
+			| Xor(e1,e2)	-> x#enter 5;
+							   pr "(xor "; pr_xor e1; x#endl; pr_xor e2; pr ")";
+							   x#leave 5;
 			| Not e1		-> x#enter 5; pr "(not "; pr_e e1; pr ")"; x#leave 5;
-			| Imp(e1,e2)	-> x#enter 4; pr "(=> "; pr_e e1; x#cr; pr_e e2; pr ")"; x#leave 4;
+			| Imp(e1,e2)	-> x#enter 4; pr "(=> "; pr_e e1; x#endl; pr_e e2; pr ")"; x#leave 4;
 			| ForAll(ds,e)	-> x#enter 7;
-							   pr "(forall ("; x#pr_ds ds; pr ")"; x#cr;
-							   pr_e e; pr ")"; x#cr;
+							   pr "(forall ("; x#pr_ds ds; pr ")"; x#endl;
+							   pr_e e; pr ")"; x#endl;
 							   x#leave 7;
 			| Exists(ds,e)	-> x#enter 7;
 							   pr "(exists ("; x#pr_ds ds; pr ") ";
-							   pr_e e; pr ")"; x#cr;
+							   pr_e e; pr ")"; x#endl;
 							   x#leave 7;
 			| Cons(e1,e2)	-> pr "(cons "; pr_e e1; pr " "; pr_e e2; pr ")";
 			| Dup(_,e)		-> pr "(dup "; pr_e e; pr ")";
@@ -733,15 +739,15 @@ class sexp_printer_wrap (base : #Io.printer) = object
 	inherit sexp_printer
 	inherit Io.printer
 	(* Tedious! Can't be done elegantly? *)
-	method output_string = base#output_string
-	method output_char = base#output_char
-	method output_int = base#output_int
+	method puts = base#puts
+	method putc = base#putc
+	method put_int = base#put_int
 	method flush = base#flush
 	method close = base#close
-	method cr = base#cr
+	method endl = base#endl
 	method enter = base#enter
 	method leave = base#leave
-	method pr_v = base#output_string
+	method pr_v = base#puts
 	method pr_ds = raise (No_support "SMT")
 end;;
 
@@ -868,12 +874,9 @@ class virtual smt_lib_2_0 =
 
 		val mutable initialized = false
 
-		method pr = x#output_string
-		method pr_c = x#output_char
-
 		method exit =
 			if initialized then begin
-				x#pr "(exit)\n";
+				x#puts "(exit)\n";
 				x#flush;
 				x#close;
 				initialized <- false
@@ -884,22 +887,22 @@ class virtual smt_lib_2_0 =
 				x#init;
 				initialized <- true;
 			end;
-			x#pr ("(set-logic " ^ logic ^ ")\n");
+			x#puts ("(set-logic " ^ logic ^ ")\n");
 
 		method private add_declaration_body d =
 			match d with
 			| Dec(v,ty) ->
-				x#pr "(declare-fun ";
+				x#puts "(declare-fun ";
 				x#pr_v v;
-				x#pr " () ";
+				x#puts " () ";
 				x#pr_ty ty;
-				x#pr ")\n";
+				x#puts ")\n";
 			| Def(v,ty,e) ->
-				x#pr "(define-fun ";
+				x#puts "(define-fun ";
 				x#pr_v v;
-				x#pr " () ";
+				x#puts " () ";
 				x#pr_ty ty;
-				x#pr " ";
+				x#puts " ";
 				if	match e with
 					| Or(_,_)	-> true
 					| And(_,_)	-> true
@@ -907,22 +910,22 @@ class virtual smt_lib_2_0 =
 					| _ -> false
 				then begin
 					x#enter 2;
-					x#cr;
+					x#endl;
 					x#pr_e e;
 					x#leave 2;
 				end else begin
 					x#pr_e e;
 				end;
-				x#pr ")\n";
+				x#puts ")\n";
 		method private add_assertion_body e =
-			x#pr "(assert ";
+			x#puts "(assert ";
 			x#enter 8;
 			x#pr_e e;
 			x#leave 8;
-			x#pr ")\n";
+			x#puts ")\n";
 			x#flush;
 		method check =
-			x#pr "(check-sat)\n";
+			x#puts "(check-sat)\n";
 			x#flush;
 			let e = x#get_exp in
 			if e = EV "sat" then ()
@@ -941,9 +944,9 @@ class virtual smt_lib_2_0 =
 			| Mat(ess) -> Mat(List.map (List.map x#get_value) ess)
 (*			| If(c,t,e) -> if x#get_value c = LB true then x#get_value t else x#get_value e
 *)			| v ->
-				x#pr "(get-value (";
+				x#puts "(get-value (";
 				x#pr_e (x#expand v);
-				x#pr "))\n";
+				x#puts "))\n";
 				x#flush;
 				let e = x#get_exp in
 				match e with
@@ -952,9 +955,9 @@ class virtual smt_lib_2_0 =
 		method dump_value vs os =
 			if vs <> [] then
 			(
-				x#pr "(get-value (";
-				List.iter (fun v -> x#pr_v v; x#pr " ") vs;
-				x#pr "))\n";
+				x#puts "(get-value (";
+				List.iter (fun v -> x#pr_v v; x#puts " ") vs;
+				x#puts "))\n";
 				x#flush;
 				let rec sub =
 					function
@@ -967,17 +970,17 @@ class virtual smt_lib_2_0 =
 				sub vs
 			)
 		method push =
-			x#pr "(push)\n";
+			x#puts "(push)\n";
 			x#flush;
 		method pop =
-			x#pr "(pop)\n";
+			x#puts "(pop)\n";
 			x#flush;
 		method reboot =
-			x#pr "(exit)\n"; x#flush; consistent <- true; temp_names <- 0;
+			x#puts "(exit)\n"; x#flush; consistent <- true; temp_names <- 0;
 			x#close;
 			initialized <- false;
 		method reset =
-			x#pr "(reset)\n"; x#flush; consistent <- true; temp_names <- 0;
+			x#puts "(reset)\n"; x#flush; consistent <- true; temp_names <- 0;
 
 		method pr_v v =
 			let len = String.length v in
@@ -986,12 +989,12 @@ class virtual smt_lib_2_0 =
 					begin
 						match v.[i] with
 						| 'a'..'z' | 'A'..'Z' | '0'..'9' |  '+' | '-' | '*' | '/'
-						| '_' -> x#pr_c v.[i]
-						| ' '	-> x#pr "<s>"
-						| '\''	-> x#pr "<q>"
-						| '<'	-> x#pr "<gt>"
-						| '>'	-> x#pr "<lt>"
-						| c		-> x#pr_c '<'; x#pr (Printf.sprintf "%X" (Char.code c)); x#pr_c '>'
+						| '_' -> x#putc v.[i]
+						| ' '	-> x#puts "<s>"
+						| '\''	-> x#puts "<q>"
+						| '<'	-> x#puts "<gt>"
+						| '>'	-> x#puts "<lt>"
+						| c		-> x#putc '<'; x#put_hex (Char.code c); x#putc '>'
 						end;
 					sub (i+1);
 				end
@@ -999,20 +1002,20 @@ class virtual smt_lib_2_0 =
 			sub 0
 		method pr_ty =
 			function
-			| Int	-> x#pr "Int";
-			| Real	-> x#pr "Real";
-			| Bool	-> x#pr "Bool";
+			| Int	-> x#puts "Int";
+			| Real	-> x#puts "Real";
+			| Bool	-> x#puts "Bool";
 			| _		-> raise (Internal "type");
 		method pr_ds =
 			let pr_d =
 				function
-				| Dec(v,ty) -> x#pr_v v; x#pr " "; x#pr_ty ty;
+				| Dec(v,ty) -> x#pr_v v; x#puts " "; x#pr_ty ty;
 				| _			-> raise (Internal "dec");
 			in
 			function
 			| []	-> ()
-			| d::[]	-> x#pr "("; pr_d d; x#pr ")";
-			| d::ds	-> x#pr "("; pr_d d; x#pr ") "; x#pr_ds ds;
+			| d::[]	-> x#puts "("; pr_d d; x#puts ")";
+			| d::ds	-> x#puts "("; pr_d d; x#puts ") "; x#pr_ds ds;
 	end
 
 let create_solver debug_to debug_in debug_out command options =

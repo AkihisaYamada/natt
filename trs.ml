@@ -40,12 +40,12 @@ class sym_detailed (f:#sym) =
 	end;;
 
 let output_tbl_index (pr : #Io.printer) prefix (i, (rule : #sym rule)) =
-	pr#output_string "  ";
-	pr#output_string prefix;
-	pr#output_int i;
-	pr#output_string ": ";
+	pr#puts "  ";
+	pr#puts prefix;
+	pr#put_int i;
+	pr#puts ": ";
 	rule#output pr;
-	pr#cr;;
+	pr#endl;;
 
 let output_tbl (pr : #Io.printer) prefix ruletbl =
 	List.iter (output_tbl_index pr prefix)
@@ -190,16 +190,16 @@ class ['f] trs =
 (* outputs *)
 		method output_ths : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			let iterer_th th =
-				pr#output_string th;
-				pr#output_string " symbols:";
+				pr#puts th;
+				pr#puts " symbols:";
 				let iterer_syms (f:#sym) =
 					if f#ty = Th th then begin
-						pr#output_char ' ';
+						pr#putc ' ';
 						f#output pr;
 					end;
 				in
 				x#iter_syms iterer_syms;
-				pr#cr;
+				pr#endl;
 			in
 			Ths.iter iterer_th ths;
 		method output_rules : 'a. (#Io.printer as 'a) -> unit = fun pr ->
@@ -210,26 +210,26 @@ class ['f] trs =
 			x#output_ths pr;
 			x#output_rules pr;
 		method output_wst : 'a. (#Io.printer as 'a) -> unit = fun pr ->
-			pr#output_string "(VAR";
+			pr#puts "(VAR";
 			let iterer_var (v : #sym) =
 				if v#is_var then begin
-					pr#output_char ' ';
+					pr#putc ' ';
 					v#output pr;
 				end
 			in
 			x#iter_syms iterer_var;
-			pr#output_char ')';
-			pr#cr;
-			pr#output_string "(RULES";
+			pr#putc ')';
+			pr#endl;
+			pr#puts "(RULES";
 			pr#enter 4;
 			let iterer_rule _ (rule : #sym rule) =
-				pr#cr;
+				pr#endl;
 				rule#output pr;
 			in
 			x#iter_rules iterer_rule;
-			pr#output_char ')';
+			pr#putc ')';
 			pr#leave 4;
-			pr#cr;
+			pr#endl;
 		method output_xml_ths : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			let iterer_A (f:#sym) =
 				match f#ty with

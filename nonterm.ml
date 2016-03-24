@@ -6,11 +6,9 @@ open Dp
 open Io
 
 let put_dp i l r pr =
-	let pr_i = pr#output_int in
-	let pr_s = pr#output_string in
 	let pr_term = output_term pr in
-	pr_s "\t"; pr_term l; pr_s "  ->"; pr#cr;
-	pr_s "  #"; pr_i i; pr_s "\t"; pr_term r; pr_s "  ->>"; pr#cr
+	pr#puts "\t"; pr_term l; pr#puts "  ->"; pr#endl;
+	pr#puts "  #"; pr#put_int i; pr#puts "\t"; pr_term r; pr#puts "  ->>"; pr#endl
 
 let put_loop (dg : 'a dg) u loop pr =
 	let rec sub pos =
@@ -20,9 +18,9 @@ let put_loop (dg : 'a dg) u loop pr =
 			let dp = dg#find_dp i in
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v dp#l) in
-			pr#output_string "   \t";
+			pr#puts "   \t";
 			output_term pr l;
-			pr#cr;
+			pr#endl;
 		| i::is ->
 			let dp = dg#find_dp i in
 			let v = string_of_int pos in
@@ -99,9 +97,9 @@ let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
 		in
 		let iterer2 loop =
 			debug2 (fun pr ->
-				pr#output_string "    Checking loop: #";
-				pr#output_int i1;
-				List.iter (fun i -> pr#output_string " -> #"; pr#output_int i;) loop;
+				pr#puts "    Checking loop: #";
+				pr#put_int i1;
+				List.iter (fun i -> pr#puts " -> #"; pr#put_int i;) loop;
 				pr#flush;
 			);
 			sub 1 loop (new Subst.t) dp1#l dp1#r loop (dg#find_dp i1)#is_strict;

@@ -148,7 +148,7 @@ class ['f] t (trs : 'f #trs) =
 
 		method output_sym_graph :
 		'a. (#Io.printer as 'a) -> unit = fun pr ->
-			pr#output_string "Symbol transition graph:";
+			pr#puts "Symbol transition graph:";
 			pr#enter 4;
 			let collapsable = ref [] in
 			let stable = ref [] in
@@ -161,26 +161,26 @@ class ['f] t (trs : 'f #trs) =
 						if succ = [] then begin
 							stable := f :: !stable;
 						end else begin
-							pr#cr;
+							pr#endl;
 							f#output pr;
-							pr#output_string "\t-->";
+							pr#puts "\t-->";
 							List.iter
-								(fun gname -> pr#output_char ' '; pr#output_string gname;) succ;
+								(fun gname -> pr#putc ' '; pr#puts gname;) succ;
 						end;
 					end;
 				end;
 			in
 			trs#iter_syms iterer;
 			pr#leave 2;
-			pr#cr;
-			pr#output_string "Collapsable symbols: {";
-			List.iter (fun (f : #sym) -> pr#output_char ' '; f#output pr;) !collapsable;
-			pr#output_string " }";
-			pr#cr;
-			pr#output_string "Stable symbols: {";
-			List.iter (fun (f : #sym) -> pr#output_char ' '; f#output pr;) !stable;
-			pr#output_string " }";
+			pr#endl;
+			pr#puts "Collapsable symbols: {";
+			List.iter (fun (f : #sym) -> pr#putc ' '; f#output pr;) !collapsable;
+			pr#puts " }";
+			pr#endl;
+			pr#puts "Stable symbols: {";
+			List.iter (fun (f : #sym) -> pr#putc ' '; f#output pr;) !stable;
+			pr#puts " }";
 			pr#leave 2;
-			pr#cr;
+			pr#endl;
 	end;;
 

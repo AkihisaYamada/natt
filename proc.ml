@@ -57,8 +57,8 @@ class t command opts =
 			| ([_],_,_) -> true
 			| _ -> false
 		method input_line = input_line is
-		method output_string = output_string os
-		method output_char = output_char os
+		method puts = output_string os
+		method putc = output_char os
 		method flush = flush os
 		method close =
 			if not x#dead then begin

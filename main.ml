@@ -46,8 +46,8 @@ let uncurry =
 				(comment (puts " ... failed." << endl); false)
 			else (
 				comment (fun (pr : #printer) ->
-					List.iter (fun (a : #sym) -> pr#output_char ' '; a#output pr) appsyms;
-					pr#cr;
+					List.iter (fun (a : #sym) -> pr#putc ' '; a#output pr) appsyms;
+					pr#endl;
 				);
 				problem trs#output;
 				true
@@ -209,12 +209,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				raise (if !given_up then Unknown else Success);
 			end
 		| scc::rest ->
-			problem
-			(fun pr ->
-				pr#output_string "  SCC {";
-				Abbrev.put_int_set " #" scc pr;
-				pr#output_string " }\n    ";
-			);
+			problem (puts "  SCC {" << Abbrev.put_int_set " #" scc << puts " }\n    ");
 			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
 				comment (puts "only weak rules." << endl);
 				sccs := rest;
@@ -324,11 +319,10 @@ object (x)
 		else
 			trs#read params.file;
 
-		cpf (fun pr ->
-			pr#output_string "<?xml version=\"1.0\"?>";
-			pr#cr;
-			pr#output_string "<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>";
-			Xml.enter "certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\"" pr;
+		cpf (
+			puts "<?xml version=\"1.0\"?>" << endl <<
+			puts "<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>" <<
+			Xml.enter "certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\""
 		);
 
 		begin match params.mode with

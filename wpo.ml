@@ -1403,41 +1403,40 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		| _ -> false
 	in
 	let output_proof (pr:#printer) =
-		let pr_s = pr#output_string in
-		let pr_i = pr#output_int in
 		let pr_exp = output_exp pr in
 		let pr_perm fname finfo =
-			pr_s "sigma(";
+			pr#puts "sigma(";
 			put_name fname pr;
-			pr_s ") = ";
+			pr#puts ") = ";
 			let punct = ref "" in
 			let rbr =
 				if solver#get_bool (argfilt_list finfo) then
 					if solver#get_bool (mset_status finfo) then
-						(pr_s "{";"}")
-					else (pr_s "[";"]")
+						(pr#puts "{"; "}")
+					else (pr#puts "["; "]")
 				else ""
 			in
 			let n = finfo.arity in
 			for j = 1 to n do
 				for i = 1 to n do
 					if solver#get_bool (perm finfo i j) then begin
-						pr_s !punct;
-						pr#output_int i;
+						pr#puts !punct;
+						pr#put_int i;
 						punct := ",";
 					end;
 				done;
 			done;
-			pr_s rbr;
+			pr#puts rbr;
 		in
-		let pr_exp_append = function
-			| Neg exp -> pr_s " - "; pr_exp exp;
-			| exp -> pr_s " + "; pr_exp exp;
+		let pr_exp_append =
+			function
+			| Neg exp -> pr#puts " - "; pr_exp exp;
+			| exp -> pr#puts " + "; pr_exp exp;
 		in
 		let pr_interpret fname finfo =
-			pr_s "I(";
+			pr#puts "I(";
 			put_name fname pr;
-			pr_s ") = ";
+			pr#puts ") = ";
 			let n = finfo.arity in
 			let sc =
 				if finfo.symtype = Fun then subterm_coef finfo
@@ -1450,15 +1449,15 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					if not (zero coef) then begin
 						let coef =
 							match coef with
-							| Neg coef -> pr_s (if !init then "-" else " - "); coef
-							| _ -> if not !init then pr_s " + "; coef
+							| Neg coef -> pr#puts (if !init then "-" else " - "); coef
+							| _ -> if not !init then pr#puts " + "; coef
 						in
 						if not (one coef) then begin
 							pr_exp coef;
-							pr_s " * ";
+							pr#puts " * ";
 						end;
-						pr_s "x";
-						pr_i i;
+						pr#puts "x";
+						pr#put_int i;
 						init := false;
 					end;
 				done;
@@ -1475,15 +1474,15 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					let pen = solver#get_value (subterm_penalty finfo i) in
 					if solver#get_bool (maxfilt finfo i) then begin
 						if !init then begin
-							if usemax then pr_s "max(";
+							if usemax then pr#puts "max(";
 						end else begin
-							pr_s ", ";
+							pr#puts ", ";
 						end;
-						pr_s "x"; pr_i i;
+						pr#puts "x"; pr#put_int i;
 						if not (zero pen) then begin
 							match pen with
-							| Neg pen -> pr_s " - "; pr_exp pen;
-							| _ -> pr_s " + "; pr_exp pen;
+							| Neg pen -> pr#puts " - "; pr_exp pen;
+							| _ -> pr#puts " + "; pr_exp pen;
 						end;
 						init := false;
 					end;
@@ -1496,24 +1495,24 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					end;
 				end else begin
 					if finfo.maxpol then begin
-						pr_s ", ";
+						pr#puts ", ";
 						init := true;
 						pr_sum ();
 					end;
 					if p.w_neg then begin
-						pr_s ", ";
+						pr#puts ", ";
 						pr_exp mcw;
 					end;
 					if usemax then begin
-						pr_s ")";
+						pr#puts ")";
 					end;
 				end;
 			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
-				pr_s "max(";
+				pr#puts "max(";
 				pr_sum ();
-				pr_s ", ";
+				pr#puts ", ";
 				pr_exp mcw;
-				pr_s ")";
+				pr#puts ")";
 			end else begin
 				pr_sum ();
 			end
@@ -1528,16 +1527,16 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				) &&
 				finfo.arity <> 0
 			then begin
-				pr_s "\t";
+				pr#puts "\t";
 				pr_perm fname finfo;
 				flag := true;
 			end;
 			if p.w_mode <> W_none then begin
-				pr_s "\t";
+				pr#puts "\t";
 				pr_interpret fname finfo;
 				flag := true;
 			end;
-			if !flag then pr#cr;
+			if !flag then pr#endl;
 		in
 		let pr_prec =
 			if p.prec_mode = PREC_none then
@@ -1552,10 +1551,10 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 							put_name fname pr;
 						| (fname,i)::(gname,j)::ps ->
 							put_name fname pr;
-							pr_s (if i = j then equiv else " > ");
+							pr#puts (if i = j then equiv else " > ");
 							sub ((gname,j)::ps)
 					in
-					pr_s "    PREC: ";
+					pr#puts "    PREC: ";
 					sub
 					(	List.sort
 						(fun (_,i) (_,j) -> compare j i)
@@ -1569,7 +1568,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 							[]
 						)
 					);
-					pr#cr;
+					pr#endl;
 		in
 		let pr_usable =
 			if p.dp && dg#minimal && p.usable || params.debug then
@@ -1600,9 +1599,9 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		pr_usable pr;
 		pr_usable_w pr;
 		if p.mcw_mode = MCW_num then begin
-			pr_s "    w0 = ";
+			pr#puts "    w0 = ";
 			pr_exp (solver#get_value mcw);
-			pr#cr;
+			pr#endl;
 		end;
 	in
 	(* Print CPF proof *)
@@ -1682,9 +1681,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 						Xml.enclose "polynomial" (
 							Xml.enclose "sum" (
 								Xml.enclose "polynomial" (
-									Xml.enclose_inline "variable" (
-										put_int i
-									)
+									Xml.enclose_inline "variable" (put_int i)
 								) <<
 								pr_int pen
 							)
@@ -1732,7 +1729,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 
 
 	let putdot pr =
-		pr#output_char '.';
+		pr#putc '.';
 		pr#flush;
 	in
 

@@ -13,11 +13,11 @@ let put_name name (pr:#Io.outputter) =
 	let rec sub i =
 		if i < n then begin
 			match name.[i] with
-			| '\\' -> pr#output_string "\\\\"; sub (i+1);
-			| '#' -> pr#output_string "\\#"; sub (i+1);
-			| '^' -> pr#output_string "\\^"; sub (i+1);
-			| ' ' -> pr#output_char name.[i+1]; sub (i+2);
-			| c -> pr#output_char c; sub (i+1);
+			| '\\'	-> pr#puts "\\\\"; sub (i+1);
+			| '#'	-> pr#puts "\\#"; sub (i+1);
+			| '^'	-> pr#puts "\\^"; sub (i+1);
+			| ' '	-> pr#putc name.[i+1]; sub (i+2);
+			| c		-> pr#putc c; sub (i+1);
 		end;
 	in
 	sub 0
@@ -188,14 +188,14 @@ let escape c = " " ^ String.make 1 c
 let rec output_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 	let rec sub =
 		function
-		| []	-> pr#output_char ')'
-		| t::ts -> pr#output_char ','; output_term pr t; sub ts
+		| []	-> pr#putc ')'
+		| t::ts -> pr#putc ','; output_term pr t; sub ts
 	in
 	fun (Node(f,ts)) ->
 		f#output pr;
 		match ts with
-		| []	-> if f#is_fun then pr#output_string "()";
-		| t::ts	-> pr#output_char '('; output_term pr t; sub ts
+		| []	-> if f#is_fun then pr#puts "()";
+		| t::ts	-> pr#putc '('; output_term pr t; sub ts
 
 let prerr_term t = output_term Io.cerr t
 let prerr_terms ts = List.iter (fun t -> prerr_term t; prerr_string "  ") ts
@@ -243,8 +243,8 @@ class ['a] rule s (l : (#sym as 'a) term) (r : 'a term) =
 			List.exists (fun rvar -> not (List.mem rvar lvars)) rvars
 
 		method output : 'b. (#outputter as 'b) -> unit = fun pr ->
-			output_term (pr :> #outputter) l;
-			pr#output_string (
+			output_term pr l;
+			pr#puts (
 				match s with
 				| StrictRule -> " -> "
 				| WeakRule -> " ->= "

@@ -2,6 +2,7 @@ open Util
 open Term
 open Trs
 open Params
+open Io
 
 let mark_name name = escape '#' ^ name
 let unmark_name name = String.sub name 2 (String.length name - 2)
@@ -153,10 +154,8 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			(* minimality can be assumed if all weak rules are size preserving *)
 			let tester i rule =
 				rule#is_weak && rule#is_size_increasing && (
-					log (fun _ ->
-						prerr_string "Detected size-increasing weak rule ";
-						prerr_int i;
-						prerr_endline ". Disabling minimality.";
+					log (puts "Detected size-increasing weak rule " << put_int i <<
+						puts ". Disabling minimality." << endl
 					); true)
 			in
 			if trs#exists_rule tester then begin
@@ -353,20 +352,20 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			x#iter_dps (fun _ rule -> rule#output_xml pr)
 		method iter_edges f = DG.iter_edges f dg
 		method output_edges : 'a. (#Io.printer as 'a) -> unit = fun pr ->
-			pr#output_string "Edges:";
+			pr#puts "Edges:";
 			pr#enter 2;
 			let iterer i _ =
 				let succ = DG.succ dg i in
 				if succ <> [] then begin
-					pr#cr;
-					pr#output_char '#';
-					pr#output_int i;
-					pr#output_string " -->";
+					pr#endl;
+					pr#putc '#';
+					pr#put_int i;
+					pr#puts " -->";
 					Abbrev.put_ints " #" succ pr;
 				end;
 			in
 			x#iter_dps iterer;
 			pr#leave 2;
-			pr#cr;
+			pr#endl;
 
 	end;;
