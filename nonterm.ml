@@ -10,7 +10,7 @@ let put_dp i l r pr =
 	pr#puts "\t"; pr_term l; pr#puts "  ->"; pr#endl;
 	pr#puts "  #"; pr#put_int i; pr#puts "\t"; pr_term r; pr#puts "  ->>"; pr#endl
 
-let put_loop (dg : 'a dg) u loop pr =
+let put_loop (dg : dg) u loop pr =
 	let rec sub pos =
 		function
 		| [] -> ()
@@ -31,7 +31,7 @@ let put_loop (dg : 'a dg) u loop pr =
 	in
 	sub 1 loop
 
-let estimate_paths len (trs : 'a trs) (dg : 'a dg) scc =
+let estimate_paths len (trs : trs) (dg : dg) scc =
 	let subdg = dg#get_subdg scc in
 	let rec sub n i k =
 		if n > len then []
@@ -49,7 +49,7 @@ let estimate_paths len (trs : 'a trs) (dg : 'a dg) scc =
 	in
 	sub 0
 
-let find_loop lim (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) scc =
+let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 	let iterer len nlim i1 =
 		let dp1 = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =

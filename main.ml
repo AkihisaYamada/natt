@@ -12,7 +12,7 @@ type result =
 | NO
 
 (* static usable rules *)
-let static_usable_rules (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) used_dpset =
+let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_dpset =
 	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,ts) as t) =
@@ -39,7 +39,7 @@ let static_usable_rules (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg)
 
 let uncurry =
 	if params.uncurry then
-		fun (trs : #sym trs) (dg : #sym dg) ->
+		fun (trs : #trs) (dg : #dg) ->
 			comment (puts "Uncurrying");
 			let appsyms = App.auto_uncurry trs dg in
 			if appsyms = [] then
@@ -56,7 +56,7 @@ let uncurry =
 		fun _ _ -> false
 
 
-let relative_test (trs : 'a trs) =
+let relative_test (trs : #trs) =
 	trs#exists_rule (fun i rule ->
 		if rule#is_weak && rule#is_duplicating then (
 			comment (puts "Weak rule e" << put_int i << puts " is duplicating" << endl);
@@ -67,7 +67,7 @@ let relative_test (trs : 'a trs) =
 		) else false
 	);;
 
-let theory_test (trs : 'a trs) =
+let theory_test (trs : #trs) =
 	let ths = trs#get_ths in
 	let ths = StrSet.remove "A" ths in
 	let ths = StrSet.remove "C" ths in
@@ -78,7 +78,7 @@ let theory_test (trs : 'a trs) =
 	end;;
 
 (* extra variable test *)
-let extra_test (trs : 'a trs) =
+let extra_test (trs : #trs) =
 	let iterer i rule =
 		if rule#has_extra_variable then begin
 			proof (puts "Extra variable in rule " << put_int i << puts "." << endl);
@@ -88,7 +88,7 @@ let extra_test (trs : 'a trs) =
 	trs#iter_rules iterer;;
 
 (* remove trivial relative rules *)
-let trivial_test (trs : 'a trs) =
+let trivial_test (trs : #trs) =
 	let iterer i rule =
 		if rule#l = rule#r then begin
 			if rule#is_strict then begin
@@ -107,7 +107,7 @@ let trivial_test (trs : 'a trs) =
 let dummy_estimator = new Estimator.t (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
-let rule_remove (trs : 'a trs) =
+let rule_remove (trs : #trs) =
 	if Array.length params.orders_removal > 0 then begin
 		let proc_list =
 			let folder p procs =
@@ -132,7 +132,7 @@ let rule_remove (trs : 'a trs) =
 	end;;
 
 (* reduction pair processor *)
-let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
+let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	let sccs = ref dg#get_sccs in
 	let remove_unusable () =
 		let init = ref true in
@@ -187,7 +187,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 	let remove_strict sccref =
 		let (usables,_) = static_usable_rules trs estimator dg !sccref in
 		let remove_by_proc proc =
-			proc#reduce dg (if proc#using_usable then usables
+			proc#reduce (if proc#using_usable then usables
 				else trs#fold_rules (fun i _ is -> i::is) []) sccref
 		in
 		List.exists remove_by_proc proc_list
@@ -202,7 +202,6 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			if dg#next then begin
 				cpf (
 					Xml.leave "acDPTerminationProof" <<
-					Xml.enclose "extensions" (Xml.enclose "rules" dg#output_dps_xml) <<
 					Xml.enter "acDPTerminationProof"
 				);
 				problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
@@ -213,7 +212,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				raise (if !given_up then Unknown else Success);
 			end
 		| scc::rest ->
-			problem (puts "  SCC {" << Abbrev.put_int_set " #" scc << puts " }\n    ");
+			problem (puts "  SCC {" << Abbrev.put_int_set " #" scc << puts " }" << endl);
 			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
 				comment (puts "only weak rules." << endl);
 				sccs := rest;
@@ -232,7 +231,7 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 	in
 	loop ();;
 
-let dp_prove (trs : 'a trs) =
+let dp_prove (trs : #trs) =
 	let estimator = new Estimator.t trs in
 	log estimator#output_sym_graph;
 
@@ -255,6 +254,16 @@ let dp_prove (trs : 'a trs) =
 			Xml.enclose "rules" (fun pr ->
 				dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml pr;)
 			)
+		) <<
+		Xml.enclose "extensions" (
+			Xml.enclose "rules" (fun (pr:#printer) ->
+				let iterer i (rule:rule) =
+					if rule#is_strict && trs#weakly_defines (root rule#l) then begin
+						List.iter (fun (rule:#rule) -> rule#output_xml pr) (extended_rules rule);
+					end;
+				in
+				trs#iter_rules iterer;
+			)
 		)
 	);
 	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
@@ -266,7 +275,7 @@ let dp_prove (trs : 'a trs) =
 
 
 
-let prove_termination (trs : 'a trs) =
+let prove_termination (trs : #trs) =
 	problem (puts "Input TRS:" << endl << trs#output);
 	cpf (
 		Xml.enclose "input" (Xml.enclose "acRewriteSystem" trs#output_xml) <<
@@ -275,10 +284,9 @@ let prove_termination (trs : 'a trs) =
 		Xml.enter "acTerminationProof"
 	);
 
-	theory_test trs;
-
 	let ret =
 		try
+			theory_test trs;
 			extra_test trs;
 			trivial_test trs;
 			rule_remove trs;

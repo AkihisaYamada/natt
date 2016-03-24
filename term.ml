@@ -2,11 +2,7 @@ open Util
 open Params
 open Io
 
-type 'a term = Node of 'a * 'a term list
-
 type symtype = Var | Fun | Th of string | Special
-
-type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
 
 let put_name name (pr:#Io.outputter) =
 	let n = String.length name in
@@ -42,6 +38,10 @@ class sym ty0 name0 =
 			else Xml.enclose_inline "name" x#output
 	end;;
 
+type 'a term = Node of 'a * 'a term list
+
+type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
+
 let root (Node(f,_)) = f
 let get_weight (WT(_,_,ws)) = ws
 let rec erase (WT(f,ss,_)) = Node(f,List.map erase ss)
@@ -57,7 +57,7 @@ let size : 'a term -> int =
 
 
 let var vname = Node(new sym Var vname, [])
-let app f args = Node(f, args)
+let app f args = Node((f:>sym), args)
 
 (* equality *)
 let rec term_eq (Node(f,ss) : #sym term) (Node(g,ts)) =
@@ -223,13 +223,11 @@ let rec output_xml_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 (*** rules ***)
 type strength = StrictRule | MediumRule | WeakRule
 
-class ['a] rule s (l : (#sym as 'a) term) (r : 'a term) =
+class rule s (l : sym term) (r : sym term) =
 	object (x)
-		val lhs : sym term = l
-		val rhs : sym term = r
 		val strength = s
-		method l = lhs
-		method r = rhs
+		method l = l
+		method r = r
 		method strength = strength
 		method size = size l + size r
 		method is_strict = strength = StrictRule
@@ -261,5 +259,25 @@ let rule l r = new rule StrictRule l r
 let weak_rule l r = new rule WeakRule l r
 let medium_rule l r = new rule MediumRule l r
 
-let map_rule : ((#sym as 'a) term -> 'a term) -> 'a rule -> 'a rule =
+let map_rule : ((#sym as 'a) term -> 'a term) -> rule -> rule =
 	fun f rule -> new rule rule#strength (f rule#l) (f rule#r)
+
+let extended_rules =
+	let x = var "_1" in
+	let y = var "_2" in
+	fun (rule:rule) ->
+		let l = rule#l in
+		let r = rule#r in
+		let f = root l in
+		match f#ty with
+		| Th "AC" -> [ new rule rule#strength (app f [l; x]) (app f [r; x]) ]
+		| Th "A" -> [
+			new rule rule#strength (app f [l; x]) (app f [r; x]);
+			new rule rule#strength (app f [x; l]) (app f [x; r]);
+			new rule rule#strength (app f [x; app f [l; y]]) (app f [x; app f [r; y]])
+		]
+		| Th "C" -> []
+		| Th s -> raise (No_support ("extension for theory: " ^ s))
+		| _ -> []
+
+

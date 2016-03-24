@@ -255,6 +255,7 @@ type params_type =
 	mutable debug2 : bool;
 	mutable tmpvar : bool;
 	mutable relative_usable : bool;
+	mutable naive_C : bool;
 };;
 
 let params =
@@ -280,6 +281,7 @@ let params =
 	debug2 = false;
 	tmpvar = true;
 	relative_usable = true;
+	naive_C = false;
 };;
 
 let dp = ref false in
@@ -397,6 +399,7 @@ while !i < argc do
 				| Some "desc" -> params.sort_scc <- SORT_desc;
 				| _ -> erro arg;
 			end
+		| "-naive-C", None -> params.naive_C <- true;
 		| "-ac", Some s ->
 			begin
 				match s with

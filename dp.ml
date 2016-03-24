@@ -44,25 +44,9 @@ let mark_term_ac =
 let mark_term (Node(f,ss) as s) =
 	if f#is_theoried then mark_term_ac s else mark_root s
 
-let extended_rules =
-	let x = var "_1" in
-	let y = var "_2" in
-	fun lr ->
-		let f = root lr#l in
-		match f#ty with
-		| Th "AC" -> [ new rule lr#strength (app f [lr#l; x]) (app f [lr#r; x]) ]
-		| Th "A" -> [
-			new rule lr#strength (app f [lr#l; x]) (app f [lr#r; x]);
-			new rule lr#strength (app f [x; lr#l]) (app f [x; lr#r]);
-			new rule lr#strength (app f [x; app f [lr#l; y]]) (app f [x; app f [lr#r; y]])
-		]
-		| Th "C" -> []
-		| Th s -> raise (No_support ("extension for theory: " ^ s))
-		| _ -> []
-
 (* Adding marked symbols *)
 
-let add_marked_symbol_default (trs : #sym trs) f =
+let add_marked_symbol_default (trs : #trs) f =
 	let f' = trs#get_sym (mark_sym f) in
 	f'#set_arity f#arity;;
 
@@ -74,7 +58,7 @@ let add_marked_symbol_ac =
 		let f' = trs#get_sym_name (mark_name f#name) in
 		f'#set_arity 1;;
 
-let add_marked_symbols (trs : #sym trs) =
+let add_marked_symbols (trs : #trs) =
 	let iterer f =
 		if f#is_defined then begin
 			if f#ty = Fun then begin
@@ -126,7 +110,7 @@ let get_sccs dg =
 let get_subsccs dg dpset =
 	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
-class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
+class dg (trs : trs) (estimator : Estimator.t) =
 	(* list of lists to list of sets *)
 	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
@@ -140,6 +124,37 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 		method add_dp lr =
 			dp_cnt <- dp_cnt + 1;
 			Hashtbl.add dp_table dp_cnt lr;
+
+		(* Generate dependency pairs *)
+		method generate_dp =
+			let rec generate_dp_sub strength s (Node(g,ts) as t) =
+				if trs#strictly_defines g && not (strict_subterm t s) then begin
+					x#add_dp (new rule strength s (mark_term t));
+				end;
+				List.iter (generate_dp_sub strength s) ts;
+			in
+			let generate_dp_default rule =
+				generate_dp_sub rule#strength (mark_term rule#l) rule#r
+			in
+			match params.acdp_mode with
+			| ACDP_new -> generate_dp_default
+			| ACDP_union -> fun rule ->
+				generate_dp_default rule;
+				if (root rule#l)#is_theoried then begin
+					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
+					List.iter iterer (extended_rules rule);
+				end;
+			| ACDP_KT98 -> fun rule ->
+				generate_dp_default rule;
+				if (root rule#l)#is_theoried then begin
+					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
+					List.iter iterer (extended_rules rule);
+				end;
+			| ACDP_ALM10 | ACDP_GK01 -> fun rule ->
+				generate_dp_default rule;
+				if (root rule#l)#is_theoried then begin
+					List.iter generate_dp_default (extended_rules rule);
+				end;
 
 		method init =
 			(* Relative: Moving duplicating or non-dominant weak rules to *medium* rules *)
@@ -159,43 +174,20 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 					); true)
 			in
 			if trs#exists_rule tester then begin
-				minimal <-false;
+				minimal <- false;
+			end;
+			if trs#is_theoried &&
+				(params.acdp_mode = ACDP_new || params.acdp_mode = ACDP_union)
+			then begin
+				(* turn AC theory into weak rules *)
+				trs#th_to_rules;
 			end;
 			(* Main process *)
 			add_marked_symbols trs;
-			(* Generating dependency pairs *)
-			let rec generate_dp_sub strength s (Node(g,ts) as t) =
-				if trs#strictly_defines g && not (strict_subterm t s) then begin
-					x#add_dp (new rule strength s (mark_term t));
-				end;
-				List.iter (generate_dp_sub strength s) ts;
+			let iterer i rule =
+				if trs#strictly_defines (root rule#l) then x#generate_dp rule;
 			in
-			let generate_dp_default i rule =
-				generate_dp_sub rule#strength (mark_term rule#l) rule#r
-			in
-			let generate_dp =
-				match params.acdp_mode with
-				| ACDP_new -> generate_dp_default
-				| ACDP_union -> fun i rule ->
-					generate_dp_default i rule;
-					if (root rule#l)#is_theoried then begin
-						let iterer xrule = x#add_dp (map_rule mark_term xrule) in
-						List.iter iterer (extended_rules rule);
-					end;
-				| ACDP_KT98 -> fun i rule ->
-					generate_dp_default i rule;
-					if (root rule#l)#is_theoried then begin
-						let iterer xrule = x#add_dp (map_rule mark_term xrule) in
-						List.iter iterer (extended_rules rule);
-					end;
-				| ACDP_ALM10
-				| ACDP_GK01 -> fun i rule ->
-					generate_dp_default i rule;
-					if (root rule#l)#is_theoried then begin
-						List.iter (generate_dp_default i) (extended_rules rule);
-					end;
-			in
-			trs#iter_rules (fun i rule -> if not rule#is_weak then generate_dp i rule;);
+			trs#iter_rules iterer;
 		
 			(* Additional rules for AC *)
 			let add_eq s t =
@@ -207,7 +199,7 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			let z = var "_3" in
 			let ac_mark_handle (f:#sym_detailed) =
 				if f#is_associative && f#is_defined then begin
-					let u s t = app (f:>sym) [s;t] in
+					let u s t = app f [s;t] in
 					let m =
 						if params.ac_mark_mode = AC_mark then
 							fun s t -> mark_root (u s t)
@@ -249,14 +241,7 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 						if not f#is_commutative then begin
 							add_eq (m v1 (u y z)) (m y z);
 						end;
-					| ACDP_union
-					| ACDP_new ->
-						x#add_dp (weak_rule (m (u v1 y) z) (m v1 (u y z)));
-						x#add_dp (weak_rule (m (u v1 y) z) (m y z));
-						if not f#is_commutative then begin
-							x#add_dp (weak_rule (m v1 (u y z)) (m (u v1 y) z));
-							x#add_dp (weak_rule (m v1 (u y z)) (m v1 y));
-						end;
+					| _ -> ()
 				end;
 			in
 			trs#iter_syms ac_mark_handle;
@@ -296,36 +281,17 @@ class ['a] dg (trs : (#sym as 'a) trs) (estimator : 'a Estimator.t) =
 			dp_table;
 
 		method private make_ac_ext =
-			let generate_dp i rule =
+			let iterer i rule =
 				if (root rule#l)#is_theoried then begin
-					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
-					List.iter iterer (extended_rules rule);
-				end;
-			in
-			trs#iter_rules generate_dp;
-			let ac_mark_handle f =
-				if f#is_defined && f#is_associative then begin
-					let u s t = app (f:>sym) [s;t] in
-					let m =
-						if params.ac_mark_mode = AC_mark then fun s t -> mark_root (u s t)
-						else u
-					in
-					let v1 = var "_1" in
-					let y = var "_2" in
-					let z = var "_3" in
-					if params.ac_mark_mode = AC_mark then begin
-						x#add_dp (weak_rule (m (u v1 y) z) (m v1 (u y z)));
-						if not f#is_commutative then begin
-							x#add_dp (weak_rule (m v1 (u y z)) (m (u v1 y) z));
-						end;
-					end;
-					x#add_dp (weak_rule (m (u v1 y) z) (m y z));
-					if not f#is_commutative then begin
-						x#add_dp (weak_rule (m v1 (u y z)) (m v1 y));
+					if rule#is_strict then begin
+						let iterer xrule = x#add_dp (map_rule mark_term xrule) in
+						List.iter iterer (extended_rules rule);
+					end else begin
+						x#generate_dp rule;
 					end;
 				end;
 			in
-			trs#iter_syms ac_mark_handle;
+			trs#iter_rules iterer;
 			x#make_dg;
 
 		method next = (* if there is a next problem, then init it and say true *)

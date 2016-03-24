@@ -72,7 +72,7 @@ let default_finfo f =
 	prec_exp = LI 0;
 }
 
-class processor p (trs : 'f trs) (estimator : 'f Estimator.t) (dg : 'f dg) =
+class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 
 	(* SMT variables *)
 
@@ -1728,7 +1728,7 @@ class processor p (trs : 'f trs) (estimator : 'f Estimator.t) (dg : 'f dg) =
 	let put_usables_cpf =
 		Xml.enclose "usableRules" (
 			Xml.enclose "rules" (fun (pr:#printer) ->
-				let iterer (i, (rule : 'f rule)) =
+				let iterer (i, (rule:rule)) =
 					if solver#get_bool (usable i) then rule#output_xml pr;
 				in
 				List.iter iterer !usables;
@@ -1759,7 +1759,7 @@ object (x)
 
 	method init current_usables scc =
 		initialized <- true;
-		debug (fun _ -> prerr_string " Initializing.";);
+		debug (puts " Initializing.");
 
 		if p.use_scope_ratio > 0 then begin
 			let rules_size = List.length current_usables in
@@ -1768,7 +1768,7 @@ object (x)
 				(use_scope_last_size - rules_size) * p.use_scope_ratio < rules_size;
 		end;
 		if use_scope then begin
-			debug(fun _ -> prerr_string " `Scope' mode.");
+			debug(puts " `Scope' mode.");
 			dplist := dg#get_dps;
 			usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
 		end else begin
@@ -1854,10 +1854,10 @@ object (x)
 				fun _ -> ();
 		in
 
-		debug2 (fun _ -> prerr_string "\n    Max symbols: {");
+		debug2 (endl << puts "Max symbols: {");
 		set_max p.max_mode !usables;
 		set_max p.max_mode !dplist;
-		debug2 (fun _ -> prerr_endline " }");
+		debug2 (puts " }" << endl);
 
 		solver#set_logic
 		(	"QF_" ^
@@ -2004,7 +2004,7 @@ object (x)
 		else
 			x#reset;
 
-	method reduce (dg : 'f dg) current_usables sccref =
+	method reduce current_usables sccref =
 		comment ( puts (name_order p) << putdot );
 		try
 			x#push current_usables !sccref;
@@ -2043,11 +2043,10 @@ object (x)
 				Xml.enclose_inline "acDPTerminationProof" (Xml.tag "acTrivialProc") <<
 				Xml.leave "acRedPairProc"
 			);
-
 			x#pop;
 			true
 		with Inconsistent ->
-			comment (fun _ -> prerr_string " ");
+			comment (puts " ");
 			x#pop;
 			false
 

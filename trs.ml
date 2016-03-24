@@ -16,12 +16,13 @@ module Ths = StrSet
 module Syms = StrSet
 module Rules = IntSet
 
-class sym_detailed (f:#sym) =
+class sym_detailed (f : sym) =
 	object (x:'a)
 		inherit sym f#ty f#name
 		val mutable arity = if f#is_var then Arity 0 else Unknown
 		val mutable defined_by = Rules.empty
 		val mutable weakly_defined_by = Rules.empty
+		method original = f
 		method arity_is_unknown = arity = Unknown
 		method set_arity a = arity <- Arity a
 		method arity =
@@ -39,7 +40,7 @@ class sym_detailed (f:#sym) =
 		method is_const = not x#is_weakly_defined
 	end;;
 
-let output_tbl_index (pr : #Io.printer) prefix (i, (rule : #sym rule)) =
+let output_tbl_index (pr : #Io.printer) prefix (i, (rule:#rule)) =
 	pr#puts "  ";
 	pr#puts prefix;
 	pr#put_int i;
@@ -64,10 +65,10 @@ let hashtbl_for_all test hashtbl =
 	with Success -> false
 
 (* the class for TRSs *)
-class ['f] trs =
+class trs =
 	object (x)
 		val sym_table = Hashtbl.create 64(* the symbol table *)
-		val rule_table : (int, (#sym as 'f) rule) Hashtbl.t = Hashtbl.create 256
+		val rule_table : (int, rule) Hashtbl.t = Hashtbl.create 256
 		val mutable rule_cnt = 0
 		val mutable strict_rule_cnt = 0
 		val mutable ths = Ths.empty(* the set of used built-in theories *)
@@ -79,7 +80,7 @@ class ['f] trs =
 (* methods for symbols *)
 		method private add_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
-				let f' = new sym_detailed f in
+				let f' = new sym_detailed (f:>sym) in
 				Hashtbl.add sym_table f#name f';
 				if f#is_var then f'#set_arity 0;
 				f'
@@ -91,12 +92,13 @@ class ['f] trs =
 			with Not_found -> new sym_detailed (new sym Fun name)
 		method get_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
-				if f#is_var then new sym_detailed f else
+				if f#is_var then new sym_detailed (f:>sym) else
 				try Hashtbl.find sym_table f#name with Not_found -> x#add_sym f
 		method find_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
-				try Hashtbl.find sym_table f#name with Not_found -> new sym_detailed f
-		method iter_syms iterer = Hashtbl.iter (fun _ -> iterer) sym_table
+				try Hashtbl.find sym_table f#name with Not_found -> new sym_detailed (f:>sym)
+		method iter_syms : (sym_detailed -> unit) -> unit =
+			fun iterer -> Hashtbl.iter (fun _ f -> iterer f) sym_table
 		method fold_syms : 'b. (sym_detailed -> 'b -> 'b) -> 'b -> 'b =
 			fun folder acc ->
 				Hashtbl.fold (fun _ -> folder) sym_table acc
@@ -111,18 +113,26 @@ class ['f] trs =
 				try let f = Hashtbl.find sym_table f#name in
 					f#is_defined || f#is_weakly_defined
 				with Not_found -> false
+		method weakly_defines : 'b. (#sym as 'b) -> bool =
+			fun f ->
+				f#is_fun &&
+				try let f = Hashtbl.find sym_table f#name in
+				f#is_weakly_defined
+				with Not_found -> false
+(* test for constructor terms *)
 		method const_term : 'b. (#sym as 'b) term -> bool =
 			fun (Node(f,ss)) ->
 				not (x#defines f) && List.for_all x#const_term ss
 		method relative_const : 'b. (#sym as 'b) term -> bool =
 			fun (Node(f,ss)) ->
 				not (x#strictly_defines f) && List.for_all x#relative_const ss
+
 (* methods for rules *)
 		method find_rule = Hashtbl.find rule_table
 		method iter_rules f = Hashtbl.iter f rule_table
 		method for_all_rules f = hashtbl_for_all f rule_table
 		method exists_rule f = hashtbl_exists f rule_table
-		method fold_rules : 'b. (int -> 'f rule -> 'b -> 'b) -> 'b -> 'b =
+		method fold_rules : 'b. (int -> rule -> 'b -> 'b) -> 'b -> 'b =
 			fun f a -> Hashtbl.fold f rule_table a
 		method private add_rule_i i rule =
 			let f = x#get_sym (root rule#l) in
@@ -151,6 +161,29 @@ class ['f] trs =
 			x#add_rule_i i lr;
 		method modify_rule i l r =
 			x#replace_rule i (new rule (x#find_rule i)#strength l r)
+
+(* theory to rules *)
+		method th_to_rules =
+			let v1 = var "_1" in
+			let v2 = var "_2" in
+			let v3 = var "_3" in
+			let iterer (f:sym_detailed) =
+				if f#is_associative then begin
+					let l = app f [v1; app f [v2;v3]] in
+					let r = app f [app f [v1;v2]; v3] in
+					x#add_rule (weak_rule l r);
+					if f#is_commutative then begin
+						if Params.(params.naive_C) then begin
+							x#add_rule (weak_rule (app f [v1;v2]) (app f [v2;v1]));
+						end;
+					end else begin
+						x#add_rule (weak_rule r l);
+					end;
+				end else if Params.(params.naive_C) && f#is_commutative then begin
+					x#add_rule (weak_rule (app f [v1;v2]) (app f [v2;v1]));
+				end;
+			in
+			x#iter_syms iterer;
 
 (* input *)
 		method private trans_term (Trs_ast.Term ((_,fname),ss)) =
@@ -222,7 +255,7 @@ class ['f] trs =
 			pr#endl;
 			pr#puts "(RULES";
 			pr#enter 4;
-			let iterer_rule _ (rule : #sym rule) =
+			let iterer_rule _ (rule : #rule) =
 				pr#endl;
 				rule#output pr;
 			in

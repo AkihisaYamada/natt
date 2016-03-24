@@ -7,7 +7,7 @@ open Params
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
 
-class ['f] t (trs : 'f #trs) =
+class t (trs : #trs) =
 
 	let init_sym_g =
 		let sym_g = SymG.create () in
@@ -91,7 +91,7 @@ class ['f] t (trs : 'f #trs) =
 				[]
 		
 		method instantiate_edge :
-		int ref -> int -> 'f term -> 'f term -> (int * 'f Subst.t) list =
+		int ref -> int -> sym term -> sym term -> (int * sym Subst.t) list =
 		fun cnt ->
 			let rec sub1 lim s t =
 				let paths = x#estimate_paths (min 4 lim) s t in
