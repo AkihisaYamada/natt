@@ -233,12 +233,12 @@ class ['f] trs =
 		method output_xml_ths : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			let iterer_A (f:#sym) =
 				match f#ty with
-				| Th "AC" | Th "A" -> Xml.enclose "name" f#output_xml pr
+				| Th "AC" | Th "A" -> f#output_xml pr
 				| _ -> ()
 			in
 			let iterer_C (f:#sym) =
 				match f#ty with
-				| Th "AC" | Th "C" -> Xml.enclose "name" f#output_xml pr
+				| Th "AC" | Th "C" -> f#output_xml pr
 				| _ -> ()
 			in
 			Xml.enclose "Asymbols" (fun _ -> x#iter_syms iterer_A) pr;

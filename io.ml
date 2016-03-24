@@ -110,6 +110,9 @@ let puts s pr = pr#puts s
 let putc c pr = pr#putc c
 let put_int i pr = pr#put_int i
 let endl pr = pr#endl
+let enter n pr = pr#enter n
+let leave n pr = pr#leave n
+
 
 let (<<) f g pr = f pr; g pr
 

@@ -200,8 +200,12 @@ let dp_remove (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		match !sccs with
 		| [] ->
 			if dg#next then begin
-				cpf (Xml.enclose "acDPTerminationProof" dg#output_dps_xml);
-				problem (puts "Next Dependency Pairs:\n" << dg#output_dps);
+				cpf (
+					Xml.leave "acDPTerminationProof" <<
+					Xml.enclose "extensions" (Xml.enclose "rules" dg#output_dps_xml) <<
+					Xml.enter "acDPTerminationProof"
+				);
+				problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
 				sccs := dg#get_sccs;
 				loop ();
 			end else begin
@@ -238,22 +242,22 @@ let dp_prove (trs : 'a trs) =
 	dg#init;
 	cpf (
 		Xml.enclose "equations" (
-			Xml.enclose "rules" (fun os ->
-				trs#iter_rules (fun _ rule -> if rule#is_weak then rule#output_xml os;)
+			Xml.enclose "rules" (fun pr ->
+				trs#iter_rules (fun _ rule -> if rule#is_weak then rule#output_xml pr;)
 			)
 		) <<
 		Xml.enclose "dpEquations" (
-			Xml.enclose "rules" (fun os ->
-				dg#iter_dps (fun _ dp -> if dp#is_weak then dp#output_xml os;)
+			Xml.enclose "rules" (fun pr ->
+				dg#iter_dps (fun _ dp -> if dp#is_weak then dp#output_xml pr;)
 			)
 		) <<
 		Xml.enclose "dps" (
-			Xml.enclose "rules" (fun os ->
-				dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml os;)
+			Xml.enclose "rules" (fun pr ->
+				dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml pr;)
 			)
 		)
 	);
-	problem (puts "Dependency Pairs:\n" << dg#output_dps);
+	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
 	log dg#output_edges;
 
 	try dp_remove trs estimator dg with it ->
@@ -382,16 +386,7 @@ object (x)
 						err "Rule removal processor must be monotone";
 				) params.orders_removal;
 			let ans = prove_termination trs in
-(*				cpf (fun os ->
-				output_string os
-				(	match ans with
-					| YES	-> "<yes>"
-					| NO	-> "<no>"
-					| MAYBE	-> "<maybe>"
-				);
-				output_char os '\n';
-			);
-*)				cpf (Xml.leave "certificationProblem" << endl);
+				cpf (Xml.leave "certificationProblem" << endl);
 			if not params.cpf then
 				print_endline
 				(	match ans with

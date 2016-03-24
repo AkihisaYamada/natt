@@ -72,7 +72,7 @@ let default_finfo f =
 	prec_exp = LI 0;
 }
 
-class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
+class processor p (trs : 'f trs) (estimator : 'f Estimator.t) (dg : 'f dg) =
 
 	(* SMT variables *)
 
@@ -1402,6 +1402,14 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		| Mat m -> Matrix.is_unit (LI 0) (LI 1) m
 		| _ -> false
 	in
+	let status_is_used =
+		p.ext_mset && p.ext_lex ||
+		p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
+		p.collapse
+	in
+	let weight_is_used = p.w_mode <> W_none in
+	let usable_is_used = p.dp && p.usable in
+	let prec_is_used = p.prec_mode <> PREC_none in
 	let output_proof (pr:#printer) =
 		let pr_exp = output_exp pr in
 		let pr_perm fname finfo =
@@ -1519,85 +1527,68 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 		in
 		let pr_symbol fname finfo =
 			let flag = ref false in
-			if
-				(
-					p.ext_mset && p.ext_lex ||
-					p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
-					p.collapse
-				) &&
-				finfo.arity <> 0
-			then begin
+			if status_is_used then begin
 				pr#puts "\t";
 				pr_perm fname finfo;
 				flag := true;
 			end;
-			if p.w_mode <> W_none then begin
+			if weight_is_used then begin
 				pr#puts "\t";
 				pr_interpret fname finfo;
 				flag := true;
 			end;
 			if !flag then pr#endl;
 		in
-		let pr_prec =
-			if p.prec_mode = PREC_none then
-				fun _ -> ()
-			else
-				fun _ ->
-					let equiv = if p.prec_mode = PREC_quasi then " = " else ", " in
-					let rec sub =
-						function
-						| [] -> ()
-						| (fname,_)::[] ->
-							put_name fname pr;
-						| (fname,i)::(gname,j)::ps ->
-							put_name fname pr;
-							pr#puts (if i = j then equiv else " > ");
-							sub ((gname,j)::ps)
-					in
-					pr#puts "    PREC: ";
-					sub
-					(	List.sort
-						(fun (_,i) (_,j) -> compare j i)
-						(	Hashtbl.fold
-							(fun fname finfo ps ->
-								if solver#get_bool (argfilt_list finfo) then
-									(fname, smt_eval_float (solver#get_value (prec finfo)))::ps
-								else ps
-							)
-							sigma
-							[]
-						)
-					);
-					pr#endl;
+		let pr_prec pr =
+			let equiv = if p.prec_mode = PREC_quasi then " = " else ", " in
+			let rec sub =
+				function
+				| [] -> ()
+				| (fname,_)::[] ->
+					put_name fname pr;
+				| (fname,i)::(gname,j)::ps ->
+					put_name fname pr;
+					pr#puts (if i = j then equiv else " > ");
+					sub ((gname,j)::ps)
+			in
+			pr#puts "    PREC: ";
+			sub
+			(	List.sort
+				(fun (_,i) (_,j) -> compare j i)
+				(	Hashtbl.fold
+					(fun fname finfo ps ->
+						if solver#get_bool (argfilt_list finfo) then
+							(fname, smt_eval_float (solver#get_value (prec finfo)))::ps
+						else ps
+					)
+					sigma
+					[]
+				)
+			);
+			pr#endl;
 		in
 		let pr_usable =
-			if p.dp && dg#minimal && p.usable || params.debug then
-				let folder is (i,_) =
-					if solver#get_bool (usable i) then i::is else is
-				in
-				puts "    USABLE RULES: {" <<
-				Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
-				puts " }" <<
-				endl
-			else
-				fun _ -> ()
+			let folder is (i,_) =
+				if solver#get_bool (usable i) then i::is else is
+			in
+			puts "    USABLE RULES: {" <<
+			Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
+			puts " }" <<
+			endl
 		in
 		let pr_usable_w =
-			if p.dp && p.usable_w && p.w_mode <> W_none then
-				let folder is (i,_) =
-					if solver#get_bool (usable_w i) then i::is else is
-				in
-				puts "    USABLE RULES(WEIGHT): {" <<
-				Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
-				puts " }" <<
-				endl
-			else
-				fun _ -> ()
+			let folder is (i,_) =
+				if solver#get_bool (usable_w i) then i::is else is
+			in
+			puts "    USABLE RULES(WEIGHT): {" <<
+			Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
+			puts " }" <<
+			endl
 		in
 		Hashtbl.iter pr_symbol sigma;
-		pr_prec ();
-		pr_usable pr;
-		pr_usable_w pr;
+		if prec_is_used then pr_prec pr;
+		if usable_is_used || params.debug then pr_usable pr;
+		if p.dp && p.usable_w && p.w_mode <> W_none then pr_usable_w pr;
 		if p.mcw_mode = MCW_num then begin
 			pr#puts "    w0 = ";
 			pr_exp (solver#get_value mcw);
@@ -1606,7 +1597,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 	in
 	(* Print CPF proof *)
 	let output_cpf =
-		let pr_status finfo pr =
+		let put_status finfo pr =
 			Xml.enter "status" pr;
 			let n = finfo.arity in
 			for j = 1 to n do
@@ -1618,15 +1609,15 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			done;
 			Xml.leave "status" pr;
 		in
-		let pr_prec finfo =
+		let put_prec finfo =
 			Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value (prec finfo))))
 		in
 		let pr_precstat pr fname finfo =
 			Xml.enclose "precedenceStatusEntry" (
 				Xml.enclose_inline "name" (put_name fname) <<
 				Xml.enclose_inline "arity" (put_int finfo.arity) <<
-				pr_prec finfo <<
-				pr_status finfo
+				put_prec finfo <<
+				put_status finfo
 			) pr
 		in
 		let pr_interpret pr fname finfo =
@@ -1638,7 +1629,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 				if finfo.symtype = Fun then subterm_coef finfo
 				else (fun v _ -> v) (subterm_coef finfo 1)
 			in
-			let pr_int i =
+			let put_poly_int i =
 				Xml.enclose "polynomial" (
 					Xml.enclose "coefficient" (
 						Xml.enclose_inline "integer" (
@@ -1647,7 +1638,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					)
 				)
 			in
-			let pr_sum pr =
+			let put_sum pr =
 				Xml.enter "polynomial" pr;
 				Xml.enter "sum" pr;
 				for i = 1 to n do
@@ -1655,7 +1646,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 					if coef <> 0 then begin
 						Xml.enclose "polynomial" (
 							Xml.enclose "product" (
-								pr_int coef <<
+								put_poly_int coef <<
 								Xml.enclose "polynomial" (
 									Xml.enclose_inline "variable" (
 										put_int i
@@ -1665,7 +1656,7 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 						) pr;
 					end;
 				done;
-				pr_int (smt_eval_int (solver#get_value (weight finfo))) pr;
+				put_poly_int (smt_eval_int (solver#get_value (weight finfo))) pr;
 				Xml.leave "sum" pr;
 				Xml.leave "polynomial" pr;
 			in
@@ -1683,15 +1674,15 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 								Xml.enclose "polynomial" (
 									Xml.enclose_inline "variable" (put_int i)
 								) <<
-								pr_int pen
+								put_poly_int pen
 							)
 						) pr;
 					end;
 				done;
 				if finfo.maxpol then begin
-					pr_sum pr;
+					put_sum pr;
 				end else begin
-					pr_int (smt_eval_int (solver#get_value mcw)) pr;
+					put_poly_int (smt_eval_int (solver#get_value mcw)) pr;
 				end;
 				if usemax then begin
 					Xml.leave "max" pr;
@@ -1700,19 +1691,23 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
 				Xml.enclose "polynomial" (
 					Xml.enclose "max" (
-						pr_sum <<
-						pr_int (smt_eval_int (solver#get_value mcw))
+						put_sum <<
+						put_poly_int (smt_eval_int (solver#get_value mcw))
 					)
 				) pr;
 			end else
-				pr_sum pr;
+				put_sum pr;
 			Xml.leave "interpret" pr;
 		in
 		fun pr ->
-			Xml.enter "weightedPathOrder" pr;
-			Xml.enter "precedenceStatus" pr;
-			Hashtbl.iter (pr_precstat pr) sigma;
-			Xml.leave "precedenceStatus" pr;
+			Xml.enter "orderingConstraintProof" pr;
+			if prec_is_used || status_is_used then begin
+				Xml.enter "redPair" pr;
+				Xml.enter "weightedPathOrder" pr;
+				Xml.enter "precedenceStatus" pr;
+				Hashtbl.iter (pr_precstat pr) sigma;
+				Xml.leave "precedenceStatus" pr;
+			end;
 			Xml.enter "redPair" pr;
 			Xml.enter "interpretation" pr;
 			Xml.enclose "type" (
@@ -1724,7 +1719,21 @@ class processor p (trs : 'a trs) (estimator : 'a Estimator.t) (dg : 'a dg) =
 			Hashtbl.iter (pr_interpret pr) sigma;
 			Xml.leave "interpretation" pr;
 			Xml.leave "redPair" pr;
-			Xml.leave "weightedPathOrder" pr;
+			if prec_is_used || status_is_used then begin
+				Xml.leave "weightedPathOrder" pr;
+				Xml.leave "redPair" pr;
+			end;
+			Xml.leave "orderingConstraintProof" pr;
+	in
+	let put_usables_cpf =
+		Xml.enclose "usableRules" (
+			Xml.enclose "rules" (fun (pr:#printer) ->
+				let iterer (i, (rule : 'f rule)) =
+					if solver#get_bool (usable i) then rule#output_xml pr;
+				in
+				List.iter iterer !usables;
+			)
+		)
 	in
 
 
@@ -1995,7 +2004,7 @@ object (x)
 		else
 			x#reset;
 
-	method reduce (dg : 'a dg) current_usables sccref =
+	method reduce (dg : 'f dg) current_usables sccref =
 		comment ( puts (name_order p) << putdot );
 		try
 			x#push current_usables !sccref;
@@ -2017,9 +2026,10 @@ object (x)
 			solver#check;
 			comment (puts " succeeded." << endl);
 			proof output_proof;
-			cpf output_cpf;
+			cpf (Xml.enter "acRedPairProc" << output_cpf << Xml.enter "dps" << Xml.enter "rules");
 			let folder i ret =
 				if solver#get_bool (EV(gt_v i)) then (
+					cpf ((dg#find_dp i)#output_xml);
 					dg#remove_dp i;
 					sccref := IntSet.remove i !sccref;
 					i :: ret
@@ -2027,6 +2037,13 @@ object (x)
 			in
 			let rem_dps = IntSet.fold folder !sccref [] in
 			proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
+			cpf (
+				Xml.leave "rules" << Xml.leave "dps" <<
+				put_usables_cpf <<
+				Xml.enclose_inline "acDPTerminationProof" (Xml.tag "acTrivialProc") <<
+				Xml.leave "acRedPairProc"
+			);
+
 			x#pop;
 			true
 		with Inconsistent ->
