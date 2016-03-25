@@ -27,6 +27,7 @@ let delete_common =
 
 type finfo =
 {
+	sym : sym;
 	symtype : symtype;
 	is_associative : bool;
 	is_commutative : bool;
@@ -48,8 +49,9 @@ type finfo =
 	mutable subterm_penalty_exp : int -> exp;
 	mutable prec_exp : exp;
 }
-let default_finfo f =
+let default_finfo (f:#sym_detailed) =
 {
+	sym = (f:>sym);
 	symtype = f#ty;
 	arity = f#arity;
 	is_commutative = f#is_commutative;
@@ -1412,9 +1414,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 	let prec_is_used = p.prec_mode <> PREC_none in
 	let output_proof (pr:#printer) =
 		let pr_exp = output_exp pr in
-		let pr_perm fname finfo =
+		let pr_perm finfo =
 			pr#puts "sigma(";
-			put_name fname pr;
+			finfo.sym#output pr;
 			pr#puts ") = ";
 			let punct = ref "" in
 			let rbr =
@@ -1441,9 +1443,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			| Neg exp -> pr#puts " - "; pr_exp exp;
 			| exp -> pr#puts " + "; pr_exp exp;
 		in
-		let pr_interpret fname finfo =
+		let pr_interpret finfo =
 			pr#puts "I(";
-			put_name fname pr;
+			finfo.sym#output pr;
 			pr#puts ") = ";
 			let n = finfo.arity in
 			let sc =
@@ -1529,12 +1531,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			let flag = ref false in
 			if status_is_used then begin
 				pr#puts "\t";
-				pr_perm fname finfo;
+				pr_perm finfo;
 				flag := true;
 			end;
 			if weight_is_used then begin
 				pr#puts "\t";
-				pr_interpret fname finfo;
+				pr_interpret finfo;
 				flag := true;
 			end;
 			if !flag then pr#endl;
@@ -1544,12 +1546,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			let rec sub =
 				function
 				| [] -> ()
-				| (fname,_)::[] ->
-					put_name fname pr;
-				| (fname,i)::(gname,j)::ps ->
-					put_name fname pr;
+				| ((f:#sym),_)::[] ->
+					f#output pr;
+				| (f,i)::(g,j)::ps ->
+					f#output pr;
 					pr#puts (if i = j then equiv else " > ");
-					sub ((gname,j)::ps)
+					sub ((g,j)::ps)
 			in
 			pr#puts "    PREC: ";
 			sub
@@ -1558,7 +1560,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				(	Hashtbl.fold
 					(fun fname finfo ps ->
 						if solver#get_bool (argfilt_list finfo) then
-							(fname, smt_eval_float (solver#get_value (prec finfo)))::ps
+							(finfo.sym, smt_eval_float (solver#get_value (prec finfo)))::ps
 						else ps
 					)
 					sigma
@@ -1612,17 +1614,17 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		let put_prec finfo =
 			Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value (prec finfo))))
 		in
-		let pr_precstat pr fname finfo =
+		let pr_precstat pr _ finfo =
 			Xml.enclose "precedenceStatusEntry" (
-				Xml.enclose_inline "name" (put_name fname) <<
+				finfo.sym#output_xml <<
 				Xml.enclose_inline "arity" (put_int finfo.arity) <<
 				put_prec finfo <<
 				put_status finfo
 			) pr
 		in
-		let pr_interpret pr fname finfo =
+		let pr_interpret pr _ finfo =
 			Xml.enter "interpret" pr;
-			Xml.enclose_inline "name" (put_name fname) pr;
+			finfo.sym#output_xml pr;
 			let n = finfo.arity in
 			Xml.enclose_inline "arity" (put_int n) pr;
 			let sc =

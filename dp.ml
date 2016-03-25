@@ -64,7 +64,7 @@ let add_marked_symbol_ac =
 	| AC_unmark -> fun _ _ -> ()
 	| AC_mark -> add_marked_symbol_default
 	| AC_guard -> fun trs f ->
-		let f' = trs#get_sym_name (mark_name f#name) in
+		let f' = trs#get_sym (new sym_marked f#ty f#name) in
 		f'#set_arity 1;;
 
 let add_marked_symbols (trs : #trs) =
