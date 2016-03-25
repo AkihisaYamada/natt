@@ -18,7 +18,9 @@ module Rules = IntSet
 
 class sym_detailed (f : sym) =
 	object (x:'a)
-		inherit sym f#ty f#name
+		inherit sym f#ty
+		method name = f#name
+		method output_xml = f#output_xml
 		val mutable arity = if f#is_var then Arity 0 else Unknown
 		val mutable defined_by = Rules.empty
 		val mutable weakly_defined_by = Rules.empty
@@ -86,10 +88,10 @@ class trs =
 				f'
 		method get_sym_name name =
 			try Hashtbl.find sym_table name
-			with Not_found -> x#add_sym (new sym Fun name)
+			with Not_found -> x#add_sym (new sym_unmarked Fun name)
 		method find_sym_name name =
 			try Hashtbl.find sym_table name
-			with Not_found -> new sym_detailed (new sym Fun name)
+			with Not_found -> new sym_detailed (new sym_unmarked Fun name)
 		method get_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
 				if f#is_var then new sym_detailed (f:>sym) else
@@ -205,11 +207,11 @@ class trs =
 			| Trs_ast.Equations eqs -> List.iter (x#add_eq_raw) eqs
 			| Trs_ast.Builtin ((_,th), syms) ->
 				ths <- Ths.add th ths;
-				List.iter (fun (_,name) -> ignore (x#add_sym (new sym (Th th) name))) syms
+				List.iter (fun (_,name) -> ignore (x#add_sym (new sym_unmarked (Th th) name))) syms
 		method private add_decl =
 			Trs_ast.(function 
 			| VarDecl xs		->
-				List.iter (fun (_,name) -> ignore (x#add_sym (new sym Var name))) xs
+				List.iter (fun (_,name) -> ignore (x#add_sym (new sym_unmarked Var name))) xs
 			| TheoryDecl ths	-> List.iter (x#add_theory_raw) ths
 			| RulesDecl rs		-> List.iter (x#add_rule_raw) rs
 			| StrategyDecl _	-> ()(* raise UnknownStrategy *)

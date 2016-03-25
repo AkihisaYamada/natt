@@ -18,25 +18,29 @@ let put_name name (pr:#Io.outputter) =
 	in
 	sub 0
 
-class sym ty0 name0 =
-	object (x:'x)
-		val mutable ty = ty0
-		val mutable name = name0
-		method is_var = ty = Var
-		method is_fun = not x#is_var
-		method is_theoried = match ty with Th _ -> true | _ -> false
-		method is_associative = ty = Th "AC" || ty = Th "A"
-		method is_commutative = ty = Th "AC" || ty = Th "C"
-		method ty = ty
-		method set_ty ty' = ty <- ty'
-		method name = name
-		method equals : 'b. (<name:string;..> as 'b) -> bool = fun y ->
-			name = y#name
-		method output : 'b. (#outputter as 'b) -> unit = put_name name
-		method output_xml : 'b. (#printer as 'b) -> unit =
-			if x#is_var then Xml.enclose_inline "var" x#output
-			else Xml.enclose_inline "name" x#output
-	end;;
+class virtual sym ty0 = object (x:'x)
+	val mutable ty = ty0
+	method is_var = ty = Var
+	method is_fun = not x#is_var
+	method is_theoried = match ty with Th _ -> true | _ -> false
+	method is_associative = ty = Th "AC" || ty = Th "A"
+	method is_commutative = ty = Th "AC" || ty = Th "C"
+	method ty = ty
+	method set_ty ty' = ty <- ty'
+	method virtual name : string
+	method equals : 'b. (<name:string;..> as 'b) -> bool = fun y ->
+		x#name = y#name
+	method output : 'b. (#outputter as 'b) -> unit = put_name x#name
+	method virtual output_xml : 'b. (#printer as 'b) -> unit
+end
+
+class sym_unmarked ty0 name = object (x:'x)
+	inherit sym ty0
+	method name = name
+	method output_xml : 'b. (#printer as 'b) -> unit =
+		if x#is_var then Xml.enclose_inline "var" x#output
+		else Xml.enclose_inline "name" x#output
+end
 
 type 'a term = Node of 'a * 'a term list
 
@@ -56,11 +60,11 @@ let size : 'a term -> int =
 	sub1 0
 
 
-let var vname = Node(new sym Var vname, [])
+let var vname = Node((new sym_unmarked Var vname :> sym), [])
 let app f args = Node((f:>sym), args)
 
 (* equality *)
-let rec term_eq (Node(f,ss) : #sym term) (Node(g,ts)) =
+let rec term_eq (Node((f:#sym),ss)) (Node(g,ts)) =
 	f#equals g && List.for_all2 term_eq ss ts
 
 let rec wterm_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
@@ -181,8 +185,6 @@ let top_ac_subterms (Node(f,ss) as s) =
 		let subargs = subsequences args in
 		List.map (fold f) (List.filter (fun ts -> List.length ts > 1) subargs)
 	else [s]
-
-let escape c = " " ^ String.make 1 c
 
 (* printers *)
 let rec output_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =

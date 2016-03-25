@@ -105,7 +105,7 @@ let matches : (#sym as 'a) term -> 'a term -> 'a t option =
 	fun s t -> sub1 (new t) s t
 
 let vrename v =
-	let renamer f = new sym f#ty (f#name ^ "_{" ^ v ^ "}") in
+	let renamer f = new sym_unmarked f#ty (f#name ^ "_{" ^ v ^ "}") in
 	let rec rename renamer (Node(f,ss)) =
 		let ss' = List.map (rename renamer) ss in
 		Node((if f#is_var then renamer f else f), ss')

@@ -45,7 +45,7 @@ let uncurry (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
 	in
 
 	let uncurry_top (f,ss,d,aa) =
-		let f' = if d > 0 then new sym f#ty (uncurry_name f#name d) else f in
+		let f' = if d > 0 then new sym_unmarked f#ty (uncurry_name f#name d) else f in
 		Node(f',ss)
 	in
 	let rec uncurry_term s = uncurry_top (uncurry_sub s)

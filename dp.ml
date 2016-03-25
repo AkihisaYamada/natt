@@ -4,9 +4,10 @@ open Trs
 open Params
 open Io
 
+let escape c = " " ^ String.make 1 c
+
 let mark_name name = escape '#' ^ name
 let unmark_name name = String.sub name 2 (String.length name - 2)
-
 let string_prefix s t =
 	let n = String.length t in
 	String.length s >= n &&
@@ -17,9 +18,18 @@ let string_prefix s t =
 
 let marked_name name = string_prefix name (escape '#')
 
-let mark_sym f = new sym f#ty (mark_name f#name)
+class sym_marked ty0 name0 = object
+	inherit sym ty0
+	val mutable name = name0
+	method name = mark_name name
+	method output_xml =
+		Xml.enclose_inline "sharp" (Xml.enclose_inline "name" (put_name name))
+end
 
-let mark_root (Node(f,ss)) = Node(mark_sym f, ss)
+let mark_sym (f:#sym) = new sym_marked f#ty f#name
+
+let mark_root (Node((f:#sym),ss)) = Node(mark_sym f, ss)
+
 
 let mark_term_KT98 =
 	let rec sub (f:#sym) (Node(g,ss) as s) =
@@ -31,8 +41,7 @@ let mark_term_KT98 =
 			Node(mark_sym f, List.map (sub f) ss)
 		else mark_root s
 
-let guard_term (Node(f,ss) as s) =
-	Node(new sym Fun (mark_name f#name), [s])
+let guard_term (Node(f,ss) as s) = Node(new sym_marked Fun f#name, [s])
 
 let mark_term_ac =
 	match params.ac_mark_mode with
