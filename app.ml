@@ -1,4 +1,5 @@
 open Util
+open Sym
 open Term
 open Trs
 open Dp
@@ -40,12 +41,8 @@ let uncurry (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
 	trs#iter_rules iterer;
 	dg#iter_dps iterer;
 
-	let uncurry_name fname i =
-		a#name ^ " ^" ^ string_of_int i ^ "_" ^ fname
-	in
-
 	let uncurry_top (f,ss,d,aa) =
-		let f' = if d > 0 then new sym_unmarked f#ty (uncurry_name f#name d) else f in
+		let f' = if d > 0 then new sym_freezed a f d else f in
 		Node(f',ss)
 	in
 	let rec uncurry_term s = uncurry_top (uncurry_sub s)
@@ -81,7 +78,7 @@ let uncurry (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
 			let args = ref (varlist "_" 1 n) in
 			let r = ref (app (f :> sym) !args) in
 			for i = 1 to aa do
-				let fi = trs#get_sym_name (uncurry_name fname i) in
+				let fi = trs#get_sym_name (freeze_name a#name fname i) in
 				fi#set_arity (n + i * nargs);
 				let new_args = varlist "_" (n + i * nargs) nargs in
 				let l = app (a :> sym) (!r :: new_args) in

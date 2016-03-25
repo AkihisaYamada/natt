@@ -31,6 +31,7 @@ OCAML_SRCS=\
 	preorder.ml \
 	mset.ml \
 	abbrev.ml \
+	sym.ml \
 	term.ml \
 	subst.ml \
 	trs.ml \

@@ -1,4 +1,5 @@
 open Util
+open Sym
 open Term
 open Trs
 open Params

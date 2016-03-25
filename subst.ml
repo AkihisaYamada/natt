@@ -1,3 +1,4 @@
+open Sym
 open Term
 
 exception Inconsistent

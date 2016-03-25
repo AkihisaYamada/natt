@@ -1,4 +1,5 @@
 open Params
+open Sym
 open Term
 open Trs
 open Dp

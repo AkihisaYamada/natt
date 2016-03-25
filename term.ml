@@ -1,46 +1,7 @@
 open Util
 open Params
 open Io
-
-type symtype = Var | Fun | Th of string | Special
-
-let put_name name (pr:#Io.outputter) =
-	let n = String.length name in
-	let rec sub i =
-		if i < n then begin
-			match name.[i] with
-			| '\\'	-> pr#puts "\\\\"; sub (i+1);
-			| '#'	-> pr#puts "\\#"; sub (i+1);
-			| '^'	-> pr#puts "\\^"; sub (i+1);
-			| ' '	-> pr#putc name.[i+1]; sub (i+2);
-			| c		-> pr#putc c; sub (i+1);
-		end;
-	in
-	sub 0
-
-class virtual sym ty0 = object (x:'x)
-	val mutable ty = ty0
-	method is_var = ty = Var
-	method is_fun = not x#is_var
-	method is_theoried = match ty with Th _ -> true | _ -> false
-	method is_associative = ty = Th "AC" || ty = Th "A"
-	method is_commutative = ty = Th "AC" || ty = Th "C"
-	method ty = ty
-	method set_ty ty' = ty <- ty'
-	method virtual name : string
-	method equals : 'b. (<name:string;..> as 'b) -> bool = fun y ->
-		x#name = y#name
-	method output : 'b. (#outputter as 'b) -> unit = put_name x#name
-	method virtual output_xml : 'b. (#printer as 'b) -> unit
-end
-
-class sym_unmarked ty0 name = object (x:'x)
-	inherit sym ty0
-	method name = name
-	method output_xml : 'b. (#printer as 'b) -> unit =
-		if x#is_var then Xml.enclose_inline "var" x#output
-		else Xml.enclose_inline "name" x#output
-end
+open Sym
 
 type 'a term = Node of 'a * 'a term list
 
@@ -58,7 +19,6 @@ let size : 'a term -> int =
 		| s::ss -> sub2 (sub1 ret s) ss
 	in
 	sub1 0
-
 
 let var vname = Node((new sym_unmarked Var vname :> sym), [])
 let app f args = Node((f:>sym), args)
@@ -265,8 +225,8 @@ let map_rule : ((#sym as 'a) term -> 'a term) -> rule -> rule =
 	fun f rule -> new rule rule#strength (f rule#l) (f rule#r)
 
 let extended_rules =
-	let x = var "_1" in
-	let y = var "_2" in
+	let x = Node((new sym_fresh Var 1 :> sym), []) in
+	let y = Node((new sym_fresh Var 2 :> sym), []) in
 	fun (rule:rule) ->
 		let l = rule#l in
 		let r = rule#r in

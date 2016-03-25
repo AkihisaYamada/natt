@@ -1,4 +1,5 @@
 open Util
+open Sym
 open Term
 open Subst
 open Io
@@ -166,9 +167,9 @@ class trs =
 
 (* theory to rules *)
 		method th_to_rules =
-			let v1 = var "_1" in
-			let v2 = var "_2" in
-			let v3 = var "_3" in
+			let v1 = var "x" in
+			let v2 = var "y" in
+			let v3 = var "z" in
 			let iterer (f:sym_detailed) =
 				if f#is_associative then begin
 					let l = app f [v1; app f [v2;v3]] in

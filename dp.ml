@@ -1,35 +1,11 @@
 open Util
+open Sym
 open Term
 open Trs
 open Params
 open Io
 
-let escape c = " " ^ String.make 1 c
-
-let mark_name name = escape '#' ^ name
-let unmark_name name = String.sub name 2 (String.length name - 2)
-let string_prefix s t =
-	let n = String.length t in
-	String.length s >= n &&
-	let rec sub i =
-		i >= n || s.[i] = t.[i] && sub (i+1)
-	in
-	sub 0
-
-let marked_name name = string_prefix name (escape '#')
-
-class sym_marked ty0 name0 = object
-	inherit sym ty0
-	val mutable name = name0
-	method name = mark_name name
-	method output_xml =
-		Xml.enclose_inline "sharp" (Xml.enclose_inline "name" (put_name name))
-end
-
-let mark_sym (f:#sym) = new sym_marked f#ty f#name
-
 let mark_root (Node((f:#sym),ss)) = Node(mark_sym f, ss)
-
 
 let mark_term_KT98 =
 	let rec sub (f:#sym) (Node(g,ss) as s) =
