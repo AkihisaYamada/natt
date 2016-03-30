@@ -1630,7 +1630,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			Xml.enclose "vector" (fun pr -> List.iter (fun e -> put_inte e pr) es)
 		in
 		let put_mat ess =
-			Xml.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) ess)
+			Xml.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) (Matrix.trans ess))
 		in
 		let put_coef e =
 			Xml.enclose "polynomial" (
