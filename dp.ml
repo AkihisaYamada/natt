@@ -103,7 +103,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		(* Generate dependency pairs *)
 		method generate_dp =
 			let rec generate_dp_sub strength s (Node(g,ts) as t) =
-				if trs#strictly_defines g && not (strict_subterm t s) then begin
+				if trs#defines g && not (strict_subterm t s) then begin
 					x#add_dp (new rule strength s (mark_term t));
 				end;
 				List.iter (generate_dp_sub strength s) ts;
@@ -159,9 +159,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			end;
 			(* Main process *)
 			add_marked_symbols trs;
-			let iterer i rule =
-				if trs#strictly_defines (root rule#l) then x#generate_dp rule;
-			in
+			let iterer i rule = x#generate_dp rule in
 			trs#iter_rules iterer;
 		
 			(* Additional rules for AC *)
