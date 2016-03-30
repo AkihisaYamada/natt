@@ -1623,6 +1623,23 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				put_status finfo
 			) pr
 		in
+		let put_inte e =
+			Xml.enclose_inline "coefficient" (Xml.enclose_inline "integer" (put_int (smt_eval_int e)))
+		in
+		let put_vec es =
+			Xml.enclose "vector" (fun pr -> List.iter (fun e -> put_inte e pr) es)
+		in
+		let put_mat ess =
+			Xml.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) ess)
+		in
+		let put_coef e =
+			Xml.enclose "polynomial" (
+				match e with
+				| Vec es -> Xml.enclose "coefficient" (put_vec es)
+				| Mat ess -> Xml.enclose "coefficient" (put_mat ess)
+				| _ -> put_inte e
+			)
+		in
 		let pr_interpret pr _ finfo =
 			Xml.enter "interpret" pr;
 			finfo.sym#output_xml pr;
@@ -1632,24 +1649,23 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				if finfo.symtype = Fun then subterm_coef finfo
 				else (fun v _ -> v) (subterm_coef finfo 1)
 			in
-			let put_poly_int i =
-				Xml.enclose "polynomial" (
-					Xml.enclose "coefficient" (
-						Xml.enclose_inline "integer" (
-							put_int i
-						)
-					)
-				)
-			in
 			let put_sum pr =
 				Xml.enter "polynomial" pr;
 				Xml.enter "sum" pr;
 				for i = 1 to n do
-					let coef = smt_eval_int (solver#get_value (sc i)) in
-					if coef <> 0 then begin
+					let coef = solver#get_value (sc i) in
+					if zero coef then begin
+						(* nothing *)
+					end else if one coef then begin
+						Xml.enclose "polynomial" (
+							Xml.enclose_inline "variable" (
+								put_int i
+							)
+						) pr;
+					end else begin
 						Xml.enclose "polynomial" (
 							Xml.enclose "product" (
-								put_poly_int coef <<
+								put_coef coef <<
 								Xml.enclose "polynomial" (
 									Xml.enclose_inline "variable" (
 										put_int i
@@ -1659,7 +1675,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 						) pr;
 					end;
 				done;
-				put_poly_int (smt_eval_int (solver#get_value (weight finfo))) pr;
+				put_coef (solver#get_value (weight finfo)) pr;
 				Xml.leave "sum" pr;
 				Xml.leave "polynomial" pr;
 			in
@@ -1670,14 +1686,14 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 					Xml.enter "max" pr;
 				end;
 				for i = 1 to n do
-					let pen = smt_eval_int (solver#get_value (subterm_penalty finfo i)) in
+					let pen = solver#get_value (subterm_penalty finfo i) in
 					if solver#get_bool (maxfilt finfo i) then begin
 						Xml.enclose "polynomial" (
 							Xml.enclose "sum" (
 								Xml.enclose "polynomial" (
 									Xml.enclose_inline "variable" (put_int i)
 								) <<
-								put_poly_int pen
+								put_coef pen
 							)
 						) pr;
 					end;
@@ -1685,7 +1701,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				if finfo.maxpol then begin
 					put_sum pr;
 				end else begin
-					put_poly_int (smt_eval_int (solver#get_value mcw)) pr;
+					put_coef (solver#get_value mcw) pr;
 				end;
 				if usemax then begin
 					Xml.leave "max" pr;
@@ -1695,7 +1711,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				Xml.enclose "polynomial" (
 					Xml.enclose "max" (
 						put_sum <<
-						put_poly_int (smt_eval_int (solver#get_value mcw))
+						put_coef (solver#get_value mcw)
 					)
 				) pr;
 			end else
@@ -1714,10 +1730,17 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			Xml.enter "redPair" pr;
 			Xml.enter "interpretation" pr;
 			Xml.enclose "type" (
-				Xml.enclose "polynomial" (
-					Xml.enclose_inline "domain" (Xml.tag "naturals") <<
-					Xml.enclose_inline "degree" (puts "1")
-				)
+				if p.w_dim > 1 then
+					Xml.enclose "matrixInterpretation" (
+						Xml.enclose_inline "domain" (Xml.tag "naturals") <<
+						Xml.enclose_inline "dimension" (put_int p.w_dim) <<
+						Xml.enclose_inline "strictDimension" (puts "1")
+					)
+				else
+					Xml.enclose "polynomial" (
+						Xml.enclose_inline "domain" (Xml.tag "naturals") <<
+						Xml.enclose_inline "degree" (puts "1")
+					)
 			) pr;
 			Hashtbl.iter (pr_interpret pr) sigma;
 			Xml.leave "interpretation" pr;

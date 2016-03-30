@@ -208,7 +208,13 @@ class trs =
 			| Trs_ast.Equations eqs -> List.iter (x#add_eq_raw) eqs
 			| Trs_ast.Builtin ((_,th), syms) ->
 				ths <- Ths.add th ths;
-				List.iter (fun (_,name) -> ignore (x#add_sym (new sym_unmarked (Th th) name))) syms
+				let iterer =
+					if th = "AC" || th = "A" || th = "C" then
+ 						fun (_,name) -> (x#add_sym (new sym_unmarked (Th th) name))#set_arity 2
+ 					else
+ 						fun (_,name) -> ignore (x#add_sym (new sym_unmarked (Th th) name))
+ 				in
+				List.iter iterer syms
 		method private add_decl =
 			Trs_ast.(function 
 			| VarDecl xs		->
