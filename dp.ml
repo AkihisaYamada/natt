@@ -71,29 +71,19 @@ let add_marked_symbols_ac trs =
 
 module DG = Graph.Imperative.Digraph.Concrete(Int)
 module Components = Graph.Components.Make(DG)
-module SubDG =
-	struct
-		type t = DG.t * IntSet.t
-		module V = Int
-		let iter_vertex f (g,vs) = IntSet.iter f vs
-		let iter_succ f (g,vs) = DG.iter_succ (fun v2 -> if IntSet.mem v2 vs then f v2) g
-		let fold_succ f (g,vs) v a =
-			DG.fold_succ (fun v2 b -> if IntSet.mem v2 vs then f v2 b else b) g v a
-	end
+module Topological = Graph.Topological.Make(DG)
+
+module SubDG = struct
+	type t = DG.t * IntSet.t
+	module V = Int
+	let iter_vertex f (g,vs) = IntSet.iter f vs
+	let iter_succ f (g,vs) = DG.iter_succ (fun v2 -> if IntSet.mem v2 vs then f v2) g
+	let fold_succ f (g,vs) v a =
+		DG.fold_succ (fun v2 b -> if IntSet.mem v2 vs then f v2 b else b) g v a
+end
 
 module SubComponents = Graph.Components.Make(SubDG)
 
-
-let notsingle dg =
-	function
-	| [v] -> DG.mem_edge dg v v
-	| _ -> true
-
-let get_sccs dg =
-	List.filter (notsingle dg) (Components.scc_list dg)
-
-let get_subsccs dg dpset =
-	List.filter (notsingle dg) (SubComponents.scc_list (dg,dpset))
 
 class dg (trs : trs) (estimator : Estimator.t) =
 	(* list of lists to list of sets *)
@@ -286,9 +276,13 @@ class dg (trs : trs) (estimator : Estimator.t) =
 				true
 			)
 		method minimal = minimal
-		method get_subdg (scc:IntSet.t) = (dg,scc)
-		method get_sccs = ll2ls (get_sccs dg)
-		method get_subsccs dpset = ll2ls (get_subsccs dg dpset)
+		method get_subdg scc = (dg, IntSet.of_list scc)
+		(* reverse SCCs, for CeTA *)
+		method get_sccs = List.rev (Components.scc_list dg)
+		method get_subsccs dps = List.rev (SubComponents.scc_list (dg, IntSet.of_list dps))
+		method triv_scc = function
+			| [v] -> not (DG.mem_edge dg v v)
+			| _ -> false
 		method get_size = Hashtbl.length dp_table
 		method find_dp = Hashtbl.find dp_table
 		method get_dp_size i = let dp = x#find_dp i in dp#size
@@ -297,10 +291,16 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
 		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
+		method output_dp : 'a. int -> (#Io.printer as 'a) -> unit = fun i pr ->
+			output_tbl_index pr "   #" (i, x#find_dp i)
+		method output_dp_xml : 'a. int -> (#Io.printer as 'a) -> unit = fun i ->
+			(x#find_dp i)#output_xml
 		method output_dps : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			output_tbl pr "   #" dp_table
 		method output_dps_xml : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			x#iter_dps (fun _ rule -> rule#output_xml pr)
+		method output_scc_xml : 'a. int list -> (#Io.printer as 'a) -> unit = fun scc pr ->
+			List.iter (fun i -> x#output_dp_xml i pr) scc
 		method iter_edges f = DG.iter_edges f dg
 		method output_edges : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			pr#puts "Edges:";
@@ -318,5 +318,4 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			x#iter_dps iterer;
 			pr#leave 2;
 			pr#endl;
-
 	end;;

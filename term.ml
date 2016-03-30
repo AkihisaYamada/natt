@@ -66,11 +66,6 @@ let varlist =
 	in
 	sub
 
-let rec list_remove f =
-	function
-	| []	-> raise Not_found
-	| x::xs	-> if f x then xs else x :: list_remove f xs
-
 let dupvarlist =
 	let rec sub ret (Node((f:#sym),ts)) =
 		if f#is_var then
@@ -236,7 +231,7 @@ let extended_rules =
 		| Th "A" -> [
 			new rule rule#strength (app f [l; x]) (app f [r; x]);
 			new rule rule#strength (app f [x; l]) (app f [x; r]);
-			new rule rule#strength (app f [x; app f [l; y]]) (app f [x; app f [r; y]])
+			new rule rule#strength (app f [app f [x; l]; y]) (app f [app f [x; r]; y])
 		]
 		| Th "C" -> []
 		| Th s -> raise (No_support ("extension for theory: " ^ s))

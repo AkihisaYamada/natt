@@ -111,7 +111,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 		comment (puts "  Finding a loop... ");
 		debug2 endl;
 		for len = 1 to lim do
-			IntSet.iter (iterer len (max 0 (params.max_narrowing - IntSet.cardinal scc))) scc;
+			List.iter (iterer len (max 0 (params.max_narrowing - List.length scc))) scc;
 		done;
 		comment (puts "failed." << endl);
 	end

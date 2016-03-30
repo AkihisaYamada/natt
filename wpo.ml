@@ -1760,7 +1760,7 @@ object (x)
 
 	method using_usable = p.dp && p.usable
 
-	method init current_usables scc =
+	method init current_usables dps =
 		initialized <- true;
 		debug (puts " Initializing.");
 
@@ -1775,7 +1775,7 @@ object (x)
 			dplist := dg#get_dps;
 			usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
 		end else begin
-			dplist := IntSet.fold (fun i dps -> (i, dg#find_dp i) :: dps) scc [];
+			dplist := List.fold_right (fun i acc -> (i, dg#find_dp i) :: acc) dps [];
 			usables := List.map (fun i -> (i, trs#find_rule i)) current_usables;
 		end;
 
@@ -1984,20 +1984,20 @@ object (x)
 		Hashtbl.clear rule_flag_table;
 		initialized <- false;
 
-	method push current_usables scc =
+	method push current_usables dps =
 		if initialized then begin
 			if p.use_scope_ratio > 0 then
 				let curr_size = trs#get_size in
 				if (use_scope_last_size - curr_size) * p.use_scope_ratio > curr_size then
 				begin
 					x#reset;
-					x#init current_usables scc;
+					x#init current_usables dps;
 				end;
 		end else begin
-			x#init current_usables scc;
+			x#init current_usables dps;
 		end;
 		List.iter x#add_rule current_usables;
-		IntSet.iter x#add_dp scc;
+		List.iter x#add_dp dps;
 		if use_scope then
 			solver#push;
 
@@ -2017,35 +2017,31 @@ object (x)
 					solver#add_assertion
 					(EV (if (dg#find_dp i)#is_strict then gt_v i else ge_v i));
 				in
-				IntSet.iter iterer !sccref;
+				List.iter iterer !sccref;
 			end else begin
 				let folder i ret =
 					solver#add_assertion (EV (ge_v i));
 					EV (gt_v i) |^ ret
 				in
-				solver#add_assertion (IntSet.fold folder !sccref (LB false));
+				solver#add_assertion (List.fold_right folder !sccref (LB false));
 			end;
 			comment putdot;
 			solver#check;
 			comment (puts " succeeded." << endl);
 			proof output_proof;
-			cpf (Xml.enter "acRedPairProc" << output_cpf << Xml.enter "dps" << Xml.enter "rules");
+			cpf output_cpf;
+			cpf (Xml.enter "dps" << Xml.enter "rules");
 			let folder i ret =
 				if solver#get_bool (EV(gt_v i)) then (
 					cpf ((dg#find_dp i)#output_xml);
 					dg#remove_dp i;
-					sccref := IntSet.remove i !sccref;
+					sccref := list_remove ((=) i) !sccref;
 					i :: ret
 				) else ret
 			in
-			let rem_dps = IntSet.fold folder !sccref [] in
+			let rem_dps = List.fold_right folder !sccref [] in
 			proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
-			cpf (
-				Xml.leave "rules" << Xml.leave "dps" <<
-				put_usables_cpf <<
-				Xml.enclose_inline "acDPTerminationProof" (Xml.tag "acTrivialProc") <<
-				Xml.leave "acRedPairProc"
-			);
+			cpf (Xml.leave "rules" << Xml.leave "dps" << put_usables_cpf);
 			x#pop;
 			true
 		with Inconsistent ->
@@ -2056,7 +2052,7 @@ object (x)
 	method direct current_usables =
 		try
 			comment (puts "Direct " << puts (name_order p) << puts " " << putdot);
-			x#push current_usables IntSet.empty;
+			x#push current_usables [];
 
 			comment putdot;
 			(* usable i should be true until i is removed. *)

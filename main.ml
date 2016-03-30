@@ -13,7 +13,7 @@ type result =
 | NO
 
 (* static usable rules *)
-let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_dpset =
+let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_dps =
 	if dg#minimal then (
 		let used = Hashtbl.create 128 in
 		let rec sub (Node(_,ts) as t) =
@@ -27,7 +27,7 @@ let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_
 			List.iter iterer (estimator#find_matchable t);
 			List.iter sub ts;
 		in
-		IntSet.iter (fun i -> let Node(_,ts) = (dg#find_dp i)#r in List.iter sub ts) used_dpset;
+		List.iter (fun i -> let Node(_,ts) = (dg#find_dp i)#r in List.iter sub ts) used_dps;
 	
 		trs#fold_rules
 		(fun i _ (usables,unusables) ->
@@ -132,40 +132,27 @@ let rule_remove (trs : #trs) =
 		loop ();
 	end;;
 
+let remove_unusable (trs : #trs) (estimator : #Estimator.t) (dg : #dg) sccs =
+	let dps = List.concat sccs in
+	let curr_len = List.length dps in
+	let dpset = IntSet.of_list dps in
+	if curr_len < dg#get_size then begin
+(* The following assumes non-Ce compatible method is not applied *)
+		log (puts "Removing unusable rules: {");
+		let (_,unusables) = static_usable_rules trs estimator dg dps in
+		let rule_remover i =
+			log (puts " " << put_int i);
+			trs#remove_rule i;
+		in
+		List.iter rule_remover unusables;
+		log (puts " }" << endl);
+	end;;
+
 (* reduction pair processor *)
 let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
-	let sccs = ref dg#get_sccs in
-	let remove_unusable () =
-		let init = ref true in
-		let used_dpset = List.fold_left IntSet.union IntSet.empty !sccs in
-		let curr_len = IntSet.cardinal used_dpset in
-		if !init || curr_len < dg#get_size then begin
-			log (puts "Removing unrelated DPs: {");
-			init := false;
-			let dp_remover i _ =
-				if not (IntSet.mem i used_dpset) then
-				begin
-					log (puts " #" << put_int i);
-					dg#remove_dp i;
-				end;
-			in
-			dg#iter_dps dp_remover;
-			log (puts " }" << endl);
-(*
-			log (fun _ -> prerr_string "Removing unusable rules: {");
-			let (_,unusables) = static_usable_rules trs dg used_dpset in
-			let rule_remover i =
-				log (fun _ -> prerr_string " "; prerr_int i;);
-				trs#remove_rule i;
-			in
-			List.iter rule_remover unusables;
-			log (fun _ -> prerr_endline " }");
-*)
-		end;
-	in
 	let scc_sorter =
 		let scc_size scc =
-			IntSet.fold (fun i r -> dg#get_dp_size i + r) scc 0
+			List.fold_right (fun i r -> dg#get_dp_size i + r) scc 0
 		in
 		match params.sort_scc with
 		| SORT_asc ->
@@ -175,7 +162,6 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 		| SORT_none ->
 			fun sccs -> sccs
 	in
-	sccs := scc_sorter !sccs;
 	let given_up = ref false in
 	let proc_list =
 		Array.fold_right
@@ -194,43 +180,69 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 		List.exists remove_by_proc proc_list
 	in
 
-	cpf (Xml.enter "acDPTerminationProof");
-	let rec loop () =
-		comment (puts "Number of SCCs: " << put_int (List.length !sccs) << endl);
-		remove_unusable ();
-		match !sccs with
-		| [] ->
-			if dg#next then begin
-				cpf (
-					Xml.leave "acDPTerminationProof" <<
-					Xml.enter "acDPTerminationProof"
-				);
-				problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
-				sccs := dg#get_sccs;
-				loop ();
-			end else begin
-				cpf (Xml.leave "acDPTerminationProof");
-				raise (if !given_up then Unknown else Success);
-			end
-		| scc::rest ->
-			problem (puts "  SCC {" << Abbrev.put_int_set " #" scc << puts " }" << endl);
-			if IntSet.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
-				comment (puts "only weak rules." << endl);
-				sccs := rest;
-				loop ();
-			end else begin
-				let sccref = ref scc in
-				if remove_strict sccref then begin
-					sccs := scc_sorter (dg#get_subsccs !sccref) @ rest;
-					log dg#output_edges;
-					loop ();
-				end else begin
-					comment (puts "failed." << endl);
-					Nonterm.find_loop params.max_loop trs estimator dg scc;
-				end
-			end
+	let sccs = dg#get_sccs in
+	let sccs = (* for CeTA, the order is crusial *)
+		if not params.cpf then scc_sorter sccs else sccs
 	in
-	loop ();;
+
+	let real_filter = List.filter (fun scc -> not (dg#triv_scc scc)) in
+
+	let real_sccs = real_filter sccs in
+	remove_unusable trs estimator dg real_sccs;
+
+	let rec dg_proc n_reals sccs =
+		cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc");
+		loop n_reals sccs;
+		cpf (Xml.leave "acDepGraphProc" << Xml.leave "acDPTerminationProof");
+	and loop n_reals sccs =
+		comment (puts "Number of SCCs: " << put_int n_reals << endl);
+		loop_silent n_reals sccs;
+	and loop_silent n_reals = function
+		| [] -> ()
+		| scc::sccs ->
+			cpf (Xml.enter "component");
+			cpf (Xml.enclose "dps" (Xml.enclose "rules" (dg#output_scc_xml scc)));
+			if dg#triv_scc scc then begin
+				cpf (Xml.enclose_inline "realScc" (puts "false"));
+				cpf (Xml.leave "component");
+				loop_silent n_reals sccs;
+			end else begin
+				problem (puts "  SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
+				cpf (Xml.enclose_inline "realScc" (puts "true"));
+				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
+					comment (puts "only weak rules." << endl);
+					cpf (Xml.enclose "acDPTerminationProof" (Xml.tag "acTrivialProc"));
+					cpf (Xml.leave "component");
+					loop (n_reals - 1) sccs;
+				end else begin
+					let sccref = ref scc in
+					cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acRedPairProc");
+					if remove_strict sccref then begin
+						let subsccs = dg#get_subsccs !sccref in
+						let real_subsccs = real_filter subsccs in
+						dg_proc (n_reals - 1 + List.length real_subsccs) subsccs;
+						cpf (Xml.leave "acRedPairProc" << Xml.leave "acDPTerminationProof");
+						cpf (Xml.leave "component");
+						loop_silent (n_reals - 1) sccs;
+					end else begin
+						comment (puts "failed." << endl);
+						Nonterm.find_loop params.max_loop trs estimator dg scc;
+						raise Unknown;
+					end;
+				end;
+			end;
+	in
+	dg_proc (List.length real_sccs) sccs;
+	if dg#next then begin
+		problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
+		let sccs = dg#get_sccs in
+		let real_sccs = real_filter sccs in
+		remove_unusable trs estimator dg real_sccs;
+		dg_proc (List.length real_sccs) sccs;
+	end else begin
+		if !given_up then raise Unknown;
+	end;;
+
 
 let dp_prove (trs : #trs) =
 	let estimator = new Estimator.t trs in
@@ -270,9 +282,8 @@ let dp_prove (trs : #trs) =
 	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
 	log dg#output_edges;
 
-	try dp_remove trs estimator dg with it ->
-	cpf (Xml.leave "acDependencyPairs");
-	raise it
+	dp_remove trs estimator dg;
+	cpf (Xml.leave "acDependencyPairs");;
 
 
 
@@ -295,7 +306,7 @@ let prove_termination (trs : #trs) =
 			if params.mode = MODE_order then raise Unknown;
 			if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
 			dp_prove trs;
-			raise Unknown;
+			raise Success;
 		with
 		| Success -> YES
 		| Unknown -> MAYBE

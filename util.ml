@@ -25,6 +25,12 @@ exception No_support of string
 
 let rec intlist m n = if m > n then [] else m :: intlist (m+1) n
 
+let rec list_remove f =
+	function
+	| []	-> raise Not_found
+	| x::xs	-> if f x then xs else x :: list_remove f xs
+
+
 let iteri f =
 	let rec sub n xs =
 		match xs with
