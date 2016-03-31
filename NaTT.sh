@@ -59,6 +59,7 @@ then
 	{
 		:
 	}
+	options="$options -V"
 	cpfdir="${1#-x:}"
 	shift
 fi
