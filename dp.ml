@@ -223,7 +223,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 (* Estimated dependency graph *)
 
 		method private make_dg =
-			log estimator#output_sym_graph;
+			log estimator#output;
 			let edged_KT98 src tgt =
 				if (root src#l)#is_associative then
 					List.exists (fun r' -> estimator#connects r' tgt#l) (top_ac_subterms src#r)

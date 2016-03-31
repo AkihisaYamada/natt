@@ -246,9 +246,11 @@ type params_type =
 	mutable orders_removal : order_params array;
 	mutable orders_dp : order_params array;
 	mutable warning : bool;
+	mutable result : bool;
 	mutable comment : bool;
 	mutable problem : bool;
 	mutable cpf : bool;
+	mutable cpf_to : out_channel;
 	mutable proof : bool;
 	mutable log : bool;
 	mutable debug : bool;
@@ -272,9 +274,11 @@ let params =
 	orders_removal = Array.make 0 order_default;
 	orders_dp = Array.make 0 order_default;
 	warning = true;
+	result = true;
 	comment = true;
 	problem = true;
 	cpf = false;
+	cpf_to = stdout;
 	proof = true;
 	log = false;
 	debug = false;
@@ -448,11 +452,17 @@ while !i < argc do
 			params.debug <- v > 4;
 			params.debug2 <- v > 5;
 		| "x", None ->
+			params.result <- false;
 			params.warning <- false;
 			params.comment <- false;
 			params.problem <- false;
 			params.proof <- false;
 			params.cpf <- true;
+			params.naive_C <- true;
+		| "x", Some file ->
+			params.cpf <- true;
+			params.cpf_to <- open_out file;
+			params.naive_C <- true;
 		| "-peek", _ ->
 			begin
 				p.peek_in <- true;
@@ -715,7 +725,7 @@ let guard test os =
 let warning = guard params.warning Io.cerr
 let comment = guard params.comment Io.cerr
 let problem = guard params.problem Io.cerr
-let cpf = guard params.cpf Io.cout
+let cpf = guard params.cpf (Io.pretty_wrap_out params.cpf_to)
 let proof = guard params.proof Io.cerr
 let log = guard params.log Io.cerr
 let debug = guard params.debug Io.cerr

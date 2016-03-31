@@ -53,6 +53,16 @@ then
 	shift
 fi
 
+if [ "${1%:*}" = "-x" ]
+then
+	info()
+	{
+		:
+	}
+	cpfdir="${1#-x:}"
+	shift
+fi
+
 pre="/usr/bin/time -p -o $timefile timeout $t $dir/NaTT.exe"
 
 l=$1
@@ -107,11 +117,20 @@ do
 		log="${f%.trs}.txt"
 		log="$proof/${log//\//-}"
 	fi
+	if [ "$cpfdir" = "" ]
+	then
+		cpffile=
+	else
+		cpffile="${f%.trs}.xml"
+		cpffile="$cpfdir/${cpffile//\//-}"
+		cpfopt=-x:"$cpffile"
+	fi
 	if [ "${f##*.}" = "xml" ]
 	then
-		out=`eval xsltproc "$dir/xtc2tpdb.xml" "$d$f" | $pre "$@" $options 2> "$log"`
+		out=`eval xsltproc "$dir/xtc2tpdb.xml" "$d$f" |
+		$pre $cpfopt "$@" $options 2> "$log"`
 	else
-		out=`eval $pre "$@" "$d$f" $options 2> "$log"`
+		out=`eval $pre $cpfopt "$@" "$d$f" $options 2> "$log"`
 	fi
 	out=`echo $out | sed -E "s/(\w*).*/\1/;q"`
 	if [ "$out" = "" -o "$out" = "Killed" ]
@@ -122,5 +141,9 @@ do
 	fi
 	sed -E "s/real[ 	]*([0-9.]+).+$/\1/;q" $timefile
 	rm -f $timefile
+	if [ "$ceta" != "" -a "$cpffile" != "" -a "$out" = "YES" ]
+	then
+		"$ceta" "$cpffile"
+	fi
 done
 

@@ -105,7 +105,7 @@ let trivial_test (trs : #trs) =
 
 
 (* rule removal processor *)
-let dummy_estimator = new Estimator.t (new trs)
+let dummy_estimator = Estimator.tcap (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
 let rule_remove (trs : #trs) =
@@ -188,8 +188,9 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	let real_filter = List.filter (fun scc -> not (dg#triv_scc scc)) in
 
 	let real_sccs = real_filter sccs in
-	remove_unusable trs estimator dg real_sccs;
 
+(*	remove_unusable trs estimator dg real_sccs;
+*)
 	let rec dg_proc n_reals sccs =
 		cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc");
 		loop n_reals sccs;
@@ -245,8 +246,10 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 
 
 let dp_prove (trs : #trs) =
-	let estimator = new Estimator.t trs in
-	log estimator#output_sym_graph;
+	let estimator =
+		if params.cpf then Estimator.tcap trs else Estimator.sym_trans trs
+	in
+	log estimator#output;
 
 	cpf (Xml.enter "acDependencyPairs");
 (*	cpf (Xml.enclose "markedSymbols" (fun os -> output_string os "true");
@@ -358,7 +361,7 @@ object (x)
 			trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
 			trs#output cout;
 		| MODE_uncurry ->
-			ignore (App.auto_uncurry trs (new dg (new trs) (new Estimator.t (new trs))));
+			ignore (App.auto_uncurry trs (new dg (new trs) (Estimator.tcap (new trs))));
 			trs#output cout;
 		| MODE_simple ->
 			if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then
@@ -407,7 +410,7 @@ object (x)
 				) params.orders_removal;
 			let ans = prove_termination trs in
 				cpf (Xml.leave "certificationProblem" << endl);
-			if not params.cpf then
+			if params.result then
 				print_endline
 				(	match ans with
 					| YES	-> "YES"

@@ -103,8 +103,10 @@ class finalized finalizer =
 			at_exit (fun _ -> !rfin x)
 	end
 
-let cerr = new pretty_printer (new wrap_out stderr) 32
-let cout = new pretty_printer (new wrap_out stdout) 32
+let pretty_wrap_out os = new pretty_printer (new wrap_out os) 32
+
+let cerr = pretty_wrap_out stderr
+let cout = pretty_wrap_out stdout
 
 let puts s pr = pr#puts s
 let putc c pr = pr#putc c
