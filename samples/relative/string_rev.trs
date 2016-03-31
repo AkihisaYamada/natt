@@ -1,0 +1,41 @@
+(VAR n x xs y ys)
+(RULES
+	getc ->= 'a'
+	getc ->= 'b'
+	getc ->= 'c'
+	getc ->= 'd'
+	getc ->= 'e'
+	getc ->= 'f'
+	getc ->= 'g'
+	getc ->= 'h'
+	getc ->= 'i'
+	getc ->= 'j'
+	getc ->= 'k'
+	getc ->= 'l'
+	getc ->= 'm'
+	getc ->= 'n'
+	getc ->= 'o'
+	getc ->= 'p'
+	getc ->= 'q'
+	getc ->= 'r'
+	getc ->= 's'
+	getc ->= 't'
+	getc ->= 'u'
+	getc ->= 'v'
+	getc ->= 'w'
+	getc ->= 'x'
+	getc ->= 'y'
+	getc ->= 'z'
+	gets(xs) ->= xs
+	gets(xs) ->= gets(cons(getc,xs))
+
+	por(x,true) -> true
+	por(true,x) -> true
+	check(nil,ys) -> true
+	check(cons(x,xs),cons(x,ys)) -> check(xs,ys)
+	strstr(xs,cons(y,ys)) -> por(check(xs,cons(y,ys)),strstr(xs,ys))
+	main -> strstr(gets(nil),gets(nil))
+)
+(COMMENT
+	gets(nil) gives an arbitrary string
+)

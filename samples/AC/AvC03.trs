@@ -1,0 +1,11 @@
+(THEORY (A mat_mult) (AC *))
+(VAR x y X Y Z)
+(RULES
+	mat_mult(I,X) -> X
+	mat_mult(X,I) -> X
+	mat_mult(mat_trans(X),mat_trans(Y)) -> mat_trans(mat_mult(Y,X))
+	mat_mult(smult(x,X),Y) -> smult(x,mat_mult(X,Y))
+	mat_mult(X,smult(x,Y)) -> smult(x,mat_mult(X,Y))
+	mat_mult(X,mat_mult(smult(x,Y),Z)) -> smult(x,mat_mult(X,mat_mult(Y,Z)))
+	smult(x,smult(y,X)) -> smult(*(x,y),X)
+)
