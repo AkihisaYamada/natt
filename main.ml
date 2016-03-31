@@ -135,7 +135,6 @@ let rule_remove (trs : #trs) =
 let remove_unusable (trs : #trs) (estimator : #Estimator.t) (dg : #dg) sccs =
 	let dps = List.concat sccs in
 	let curr_len = List.length dps in
-	let dpset = IntSet.of_list dps in
 	if curr_len < dg#get_size then begin
 (* The following assumes non-Ce compatible method is not applied *)
 		log (puts "Removing unusable rules: {");

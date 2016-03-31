@@ -283,8 +283,16 @@ class trs =
 				| Th "AC" | Th "C" -> f#output_xml pr
 				| _ -> ()
 			in
-			Xml.enclose "Asymbols" (fun _ -> x#iter_syms iterer_A) pr;
-			Xml.enclose "Csymbols" (fun _ -> x#iter_syms iterer_C) pr;
+			if Ths.mem "AC" ths || Ths.mem "A" ths then begin
+				Xml.enclose "Asymbols" (fun _ -> x#iter_syms iterer_A) pr;
+			end else begin
+				Xml.tag "Asymbols" pr; (* TODO refine CPF *)
+			end;
+			if Ths.mem "AC" ths || Ths.mem "C" ths then begin
+				Xml.enclose "Csymbols" (fun _ -> x#iter_syms iterer_C) pr;
+			end else begin
+				Xml.tag "Csymbols" pr;
+			end;
 		method output_xml_rules : 'a. (#Io.printer as 'a) -> unit =
 			Xml.enclose "rules" (fun pr -> x#iter_rules (fun _ rule -> rule#output_xml pr))
 		method output_xml : 'a. (#Io.printer as 'a) -> unit =
