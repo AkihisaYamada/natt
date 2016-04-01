@@ -2052,6 +2052,7 @@ object (x)
 			solver#check;
 			comment (puts " succeeded." << endl);
 			proof output_proof;
+			cpf (Xml.enter "acRedPairProc"); (* CAUTION: manually leave later *)
 			cpf output_cpf;
 			cpf (Xml.enter "dps" << Xml.enter "rules");
 			let folder i ret =

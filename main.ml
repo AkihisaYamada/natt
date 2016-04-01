@@ -109,7 +109,9 @@ let dummy_estimator = Estimator.tcap (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
 let rule_remove next (trs : #trs) =
-	if Array.length params.orders_removal > 0 then begin
+	if Array.length params.orders_removal == 0 then
+		next trs
+	else
 		let proc_list =
 			let folder p procs =
 				new Wpo.processor p trs dummy_estimator dummy_dg :: procs
@@ -122,22 +124,23 @@ let rule_remove next (trs : #trs) =
 		let rec loop () =
 			let rules = trs#fold_rules (fun i _ is -> i::is) [] in
 			comment (puts "Number of strict rules: " << put_int trs#get_size_strict << endl);
-			if trs#get_size_strict = 0 then begin
+			if trs#get_size_strict = 0 then (
 				cpf (Xml.tag "acRIsEmpty");
-			end else begin
-				if remove_strict rules then begin
+				YES
+			) else (
+				if remove_strict rules then (
 					cpf (Xml.enter "acTerminationProof");
-					loop ();
+					let ret = loop () in
 					cpf(Xml.leave "acTerminationProof");
 					cpf (Xml.leave "acRuleRemoval");
-				end else begin
+					ret
+				) else (
 					comment (puts " failed." << endl);
-					next trs;
-				end;
-			end;
+					next trs
+				)
+			)
 		in
-		loop ();
-	end;;
+		loop ()
 
 let remove_unusable (trs : #trs) (estimator : #Estimator.t) (dg : #dg) sccs =
 	let dps = List.concat sccs in
@@ -168,7 +171,6 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 		| SORT_none ->
 			fun sccs -> sccs
 	in
-	let given_up = ref false in
 	let proc_list =
 		Array.fold_right
 		(fun p procs ->
@@ -199,56 +201,58 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 *)
 	let rec dg_proc n_reals sccs =
 		cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc");
-		loop n_reals sccs;
+		let ret = loop n_reals sccs in
 		cpf (Xml.leave "acDepGraphProc" << Xml.leave "acDPTerminationProof");
+		ret
 	and loop n_reals sccs =
 		comment (puts "Number of SCCs: " << put_int n_reals << endl);
-		loop_silent n_reals sccs;
+		loop_silent n_reals sccs
 	and loop_silent n_reals = function
-		| [] -> ()
+		| [] -> YES
 		| scc::sccs ->
 			cpf (Xml.enter "component");
 			cpf (Xml.enclose "dps" (Xml.enclose "rules" (dg#output_scc_xml scc)));
-			if dg#triv_scc scc then begin
+			if dg#triv_scc scc then (
 				cpf (Xml.enclose_inline "realScc" (puts "false"));
 				cpf (Xml.leave "component");
-				loop_silent n_reals sccs;
-			end else begin
+				loop_silent n_reals sccs
+			) else (
 				problem (puts "  SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
 				cpf (Xml.enclose_inline "realScc" (puts "true"));
-				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then begin
+				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
 					comment (puts "only weak rules." << endl);
 					cpf (Xml.enclose "acDPTerminationProof" (Xml.tag "acTrivialProc"));
 					cpf (Xml.leave "component");
-					loop (n_reals - 1) sccs;
-				end else begin
+					loop (n_reals - 1) sccs
+				) else (
 					let sccref = ref scc in
-					cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acRedPairProc");
-					if remove_strict sccref then begin
+					cpf (Xml.enter "acDPTerminationProof");
+					if remove_strict sccref then (
 						let subsccs = dg#get_subsccs !sccref in
 						let real_subsccs = real_filter subsccs in
-						dg_proc (n_reals - 1 + List.length real_subsccs) subsccs;
+						let ret = dg_proc (n_reals - 1 + List.length real_subsccs) subsccs in
 						cpf (Xml.leave "acRedPairProc" << Xml.leave "acDPTerminationProof");
 						cpf (Xml.leave "component");
-						loop_silent (n_reals - 1) sccs;
-					end else begin
+						if ret = YES then loop_silent (n_reals - 1) sccs else ret
+					) else (
 						comment (puts "failed." << endl);
 						Nonterm.find_loop params.max_loop trs estimator dg scc;
-						raise Unknown;
-					end;
-				end;
-			end;
+						cpf (Xml.enclose "unknownProof" (Xml.enclose "description" (puts "Failed!")));
+						cpf (Xml.leave "acDPTerminationProof");
+						cpf (Xml.leave "component");
+						MAYBE
+					)
+				)
+			)
 	in
-	dg_proc (List.length real_sccs) sccs;
-	if dg#next then begin
+	let ret = dg_proc (List.length real_sccs) sccs in
+	if ret = YES && dg#next then (
 		problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
 		let sccs = dg#get_sccs in
 		let real_sccs = real_filter sccs in
 		remove_unusable trs estimator dg real_sccs;
-		dg_proc (List.length real_sccs) sccs;
-	end else begin
-		if !given_up then raise Unknown;
-	end;;
+		dg_proc (List.length real_sccs) sccs
+	) else ret;;
 
 
 let dp_prove (trs : #trs) =
@@ -291,8 +295,9 @@ let dp_prove (trs : #trs) =
 	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
 	log dg#output_edges;
 
-	dp_remove trs estimator dg;
-	cpf (Xml.leave "acDependencyPairs");;
+	let ret = dp_remove trs estimator dg in
+	cpf (Xml.leave "acDependencyPairs");
+	ret;;
 
 
 
@@ -314,8 +319,7 @@ let prove_termination (trs : #trs) =
 				if uncurry trs dummy_dg then
 					rule_remove dp_prove trs
 				else dp_prove trs
-			) trs;
-			raise Success;
+			) trs
 		with
 		| Success -> YES
 		| Unknown -> MAYBE
