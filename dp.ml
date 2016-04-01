@@ -202,7 +202,6 @@ class dg (trs : trs) (estimator : Estimator.t) =
 								add_eq (m v1 (u y z)) (m (u v1 y) z);
 							end;
 						end;
-						minimal <- false; (* Minimality cannot be assumed *)
 					| ACDP_ALM10 ->
 						if params.ac_mark_mode = AC_mark then begin
 							add_eq (m (u v1 y) z) (m v1 (u y z));
@@ -254,6 +253,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			dp_table;
 
 		method private make_ac_ext =
+			x#iter_dps (fun i _ -> x#remove_dp i);
 			let iterer i rule =
 				if (root rule#l)#is_theoried then begin
 					if rule#is_strict then begin

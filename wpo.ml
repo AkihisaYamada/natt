@@ -1990,10 +1990,10 @@ object (x)
 			solver#add_definition (gt_v i) Bool gt;
 			(* flag usable rules *)
 			if p.usable_w then begin
-				solver#add_assertion (set_usable_inner argfilt usable_w dp#r);
-				solver#add_assertion (set_usable_inner permed usable dp#r);
+				solver#add_assertion (set_usable argfilt usable_w dp#r);
+				solver#add_assertion (set_usable permed usable dp#r);
 			end else begin
-				solver#add_assertion (set_usable_inner argfilt usable dp#r);
+				solver#add_assertion (set_usable argfilt usable dp#r);
 			end;
 		end;
 
