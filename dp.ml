@@ -115,7 +115,9 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			| ACDP_new -> generate_dp_default
 			| ACDP_union -> fun rule ->
 				generate_dp_default rule;
-				if (root rule#l)#is_theoried then begin
+				if (root rule#l)#is_theoried &&
+					rule#is_strict (* the weak rule itself don't have to be extended *)
+				then begin
 					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
 					List.iter iterer (extended_rules rule);
 				end;

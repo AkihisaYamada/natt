@@ -2081,35 +2081,27 @@ object (x)
 			(* usable i should be true until i is removed. *)
 			List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
 
-			if p.remove_all then begin
-				comment putdot;
-				solver#check;
-				comment (puts " orients all." << endl);
-				trs#iter_rules (fun i _ -> trs#remove_rule i);
-			end else begin
+			if not p.remove_all then begin
 				solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
-				comment putdot;
-				solver#check;
-				comment (puts " removes:");
-				List.iter
-				(fun i ->
-					if solver#get_bool (EV(gt_r_v i)) then begin
-						trs#remove_rule i;
-						comment(fun _ -> prerr_string " "; prerr_int i;);
-					end;
-				) current_usables;
-				comment endl;
 			end;
+			comment putdot;
+			solver#check;
+
+			cpf (Xml.enter "acRuleRemoval"); (* CAUTION: enter but won't leave *)
+			cpf output_cpf;
+			cpf (Xml.enter "trs" << Xml.enter "rules");
+			comment (puts " removes:");
+			List.iter
+			(fun i ->
+				if solver#get_bool (EV(gt_r_v i)) then begin
+					cpf ((trs#find_rule i)#output_xml);
+					trs#remove_rule i;
+					comment(fun _ -> prerr_string " "; prerr_int i;);
+				end;
+			) current_usables;
+			comment endl;
 			proof output_proof;
-			cpf (
-				Xml.enclose "ruleRemoval" (
-					Xml.enclose "orderingConstraintProof" (
-						Xml.enclose "redPair" output_cpf
-					) <<
-					trs#output_xml <<
-					Xml.enclose "trsTerminationProof" (Xml.tag "rIsEmpty")
-				)
-			);
+			cpf (Xml.leave "rules" << Xml.leave "trs");
 			x#pop;
 			true
 		with Inconsistent -> x#pop; false

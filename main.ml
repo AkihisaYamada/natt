@@ -108,7 +108,7 @@ let trivial_test (trs : #trs) =
 let dummy_estimator = Estimator.tcap (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
-let rule_remove (trs : #trs) =
+let rule_remove next (trs : #trs) =
 	if Array.length params.orders_removal > 0 then begin
 		let proc_list =
 			let folder p procs =
@@ -122,11 +122,18 @@ let rule_remove (trs : #trs) =
 		let rec loop () =
 			let rules = trs#fold_rules (fun i _ is -> i::is) [] in
 			comment (puts "Number of strict rules: " << put_int trs#get_size_strict << endl);
-			if trs#get_size_strict = 0 then raise Success
-			else if remove_strict rules then begin
-				loop ();
+			if trs#get_size_strict = 0 then begin
+				cpf (Xml.tag "acRIsEmpty");
 			end else begin
-				comment (puts " failed." << endl);
+				if remove_strict rules then begin
+					cpf (Xml.enter "acTerminationProof");
+					loop ();
+					cpf(Xml.leave "acTerminationProof");
+					cpf (Xml.leave "acRuleRemoval");
+				end else begin
+					comment (puts " failed." << endl);
+					next trs;
+				end;
 			end;
 		in
 		loop ();
@@ -303,11 +310,11 @@ let prove_termination (trs : #trs) =
 			theory_test trs;
 			extra_test trs;
 			trivial_test trs;
-			rule_remove trs;
-			if uncurry trs dummy_dg then rule_remove trs;
-			if params.mode = MODE_order then raise Unknown;
-			if params.rdp_mode = RDP_naive && relative_test trs then raise Unknown;
-			dp_prove trs;
+			rule_remove (fun trs ->
+				if uncurry trs dummy_dg then
+					rule_remove dp_prove trs
+				else dp_prove trs
+			) trs;
 			raise Success;
 		with
 		| Success -> YES
