@@ -1714,8 +1714,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 						put_coef (solver#get_value mcw)
 					)
 				) pr;
-			end else
+			end else begin
 				put_sum pr;
+			end;
 			Xml.leave "interpret" pr;
 		in
 		fun pr ->

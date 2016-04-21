@@ -341,7 +341,7 @@ let apply_edg () =
 	dp := true;
 	order_default.dp <- true;
 	order_default.sc_mode <- W_bool;
-	order_default.collapse <- true;
+	order_default.collapse <- not params.cpf;
 	order_default.status_mode <- S_partial;
 	pp := order_default;
 in
