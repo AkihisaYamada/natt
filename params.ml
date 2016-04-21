@@ -690,7 +690,7 @@ if !default then begin
 	params.mode <- MODE_dp;
 	apply_polo ();
 	!pp.sc_mode <- W_bool;
-	params.uncurry <- true;
+	params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
 	apply_edg ();
 	apply_polo ();
 	apply_polo ();
@@ -706,9 +706,8 @@ if !default then begin
 	!pp.max_mode <- MAX_dup;
 	apply_polo ();
 	!pp.w_dim <- 2;
-(*	!pp.use_scope <- false;
-	!pp.use_scope_ratio <- 0;
-*)	params.max_loop <- 3;
+	(* certified nontermination not supported *)
+	if not params.cpf then params.max_loop <- 3;
 end
 
 type comment_type =
