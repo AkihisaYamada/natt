@@ -69,7 +69,7 @@ pre="/usr/bin/time -p -o $timefile timeout $t $dir/NaTT.exe"
 l=$1
 shift
 
-if [ -e $l/all.list ]
+if [ -d "$l" -a -e "$l/all.list" ]
 then
 	l=$l/all.list
 fi
