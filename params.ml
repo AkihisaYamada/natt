@@ -8,6 +8,9 @@ type prec_mode =
 | PREC_strict
 | PREC_quasi
 | PREC_partial
+type estimator_mode =
+| E_tcap
+| E_sym_trans
 type max_mode =
 | MAX_none
 | MAX_all
@@ -236,6 +239,7 @@ type params_type =
 {
 	mutable mode : mode;
 	mutable file : string;
+	mutable edge_mode : estimator_mode;
 	mutable sort_scc : sort_mode;
 	mutable uncurry : bool;
 	mutable max_loop : int;
@@ -264,6 +268,7 @@ let params =
 {
 	mode = MODE_order;
 	file = "";
+	edge_mode = E_sym_trans;
 	sort_scc = SORT_asc;
 	uncurry = false;
 	max_loop = 0;
@@ -459,6 +464,7 @@ while !i < argc do
 			params.proof <- false;
 			params.cpf <- true;
 			params.naive_C <- true;
+			params.edge_mode <- E_tcap;
 		| "x", Some file ->
 			params.cpf <- true;
 			params.cpf_to <- open_out file;
@@ -612,6 +618,7 @@ while !i < argc do
 		| "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
 		| "-dup", None -> default := false; params.mode <- MODE_dup;
 		| "-relative-test", None -> params.mode <- MODE_relative_test;
+		| "-tcap", None -> params.edge_mode <- E_tcap;
 		| "t", mode ->
 			default := false;
 			begin

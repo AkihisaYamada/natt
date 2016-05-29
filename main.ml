@@ -257,7 +257,9 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 
 let dp_prove (trs : #trs) =
 	let estimator =
-		if params.cpf then Estimator.tcap trs else Estimator.sym_trans trs
+		match params.edge_mode with
+		| E_tcap -> Estimator.tcap trs
+		| _ -> Estimator.sym_trans trs
 	in
 	log estimator#output;
 

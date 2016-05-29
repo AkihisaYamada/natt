@@ -4,6 +4,16 @@ open Term
 open Trs
 open Params
 
+type 'a connects_formula =
+	| False
+	| Connects of ('a * 'a) list
+
+let connects_and a b =
+	match a, b with
+	| False, _ -> a
+	| _, False -> b
+	| Connects aa, Connects bb -> Connects (aa@bb)
+
 (* symbol transition graph *)
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
@@ -147,6 +157,7 @@ let sym_trans (trs:#trs) : t =
 		in
 		trs#iter_rules add_edge;
 		ignore (SymGoper.add_transitive_closure sym_g);
+		SymG.remove_vertex sym_g ""; (* Remove the temporal vertex *)
 	in
 	let trans_sym : #sym -> #sym -> bool =
 	fun f g ->

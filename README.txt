@@ -7,11 +7,9 @@ This is a release of NaTT ver.1.5.
 
 ---- Installation ----
 
-To compile NaTT, the third-party library ``ocamlgraph'' has to be installed:
-http://ocamlgraph.lri.fr/
-When compiling it, it seems that you want to do
-``sudo gmake install-findlib''
-in order for ``ocamlfind'' to work.
+NaTT requires:
+- OCaml ver. 4.02.0 or later (https://ocaml.org/)
+- ocamlgraph (http://ocamlgraph.lri.fr/)
 
 Then please just ``make''.
 
