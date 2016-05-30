@@ -20,10 +20,11 @@ module SymGoper = Graph.Oper.I(SymG)
 
 class virtual t (trs:#trs) = object (x)
 
-	method virtual narrows : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool
+	method virtual narrows_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool
 
 	method connects : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
 	fun (Node(f,ss)) (Node(g,ts)) ->
+		f#is_var || g#is_var ||
 		f#equals g &&
 		(	match f#ty with
 			| Fun -> List.for_all2 x#narrows ss ts
@@ -37,15 +38,23 @@ class virtual t (trs:#trs) = object (x)
 			| _ -> true
 		)
 
-	method is_redex_candidate :
-	'a. (#sym as 'a) term -> bool = fun (Node(f,ss)) ->
-		let tester i =
-			let Node(_,ls) = (trs#find_rule i)#l in
-			List.for_all2 x#narrows ss ls
-		in
-		let f = trs#find_sym f in
-		Rules.exists tester f#weakly_defined_by ||
-		Rules.exists tester f#defined_by
+	method narrows_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun n (Node(f,ss) as s) t ->
+			x#connects s t ||
+			if n = 0 then x#narrows_0 s t
+			else
+				let tester i =
+					let rule = trs#find_rule i in
+					let Node(_,ls) = rule#l in
+					List.for_all2 (x#narrows_n (n-1)) ss ls &&
+					x#narrows_n (n-1) rule#r t
+				in
+				let f = trs#find_sym f in
+				Rules.exists tester f#weakly_defined_by ||
+				Rules.exists tester f#defined_by
+
+	method narrows : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun s t -> x#narrows_n 1 s t
 
 	method find_matchable :
 	'a. (#sym as 'a) term -> Rules.elt list = fun s ->
@@ -131,15 +140,12 @@ end;;
 
 let tcap (trs:#trs) : t = object (x)
 	inherit t trs
-	method narrows : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
-	fun (Node(f,ss) as s) (Node(g,ts) as t) ->
-		f#is_var ||
-		g#is_var ||
-		x#is_redex_candidate s ||
-		x#connects s t
+	method narrows_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+	fun s t -> true
 end;;
 
 let sym_trans (trs:#trs) : t =
+	let collapsable = ref [] in
 	let sym_g = SymG.create () in
 	let () =
 		SymG.add_vertex sym_g  ""; (* this vertex represents arbitrary symbol *)
@@ -153,7 +159,12 @@ let sym_trans (trs:#trs) : t =
 		let add_edge _ rule =
 			let f = root rule#l in
 			let g = root rule#r in
-			SymG.add_edge sym_g f#name (if g#is_var then "" else g#name);
+			if g#is_var then begin
+				collapsable := f :: !collapsable;
+				SymG.add_edge sym_g f#name "";
+			end else begin
+				SymG.add_edge sym_g f#name g#name;
+			end;
 		in
 		trs#iter_rules add_edge;
 		ignore (SymGoper.add_transitive_closure sym_g);
@@ -165,35 +176,18 @@ let sym_trans (trs:#trs) : t =
 	in
 	object (x)
 		inherit t trs
-		method narrows : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
-		fun (Node(f,ss) as s) (Node(g,ts) as t) ->
-			f#is_var ||
-			g#is_var ||
-			x#is_redex_candidate s && trans_sym f g ||
-			x#connects s t
-
-		method output : 'a. (#Io.printer as 'a) -> unit =
-		fun pr ->
+		method narrows_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+			fun (Node(f,ss) as s) (Node(g,ts) as t) -> trans_sym f g
+		method output : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			pr#puts "Symbol transition graph:";
 			pr#enter 4;
-			let collapsable = ref [] in
-			let stable = ref [] in
 			let iterer (f:#sym_detailed) =
 				if f#is_defined then begin
-					if SymG.mem_edge sym_g f#name "" then begin
-						collapsable := f :: !collapsable;
-					end else begin
-						let succ = SymG.succ sym_g f#name in
-						if succ = [] then begin
-							stable := f :: !stable;
-						end else begin
-							pr#endl;
-							f#output pr;
-							pr#puts "\t-->";
-							List.iter
-								(fun gname -> pr#putc ' '; pr#puts gname;) succ;
-						end;
-					end;
+					let succ = SymG.succ sym_g f#name in
+					pr#endl;
+					f#output pr;
+					pr#puts "\t-->";
+					List.iter (fun gname -> pr#putc ' '; pr#puts gname;) succ;
 				end;
 			in
 			trs#iter_syms iterer;
@@ -201,10 +195,6 @@ let sym_trans (trs:#trs) : t =
 			pr#endl;
 			pr#puts "Collapsable symbols: {";
 			List.iter (fun (f : #sym) -> pr#putc ' '; f#output pr;) !collapsable;
-			pr#puts " }";
-			pr#endl;
-			pr#puts "Stable symbols: {";
-			List.iter (fun (f : #sym) -> pr#putc ' '; f#output pr;) !stable;
 			pr#puts " }";
 			pr#leave 2;
 			pr#endl;

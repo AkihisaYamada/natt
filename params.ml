@@ -444,18 +444,21 @@ while !i < argc do
 			params.comment <- false;
 			params.problem <- false;
 			params.proof <- false;
-		| "v", _ ->
-			let v =
-				match optarg with
-				| Some s -> safe_atoi s arg
-				| _ -> 3
-			in
-			params.comment <- v > 0;
-			params.problem <- v > 1;
-			params.proof <- v > 2;
-			params.log <- v > 3;
-			params.debug <- v > 4;
-			params.debug2 <- v > 5;
+		| "v", Some s -> begin
+			match s with
+			| "p" | "problem" -> params.problem <- true;
+			| "l" | "log" -> params.log <- true;
+			| "d" | "debug" -> params.debug <- true;
+			| "d2" | "debug2" -> params.debug2 <- true;
+			| _ ->
+				let v = safe_atoi s arg in
+				params.comment <- v > 0;
+				params.problem <- v > 1;
+				params.proof <- v > 2;
+				params.log <- v > 3;
+				params.debug <- v > 4;
+				params.debug2 <- v > 5;
+			end;
 		| "x", None ->
 			params.result <- false;
 			params.warning <- false;

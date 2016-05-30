@@ -295,6 +295,7 @@ let dp_prove (trs : #trs) =
 		)
 	);
 	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
+	(dg#output_debug << endl) cerr;
 	log dg#output_edges;
 
 	let ret = dp_remove trs estimator dg in

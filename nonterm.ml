@@ -108,7 +108,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 		List.iter iterer2 (estimate_paths len trs dg scc i1 i1);
 	in
 	if lim > 0 then begin
-		comment (puts "  Finding a loop... ");
+		comment (puts "  Finding a loop... " << flush);
 		debug2 endl;
 		for len = 1 to lim do
 			List.iter (iterer len (max 0 (params.max_narrowing - List.length scc))) scc;

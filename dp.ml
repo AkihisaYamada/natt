@@ -93,6 +93,8 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		val dp_table = Hashtbl.create 256
 		val dg = DG.create ()
 		val mutable dp_cnt = 0
+		val mutable edge_all = 0
+		val mutable edge_real = 0
 		val mutable need_extended_rules =
 			trs#is_theoried && params.acdp_mode = ACDP_new
 
@@ -224,19 +226,12 @@ class dg (trs : trs) (estimator : Estimator.t) =
 (* Estimated dependency graph *)
 
 		method private make_dg =
-			log estimator#output;
-			let edged_KT98 src tgt =
-				if (root src#l)#is_associative then
-					List.exists (fun r' -> estimator#connects r' tgt#l) (top_ac_subterms src#r)
-				else estimator#connects src#r tgt#l
-			in
-			let edged =
-				if params.acdp_mode = ACDP_KT98 then edged_KT98
-				else fun src tgt ->
-					let Node(f,ss) = src#r in
-					let Node(g,ts) = tgt#l in
-					f#equals g &&
-					if f#is_commutative then
+			let edged : rule -> rule -> bool =
+			fun src tgt ->
+				let Node(f,ss) = src#r in
+				let Node(g,ts) = tgt#l in
+				f#equals g && (edge_all <- edge_all + 1; true) &&
+				(	if f#is_commutative then
 						(* commutativity is taken specially *)
 						match ss, ts with
 						| [s1;s2], [t1;t2] ->
@@ -244,6 +239,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 							(estimator#narrows s1 t2 && estimator#narrows s2 t1)
 						| _ -> raise (No_support "nonbinary commutative symbol")
 					else List.for_all2 estimator#narrows ss ts
+				) && (edge_real <- edge_real + 1; true)
 			in
 			Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 			Hashtbl.iter
@@ -318,4 +314,9 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			x#iter_dps iterer;
 			pr#leave 2;
 			pr#endl;
+		method output_debug : 'a. (#Io.printer as 'a) -> unit = fun pr ->
+			pr#puts "  all edges: ";
+			pr#put_int edge_all;
+			pr#puts ", removed: ";
+			pr#put_int (edge_all - edge_real);
 	end;;
