@@ -228,18 +228,8 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		method private make_dg =
 			let edged : rule -> rule -> bool =
 			fun src tgt ->
-				let Node(f,ss) = src#r in
-				let Node(g,ts) = tgt#l in
-				f#equals g && (edge_all <- edge_all + 1; true) &&
-				(	if f#is_commutative then
-						(* commutativity is taken specially *)
-						match ss, ts with
-						| [s1;s2], [t1;t2] ->
-							(estimator#narrows s1 t1 && estimator#narrows s2 t2) ||
-							(estimator#narrows s1 t2 && estimator#narrows s2 t1)
-						| _ -> raise (No_support "nonbinary commutative symbol")
-					else List.for_all2 estimator#narrows ss ts
-				) && (edge_real <- edge_real + 1; true)
+				(root src#r)#equals (root tgt#l) && (edge_all <- edge_all + 1; true) &&
+				estimator#may_connect src#r tgt#l && (edge_real <- edge_real + 1; true)
 			in
 			Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
 			Hashtbl.iter

@@ -217,7 +217,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 				cpf (Xml.leave "component");
 				loop_silent n_reals sccs
 			) else (
-				problem (puts "  SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
+				comment (puts "  SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
 				cpf (Xml.enclose_inline "realScc" (puts "true"));
 				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
 					comment (puts "only weak rules." << endl);
@@ -261,7 +261,7 @@ let dp_prove (trs : #trs) =
 		| E_tcap -> Estimator.tcap trs
 		| _ -> Estimator.sym_trans trs
 	in
-	log estimator#output;
+	debug estimator#output;
 
 	cpf (Xml.enter "acDependencyPairs");
 (*	cpf (Xml.enclose "markedSymbols" (fun os -> output_string os "true");
@@ -321,7 +321,9 @@ let prove_termination (trs : #trs) =
 			rule_remove (fun trs ->
 				if uncurry trs dummy_dg then
 					rule_remove dp_prove trs
-				else dp_prove trs
+				else if params.mode = MODE_dp then
+					dp_prove trs
+				else raise Unknown
 			) trs
 		with
 		| Success -> YES

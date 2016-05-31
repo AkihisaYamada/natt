@@ -240,6 +240,7 @@ type params_type =
 	mutable mode : mode;
 	mutable file : string;
 	mutable edge_mode : estimator_mode;
+	mutable edge_length : int;
 	mutable sort_scc : sort_mode;
 	mutable uncurry : bool;
 	mutable max_loop : int;
@@ -269,6 +270,7 @@ let params =
 	mode = MODE_order;
 	file = "";
 	edge_mode = E_sym_trans;
+	edge_length = 1;
 	sort_scc = SORT_asc;
 	uncurry = false;
 	max_loop = 0;
@@ -622,6 +624,7 @@ while !i < argc do
 		| "-dup", None -> default := false; params.mode <- MODE_dup;
 		| "-relative-test", None -> params.mode <- MODE_relative_test;
 		| "-tcap", None -> params.edge_mode <- E_tcap;
+		| "-edge", Some s -> params.edge_length <- safe_atoi s arg;
 		| "t", mode ->
 			default := false;
 			begin

@@ -20,47 +20,66 @@ module SymGoper = Graph.Oper.I(SymG)
 
 class virtual t (trs:#trs) = object (x)
 
-	method virtual narrows_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool
+	method virtual may_reach_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool
 
-	method connects : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+	method unifies : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
 	fun (Node(f,ss)) (Node(g,ts)) ->
-		f#is_var || g#is_var ||
+		f#is_var ||
+		g#is_var ||
 		f#equals g &&
-		(	match f#ty with
-			| Fun -> List.for_all2 x#narrows ss ts
+		match f#ty with
+		| Fun -> List.for_all2 x#unifies ss ts
+		| Th "C" ->
+			(	match ss, ts with
+				| [s1;s2], [t1;t2] ->
+					(x#unifies s1 t1 && x#unifies s2 t2) ||
+					(x#unifies s1 t2 && x#unifies s2 t1)
+				| _ -> raise (No_support "nonbinary commutative symbol")
+			)
+		| _ -> true
+
+	method may_connect_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun n (Node(f,ss)) (Node(g,ts)) ->
+			f#equals g &&
+			match f#ty with
+			| Fun -> List.for_all2 (x#may_reach_n n) ss ts
 			| Th "C" ->
 				(	match ss, ts with
 					| [s1;s2], [t1;t2] ->
-						(x#narrows s1 t1 && x#narrows s2 t2) ||
-						(x#narrows s1 t2 && x#narrows s2 t1)
+						(x#may_reach_n n s1 t1 && x#may_reach_n n s2 t2) ||
+						(x#may_reach_n n s1 t2 && x#may_reach_n n s2 t1)
 					| _ -> raise (No_support "nonbinary commutative symbol")
 				)
 			| _ -> true
-		)
 
-	method narrows_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
+	method may_reach_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
 		fun n (Node(f,ss) as s) t ->
-			x#connects s t ||
-			if n = 0 then x#narrows_0 s t
+			f#is_var ||
+			(root t)#is_var ||
+			if n = 0 then x#may_reach_0 s t
 			else
+				x#may_connect_n (n-1) s t ||
 				let tester i =
 					let rule = trs#find_rule i in
 					let Node(_,ls) = rule#l in
-					List.for_all2 (x#narrows_n (n-1)) ss ls &&
-					x#narrows_n (n-1) rule#r t
+					List.for_all2 (x#may_reach_n n) ss ls &&
+					x#may_reach_n (n-1) rule#r t
 				in
 				let f = trs#find_sym f in
 				Rules.exists tester f#weakly_defined_by ||
 				Rules.exists tester f#defined_by
 
-	method narrows : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
-		fun s t -> x#narrows_n 1 s t
+	method may_connect : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun s t -> x#may_connect_n params.edge_length s t
+
+	method may_reach : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		fun s t -> x#may_reach_n params.edge_length s t
 
 	method find_matchable :
 	'a. (#sym as 'a) term -> Rules.elt list = fun s ->
 		let f = trs#find_sym (root s) in
 		let folder i ret =
-			if x#connects s (trs#find_rule i)#l then i::ret else ret
+			if x#may_connect_n 0 s (trs#find_rule i)#l then i::ret else ret
 		in
 		Rules.fold folder f#weakly_defined_by
 		(Rules.fold folder f#defined_by [])
@@ -71,7 +90,7 @@ class virtual t (trs:#trs) = object (x)
 		if term_eq s t || f#is_var || g#is_var then
 			[(0,[])]
 		else if lim > 0 then
-			let init = if x#connects s t then [(1,[])] else [] in
+			let init = if x#unifies s t then [(1,[])] else [] in
 			let folder ret i =
 				List.map (path_append (1,[i]))
 					(x#estimate_paths (lim-1) (trs#find_rule i)#r t) @ ret
@@ -140,7 +159,7 @@ end;;
 
 let tcap (trs:#trs) : t = object (x)
 	inherit t trs
-	method narrows_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+	method may_reach_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
 	fun s t -> true
 end;;
 
@@ -170,13 +189,12 @@ let sym_trans (trs:#trs) : t =
 		ignore (SymGoper.add_transitive_closure sym_g);
 		SymG.remove_vertex sym_g ""; (* Remove the temporal vertex *)
 	in
-	let trans_sym : #sym -> #sym -> bool =
-	fun f g ->
-		SymG.mem_edge sym_g f#name "" || SymG.mem_edge sym_g f#name g#name
+	let trans_sym : #sym -> #sym -> bool = fun f g ->
+		f#equals g || SymG.mem_edge sym_g f#name g#name
 	in
 	object (x)
 		inherit t trs
-		method narrows_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
+		method may_reach_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
 			fun (Node(f,ss) as s) (Node(g,ts) as t) -> trans_sym f g
 		method output : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			pr#puts "Symbol transition graph:";

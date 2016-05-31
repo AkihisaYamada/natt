@@ -1338,7 +1338,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		else
 			let finfo = lookup f in
 			try (* for efficiency *)
-				if f = g then
+				if f#equals g then
 					match ss,ts with
 					| [s1], [t1] ->
 						let fltp = permed finfo 1 in
