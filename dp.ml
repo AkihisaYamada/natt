@@ -7,23 +7,12 @@ open Io
 
 let mark_root (Node((f:#sym),ss)) = Node(mark_sym f, ss)
 
-let mark_term_KT98 =
-	let rec sub (f:#sym) (Node(g,ss) as s) =
-		if f#equals g then
-			Node(mark_sym f, List.map (sub f) ss) else s
-	in
-	fun (Node(f,ss) as s) ->
-		if f#is_associative then
-			Node(mark_sym f, List.map (sub f) ss)
-		else mark_root s
-
 let guard_term (Node(f,ss) as s) = Node(new sym_marked Fun f#name, [s])
 
 let mark_term_ac =
 	match params.ac_mark_mode with
 	| AC_unmark -> fun x -> x
-	| AC_mark ->
-		if params.acdp_mode = ACDP_KT98 then mark_term_KT98 else mark_root
+	| AC_mark -> mark_root
 	| AC_guard -> guard_term
 
 let mark_term (Node(f,ss) as s) =
@@ -114,7 +103,6 @@ class dg (trs : trs) (estimator : Estimator.t) =
 				generate_dp_sub rule#strength (mark_term rule#l) rule#r
 			in
 			match params.acdp_mode with
-			| ACDP_new -> generate_dp_default
 			| ACDP_union -> fun rule ->
 				generate_dp_default rule;
 				if (root rule#l)#is_theoried &&
@@ -123,17 +111,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
 					List.iter iterer (extended_rules rule);
 				end;
-			| ACDP_KT98 -> fun rule ->
-				generate_dp_default rule;
-				if (root rule#l)#is_theoried then begin
-					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
-					List.iter iterer (extended_rules rule);
-				end;
-			| ACDP_ALM10 | ACDP_GK01 -> fun rule ->
-				generate_dp_default rule;
-				if (root rule#l)#is_theoried then begin
-					List.iter generate_dp_default (extended_rules rule);
-				end;
+			| _ -> generate_dp_default
 
 		method init =
 			(* Relative: Moving duplicating or non-dominant weak rules to *medium* rules *)
@@ -155,9 +133,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			if trs#exists_rule tester then begin
 				minimal <- false;
 			end;
-			if trs#is_theoried &&
-				(params.acdp_mode = ACDP_new || params.acdp_mode = ACDP_union)
-			then begin
+			if trs#is_theoried then begin
 				(* turn AC theory into weak rules *)
 				trs#th_to_rules;
 			end;
@@ -165,62 +141,6 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			add_marked_symbols trs;
 			let iterer i rule = x#generate_dp rule in
 			trs#iter_rules iterer;
-		
-			(* Additional rules for AC *)
-			let add_eq s t =
-				trs#add_rule (weak_rule s t);
-				problem trs#output_last_rule;
-			in
-			let v1 = var "_1" in
-			let y = var "_2" in
-			let z = var "_3" in
-			let ac_mark_handle (f:#sym_detailed) =
-				if f#is_associative && f#is_defined then begin
-					let u s t = app f [s;t] in
-					let m =
-						if params.ac_mark_mode = AC_mark then
-							fun s t -> mark_root (u s t)
-						else u
-					in
-					match params.acdp_mode with
-					| ACDP_KT98 ->
-						(* AC-deletion property *)
-						add_eq (u (u v1 y) z) (u v1 y);
-						if not f#is_commutative then begin
-							add_eq (u v1 (u y z)) (u y z);
-						end;
-						(* AC-marked condition *)
-						add_eq (m (m v1 y) z) (m (u v1 y) z);
-						add_eq (m (u v1 y) z) (m (m v1 y) z);
-						(* AC-deletion property is needed also for marked ones! *)
-						add_eq (m (m v1 y) z) (m v1 y);
-						if not f#is_commutative then begin
-							add_eq (m v1 (m y z)) (m v1 (u y z));
-							add_eq (m v1 (u y z)) (m v1 (m y z));
-							add_eq (m v1 (m y z)) (m y z);
-						end;
-					| ACDP_GK01 ->
-						if params.ac_mark_mode = AC_mark then begin
-							add_eq (m (u v1 y) z) (m v1 (u y z));
-							if not f#is_commutative then begin
-								add_eq (m v1 (u y z)) (m (u v1 y) z);
-							end;
-						end;
-					| ACDP_ALM10 ->
-						if params.ac_mark_mode = AC_mark then begin
-							add_eq (m (u v1 y) z) (m v1 (u y z));
-							if not f#is_commutative then begin
-								add_eq (m v1 (u y z)) (m (u v1 y) z);
-							end;
-						end;
-						add_eq (m (u v1 y) z) (m v1 y);
-						if not f#is_commutative then begin
-							add_eq (m v1 (u y z)) (m y z);
-						end;
-					| _ -> ()
-				end;
-			in
-			trs#iter_syms ac_mark_handle;
 			x#make_dg;
 
 (* Estimated dependency graph *)

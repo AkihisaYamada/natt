@@ -37,16 +37,7 @@ type sort_mode =
 type reset_mode =
 | RESET_reboot
 | RESET_reset
-type ac_mode = (* for AC; how AC arguments are compared first *)
-| AC_rec (* recursive check *)
-| AC_S90 (* Stenbach *)
-| AC_KV03 (* Korovin & Voronkov *)
-| AC_KV' (* $>_{W,top'}$ *)
-| AC_weight (* weight $>_W$ *)
 type acdp_mode =
-| ACDP_KT98
-| ACDP_GK01
-| ACDP_ALM10
 | ACDP_new
 | ACDP_union
 type ac_mark_mode =
@@ -97,7 +88,6 @@ type order_params =
 	mutable mincons : bool;
 	mutable maxcons : bool;
 	mutable adm : bool;
-	mutable ac_mode : ac_mode;
 	mutable ac_w : bool;
 	mutable strict_equal : bool;
 	mutable base_ty : base_ty;
@@ -152,7 +142,6 @@ let order_default =
 	mincons = false;
 	maxcons = false;
 	adm = false;
-	ac_mode = AC_rec;
 	ac_w = true;
 	strict_equal = false;
 	collapse = false;
@@ -220,13 +209,9 @@ let name_order p =
 		if p.mcw_val = 0 || p.max_mode <> MAX_none then
 			prec ^ "GKBO" ^ status ^ "(" ^ algebra ^ ")"
 		else if p.sc_mode = W_none || p.sc_mode = W_bool && p.dp then
-			match p.ac_mode with
-			| AC_KV03 -> "KV03"
-			| AC_KV' -> "KV03i"
-			| AC_S90 -> "S90" ^ if p.ac_w then "i" else ""
-			| _ -> prec ^ "KBO" ^ status
+			prec ^ "KBO" ^ status
 		else
-			prec ^ "TKBO" ^ (
+			prec ^ "PKBO" ^ (
 				match p.sc_mode with
 				| W_quad -> "q"
 				| W_bool -> "b"
@@ -414,25 +399,11 @@ while !i < argc do
 		| "-ac", Some s ->
 			begin
 				match s with
-				| "MU98" ->
-					params.acdp_mode <- ACDP_GK01;
-					params.ac_mark_mode <- AC_unmark; (* the marked variant is buggy *)
-				| "KT98" ->
-					params.acdp_mode <- ACDP_KT98;
-					params.ac_mark_mode <- AC_unmark; (* not yet supported *)
-				| "GK01" -> params.acdp_mode <- ACDP_GK01;
-				| "ALM10" -> params.acdp_mode <- ACDP_ALM10;
 				| "new" -> params.acdp_mode <- ACDP_new;
 				| "union" -> params.acdp_mode <- ACDP_union;
 				| "u" -> params.ac_mark_mode <- AC_unmark;
 				| "m" -> params.ac_mark_mode <- AC_mark;
 				| "g" -> params.ac_mark_mode <- AC_guard;
-				| "rec" -> p.ac_mode <- AC_rec;
-				| "S90" -> p.ac_mode <- AC_S90; p.ac_w <- false;
-				| "S90i" -> p.ac_mode <- AC_S90; p.ac_w <- true;
-				| "KV03"-> p.ac_mode <- AC_KV03;
-				| "KV03i"-> p.ac_mode <- AC_KV';
-				| "w" -> p.ac_mode <- AC_weight;
 				| _ -> erro arg;
 			end;
 		| "-rdp", Some s ->

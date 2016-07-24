@@ -300,13 +300,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		let comp vname value e = (vc_lookup vc1 vname >=^ value) &^ e in
 		Hashtbl.fold comp vc2 (LB true)
 	in
-	let vc_eq vc1 vc2 =
-		if Hashtbl.length vc1 = Hashtbl.length vc2 then
-			let comp vname value e = (vc_lookup vc1 vname =^ value) &^ e in
-			Hashtbl.fold comp vc2 (LB true)
-		else
-			LB false
-	in
 	let vc_add vc coef vname value =
 		Hashtbl.replace vc vname (vc_lookup vc vname +^ (coef *^ value))
 	in
@@ -321,21 +314,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 	in
 
 	(* weight order *)
-	let weq =
-		let pol_eq (vc1,e1) (vc2,e2) = vc_eq vc1 vc2 &^ (e1 =^ e2) in
-		let rec sub eq w1 ws2 =
-			if eq = LB true then eq
-			else
-				match ws2 with
-				| [] -> eq
-				| w2::ws2 -> sub (eq |^ pol_eq w1 w2) w1 ws2
-		in
-		fun ws1 ws2 ->
-			if List.length ws1 = List.length ws2 then
-				smt_for_all (fun w1 -> sub (LB false) w1 ws2) ws1
-			else
-				LB false
-	in
 	let wo =
 		if p.w_mode = W_none then
 			fun _ _ -> weakly_ordered
@@ -381,16 +359,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		solver#add_assertion (pmin <=^ fp);
 		solver#add_assertion (fp <=^ !pmax);
 	in
-	let add_prec_ac =
-		if p.ac_mode = AC_S90 then
-			fun fname finfo -> finfo.prec_exp <- pmin
-		else
-			fun fname finfo ->
-				if marked_name fname then begin
-					(* marked AC symbols have the precedence of unmarked one *)
-				end else begin
-					add_prec_default fname finfo;
-				end;
+	let add_prec_ac fname finfo =
+		if marked_name fname then begin
+			(* marked AC symbols have the precedence of unmarked one *)
+		end else begin
+			add_prec_default fname finfo;
+		end;
 	in
 	let add_prec =
 		match p.prec_mode with
@@ -997,25 +971,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 
 (*** compargs for AC symbols ***)
 
-	(* Korovin & Voronkov's original auxiliary order *)
-	let w_top_order (WT(f,_,sw)) (WT(g,_,tw)) =
-		if g#is_var then
-			compose (wo sw tw) (Cons(LB(f=g), LB false))
-		else if f#is_var then
-			not_ordered
-		else
-			compose (wo sw tw) (compose (spo (lookup f) (lookup g)) (Cons(weq sw tw, LB false)))
-	in
-	(* Corrected KV03 auxiliary order *)
-	let w_top_preorder (WT(f,_,sw)) (WT(g,_,tw)) =
-		if g#is_var then
-			compose (wo sw tw) weakly_ordered
-		else if f#is_var then
-			not_ordered
-		else
-			compose (wo sw tw) (spo (lookup f) (lookup g))
-	in
-	
 	let small_head spo hinfo (WT(f,_,_)) =
 		if f#is_var then LB false else strictly (spo hinfo (lookup f))
 	in
@@ -1030,11 +985,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		sub []
 	in
 
-	let comparg_ac_S90 _ order ss ts =
-		let ss, ts = delete_common ss ts in
-		mset_extension order ss ts
-	in
-	let comparg_ac_rec finfo order ss ts =
+	let comparg_ac finfo order ss ts =
 		let ss, ts = delete_common ss ts in
 		let nss = List.length ss in
 		let nts = List.length ts in
@@ -1066,32 +1017,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				let jfilter j = small_head spo finfo ya.(j-1) in
 				filtered_mset_extension_body ifilter jfilter nxs nys compa
 		)
-	in
-	let comparg_ac_KV03 finfo order ss ts =
-		let ss, ts = delete_common ss ts in
-		let nss = List.length ss in
-		let nts = List.length ts in
-		(* variables in ss may not contribute to other than length *)
-		let ss = delete_variables ss in
-		let nsh = no_small_head spo finfo in
-		compose (
-			filtered_mset_extension2 nsh nsh
-			(if p.ac_mode = AC_KV03 then w_top_order else w_top_preorder) ss ts
-		)
-		(
-			if nss > nts then
-				strictly_ordered
-			else if nss < nts then
-			 	not_ordered
-			else
-				mset_extension order ss ts
-		)
-	in
-	let comparg_ac =
-		match p.ac_mode with
-		| AC_S90 -> comparg_ac_S90
-		| AC_rec -> comparg_ac_rec
-		| _ -> comparg_ac_KV03
 	in
 	(* For AC-RPO.
 	 * $(cw,cs,ts) \in emb_candidates f ss$ indicates that f(ts) is
@@ -1212,24 +1137,22 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				else not_ordered
 	in
 	(* compargs for f and g *)
-	let compargs =
-		fun fname gname finfo ginfo ->
-			match finfo.symtype, ginfo.symtype with
-			| Fun, Fun	-> default_compargs finfo ginfo
-			| Th "C", Th "C"	->
-				fun order ss ts ->
-					smt_if
-						(mapped finfo 1)
-						(smt_if (mapped ginfo 1) (mset_extension order ss ts) strictly_ordered)
-						(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
-			| Th "A", Th "A"
-			| Th "AC", Th "AC"	->
-				fun order ss ts ->
-					smt_if
-						(mapped finfo 1)
-						(smt_if (mapped ginfo 1) (flat_compargs fname gname finfo order ss ts) strictly_ordered)
-						(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
-			| _					-> (fun _ _ _ -> not_ordered)
+	let compargs fname gname finfo ginfo =
+		match finfo.symtype, ginfo.symtype with
+		| Fun, Fun -> default_compargs finfo ginfo
+		| Th "C", Th "C" -> fun order ss ts ->
+			smt_if (mapped finfo 1)
+				(smt_if (mapped ginfo 1) (mset_extension order ss ts) strictly_ordered)
+				(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
+		| Th "A", Th "A"
+		| Th "AC", Th "AC"	-> fun order ss ts ->
+			smt_if (mapped finfo 1)
+				(smt_if (mapped ginfo 1)
+					(flat_compargs fname gname finfo order ss ts)
+					strictly_ordered
+				)
+				(smt_if (mapped ginfo 1) weakly_ordered not_ordered)
+		| _ -> fun _ _ _ -> not_ordered
 	in
 
 (*** RPO-like recursive checks ***)
@@ -1253,11 +1176,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		if p.Params.status_mode = S_empty then
 			fun _ _ _ _ -> Cons(LB false, LB false)
 		else if not p.collapse && p.adm then
-			fun _ _ _ (WT(g,_,_)) ->
-				if g#is_var then
-					Cons(LB true, LB true)
-				else
-					Cons(LB false, LB false)
+			fun _ _ _ (WT(g,_,_)) -> let b = g#is_var in Cons(LB b, LB b)
 		else if not p.collapse && p.mcw_val > 0 then
 			fun order finfo ss t ->
 				match ss with
@@ -1372,11 +1291,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 										smt_let Bool all_gt
 										(fun all_gt ->
 											let cond = fl &^ gl &^ all_gt in 
-											Cons
-											(
-												some_ge |^ (ngl &^ all_ge) |^ (cond &^ rest_ge),
-												some_gt |^ (ngl &^ all_gt) |^ (cond &^ rest_gt)
-											)
+											let ge = some_ge |^ (ngl &^ all_ge) |^ (cond &^ rest_ge) in
+											let gt = some_gt |^ (ngl &^ all_gt) |^ (cond &^ rest_gt) in
+											Cons(ge,gt)
 										)
 									)
 							)
