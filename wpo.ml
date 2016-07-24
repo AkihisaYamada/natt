@@ -405,7 +405,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			fun finfo ginfo ->
 				let pf = prec finfo in
 				let pg = prec ginfo in
-				Cons(pf >=^ pg, pf >^ pg)
+				Cons(pf =^ pg, pf >^ pg)
 		| _ ->
 			fun finfo ginfo ->
 				let pf = prec finfo in

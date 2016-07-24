@@ -104,30 +104,115 @@ let smt_expand e f =
 let smt_let ty e f =
 	if is_simple e then f e else Delay(fun context -> f (context#refer ty e))
 
-let smt_not =
+let rec smt_not =
 	function
 	| LB b	-> LB (not b)
 	| Not e	-> e
 	| Gt(e1,e2) -> Ge(e2,e1)
 	| Ge(e1,e2) -> Gt(e2,e1)
+	| Or(e1,e2) -> And(smt_not e1, smt_not e2)
+	| And(e1,e2) -> Or(smt_not e1, smt_not e2)
 	| e		-> Not(e)
 
-let (&^) e1 e2 =
-	match e1, e2 with
-	| LB b, _ -> if b then e2 else e1
-	| _, LB b -> if b then e1 else e2
-	| _, And(e3,e4)	->
-		if simple_eq e1 e3 || simple_eq e1 e4 then e2
-		else
-			let ne1 = smt_not e1 in
-			if simple_eq ne1 e3 || simple_eq ne1 e4 then LB false
-			else And(e1,e2)
-	| _ ->
-		if simple_eq e1 e2 then e1
-		else if simple_eq e1 (smt_not e2) then LB false
-		else And(e1,e2)
+let smt_pb =
+	function
+	| LB b	-> LI(if b then 1 else 0)
+	| e		-> PB e
 
-let (|^) e1 e2 =
+let rec (+^) e1 e2 =
+	match e1, e2 with
+	| LI 0,  _		-> e2
+	| LR 0.0, _		-> e2
+	| _, LI 0		-> e1
+	| _, LR 0.0		-> e1
+	| LI i1, LI i2	-> LI(i1 + i2)
+	| LR r1, LR r2	-> LR(r1 +. r2)
+	| Max es1, _	-> Max(List.map (fun e1 -> e1 +^ e2) es1)
+	| _, Max es2	-> Max(List.map (fun e2 -> e1 +^ e2) es2)
+	| Vec u, Vec v	-> Vec(Matrix.sum_vec (+^) u v)
+	| Vec u, _		-> Vec(List.map (fun e -> e +^ e2) u)
+	| _, Vec u		-> Vec(List.map (fun e -> e1 +^ e) u)
+	| Mat m, Mat n	-> Mat(Matrix.sum (+^) m n)
+	| Mat m, _		-> Mat(Matrix.mapij (fun i j e -> if i = j then e +^ e2 else e) m)
+	| _, Mat m		-> Mat(Matrix.mapij (fun i j e -> if i = j then e1 +^ e else e) m)
+	| PB c, _		-> if is_simple e2 then If(c, LI 1 +^ e2, e2) else Add(e1,e2)
+	| _, PB c		-> if is_simple e1 then If(c, e1 +^ LI 1, e1) else Add(e1,e2)
+	| If(c,t,e),_	-> if is_simple e2 then If(c, t +^ e2, e +^ e2) else Add(e1,e2)
+	| _,If(c,t,e)	-> if is_simple e1 then If(c, e1 +^ t, e1 +^ e) else Add(e1,e2)
+	| Add(e3,e4),_	-> Add(e3, e4 +^ e2)
+	| _				-> Add(e1,e2)
+
+let (-^) e1 e2 = Sub(e1,e2)
+
+let simple_ge e1 e2 =
+	match e1, e2 with
+	| EV v1, EV v2 -> v1 = v2
+	| LI i1, LI i2 -> i1 >= i2
+	| LR r1, LR r2 -> r1 >= r2
+	| _ -> false
+
+let rec simplify_under e1 e2 =
+	match e1, e2 with
+	| _, LB _
+	| _, LI _
+	| _, LR _ -> e2
+	| _, Add(e3,e4) -> simplify_under e1 e3 +^ simplify_under e1 e4
+	| _, Mul(e3,e4) -> simplify_under e1 e3 *^ simplify_under e1 e4
+	| _, If(e3,e4,e5) -> (
+		match simplify_under e1 e3 with
+		| LB b -> if b then simplify_under e1 e4 else simplify_under e1 e5
+		| e3 -> If(e3, simplify_under e1 e4, simplify_under e1 e5)
+	)
+	| _, PB e3 -> smt_pb (simplify_under e1 e3)
+	| _, And(e3,e4) -> (
+		let e3 = simplify_under e1 e3 in
+		if e3 = LB false then e3
+		else
+			let e4 = simplify_under e1 e4 in
+			if e3 = LB true then e4
+			else if e4 = LB false then e4
+			else if e4 = LB true then e3
+			else And(e3,e4)
+	)
+	| _, Or(e3,e4) -> (
+		let e3 = simplify_under e1 e3 in
+		if e3 = LB true then e3
+		else
+			let e4 = simplify_under e1 e4 in
+			if e3 = LB false then e4
+			else if e4 = LB false then e3
+			else if e4 = LB true then e4
+			else Or(e3,e4)
+	)
+	| And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
+	| Eq(l1,r1), _ -> if simple_eq l1 e2 then r1 else e2
+	| Gt(l1,r1), Gt(l2,r2)
+	| Gt(l1,r1), Ge(l2,r2) ->
+		let l1 = simplify_under e1 l1 in
+		let l2 = simplify_under e1 l2 in
+		if simple_ge l2 l1 && simple_ge r1 r2 then LB true
+		else if simple_ge r1 l2 && simple_ge r2 l1 then LB false
+		else e2
+	| Ge(l1,r1), Ge(l2,r2) ->
+		let l1 = simplify_under e1 l1 in
+		let l2 = simplify_under e1 l2 in
+		if simple_ge l2 l1 && simple_ge r1 r2 then LB true
+		else if simple_eq l1 r2 && simple_eq r1 l2 then Eq(l1,r1)
+		else e2
+	| _ ->
+		if simple_eq e1 e2 then LB true
+		else if simple_eq e1 (smt_not e2) then LB false
+		else e2
+
+and (&^) e1 e2 =
+	match e1 with
+	| LB b -> if b then e2 else e1
+	| _ ->
+		match simplify_under e1 e2 with
+		| LB b -> if b then e1 else e2
+		| e2 -> And(e1,e2)
+
+and (|^) e1 e2 =
 	match e1, e2 with
 	| LB b, _ -> if b then e1 else e2
 	| _, LB b -> if b then e2 else e1
@@ -141,6 +226,35 @@ let (|^) e1 e2 =
 		if simple_eq e1 e2 then e1
 		else if simple_eq e1 (smt_not e2) then LB true
 		else Or(e1,e2)
+
+and ( *^) e1 e2 =
+	match e1, e2 with
+	| LI 0, _		-> e1
+	| LI 1, _		-> e2
+	| _, LI 0		-> e2
+	| _, LI 1		-> e1
+	| LI i1, LI i2	-> LI(i1*i2)
+	| Mat m, Mat n	-> Mat(Matrix.prod (+^) ( *^) (LI 0) m n)
+	| Mat m, Vec v	-> Vec(Matrix.prod_vec (+^) ( *^) (LI 0) m v)
+	| Mat m, _		-> Mat(List.map (List.map (fun e -> e *^ e2)) m)
+	| _, Mat m		-> Mat(List.map (List.map (fun e -> e1 *^ e)) m)
+	| Vec u, _		-> Vec(List.map (fun e -> e *^ e2) u)
+	| _, Vec u		-> Vec(List.map (fun e -> e1 *^ e) u)
+	| PB e1, _		-> pb_distribute e1 e2
+	| _, PB e2		-> pb_distribute e2 e1
+	| _				-> Mul(e1,e2)
+and pb_distribute e1 =
+	function
+	| LI 0			-> LI 0
+	| PB e2			-> smt_pb (e1 &^ e2)
+	| Mul(PB e2,e3) -> pb_distribute (e1 &^ e2) e3
+	| Mul(e2,PB e3)	-> pb_distribute (e1 &^ e3) e2
+	| e2			-> Mul(smt_pb e1, e2)
+
+let (/^) e1 e2 =
+	if e1 = LI 0 || e2 = LI 1 then e1
+	else Div(e1,e2)
+
 
 let (=>^) e1 e2 = smt_not e1 |^ e2
 
@@ -160,21 +274,15 @@ let smt_for_all2 f = List.fold_left2 (fun ret e1 e2 -> ret &^ f e1 e2) (LB true)
 
 let smt_exists f = List.fold_left (fun ret e -> ret |^ f e) (LB false)
 
-let smt_pb =
-	function
-	| LB b	-> LI(if b then 1 else 0)
-	| e		-> PB e
-
 let smt_if e1 e2 e3 =
 	match e1 with
 	| LB b	-> if b then e2 else e3
 	| _		->
-		if simple_eq e2 e3 then e2 
-		else
-			match e2, e3 with
-			| LB b2, _	-> if b2 then e1 |^ e3 else smt_not e1 &^ e3
-			| _, LB b3	-> if b3 then e1 =>^ e2 else e1 &^ e2
-			| _ -> If(e1,e2,e3)
+		let ne1 = smt_not e1 in
+		match simplify_under e1 e2, simplify_under ne1 e3 with
+		| LB b2, e3	-> if b2 then e1 |^ e3 else ne1 &^ e3
+		| e2, LB b3	-> if b3 then e1 =>^ e2 else e1 &^ e2
+		| e2, e3 -> if simple_eq e2 e3 then e2 else If(e1,e2,e3)
 
 let vector_scalar comp es1 e2 context =
 	let e2 = context#refer Int e2 in
@@ -238,65 +346,6 @@ let rec (>^) e1 e2 =
 
 let (<=^) e1 e2 = e2 >=^ e1
 let (<^) e1 e2 = e2 >^ e1
-
-let rec (+^) e1 e2 =
-	match e1, e2 with
-	| LI 0,  _		-> e2
-	| LR 0.0, _		-> e2
-	| _, LI 0		-> e1
-	| _, LR 0.0		-> e1
-	| LI i1, LI i2	-> LI(i1 + i2)
-	| LR r1, LR r2	-> LR(r1 +. r2)
-	| Max es1, _	-> Max(List.map (fun e1 -> e1 +^ e2) es1)
-	| _, Max es2	-> Max(List.map (fun e2 -> e1 +^ e2) es2)
-	| Vec u, Vec v	-> Vec(Matrix.sum_vec (+^) u v)
-	| Vec u, _		-> Vec(List.map (fun e -> e +^ e2) u)
-	| _, Vec u		-> Vec(List.map (fun e -> e1 +^ e) u)
-	| Mat m, Mat n	-> Mat(Matrix.sum (+^) m n)
-	| Mat m, _		-> Mat(Matrix.mapij (fun i j e -> if i = j then e +^ e2 else e) m)
-	| _, Mat m		-> Mat(Matrix.mapij (fun i j e -> if i = j then e1 +^ e else e) m)
-	| PB c, _		-> if is_simple e2 then If(c, LI 1 +^ e2, e2) else Add(e1,e2)
-	| _, PB c		-> if is_simple e1 then If(c, e1 +^ LI 1, e1) else Add(e1,e2)
-	| If(c,t,e),_	-> if is_simple e2 then If(c, t +^ e2, e +^ e2) else Add(e1,e2)
-	| _,If(c,t,e)	-> if is_simple e1 then If(c, e1 +^ t, e1 +^ e) else Add(e1,e2)
-	| Add(e3,e4),_	-> Add(e3, e4 +^ e2)
-	| _				-> Add(e1,e2)
-
-let (-^) e1 e2 = Sub(e1,e2)
-
-let rec ( *^) e1 e2 =
-	match e1, e2 with
-	| LI 0, _		-> e1
-	| LI 1, _		-> e2
-	| _, LI 0		-> e2
-	| _, LI 1		-> e1
-	| LI i1, LI i2	-> LI(i1*i2)
-	| Mat m, Mat n	-> Mat(Matrix.prod (+^) ( *^) (LI 0) m n)
-	| Mat m, Vec v	-> Vec(Matrix.prod_vec (+^) ( *^) (LI 0) m v)
-	| Mat m, _		-> Mat(List.map (List.map (fun e -> e *^ e2)) m)
-	| _, Mat m		-> Mat(List.map (List.map (fun e -> e1 *^ e)) m)
-	| Vec u, _		-> Vec(List.map (fun e -> e *^ e2) u)
-	| _, Vec u		-> Vec(List.map (fun e -> e1 *^ e) u)
-	| PB e1, _		-> pb_distribute e1 e2
-	| _, PB e2		-> pb_distribute e2 e1
-	| _				-> Mul(e1,e2)
-and pb_distribute e1 =
-	function
-	| LI 0			-> LI 0
-	| PB e2			-> smt_pb (e1 &^ e2)
-	| Mul(PB e2,e3) -> pb_distribute (e1 &^ e2) e3
-	| Mul(e2,PB e3)	-> pb_distribute (e1 &^ e3) e2
-	| e2			-> Mul(smt_pb e1, e2)
-
-let (/^) e1 e2 =
-	if e1 = LI 0 || e2 = LI 1 then e1
-	else Div(e1,e2)
-
-let smt_pb =
-	function
-	| LB b	-> LI(if b then 1 else 0)
-	| e		-> PB e
-
 
 let smt_mod e1 e2 = Mod(e1,e2)
 let smt_max e1 e2 =
@@ -550,7 +599,7 @@ class virtual context =
 				match x#expand e2, x#expand e3 with
 				| Cons(e4,e5), Cons(e6,e7) -> let e1 = x#refer_sub Bool e1 in Cons(smt_if e1 e4 e6, smt_if e1 e5 e7)
 				| Vec u, Vec v -> let e1 = x#refer_sub Bool e1 in Vec(List.map2 (smt_if e1) u v)
-				| _ -> smt_if e1 (x#expand e2) (x#expand e3)
+				| e2,e3 -> smt_if e1 e2 e3
 
 		method expand =
 			function
