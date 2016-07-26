@@ -441,6 +441,8 @@ while !i < argc do
 			params.cpf <- true;
 			params.naive_C <- true;
 			params.edge_mode <- E_tcap;
+			(* for CeTA, the order is crusial *)
+			params.sort_scc <- SORT_none;
 		| "x", Some file ->
 			params.cpf <- true;
 			params.cpf_to <- open_out file;

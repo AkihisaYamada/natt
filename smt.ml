@@ -1039,10 +1039,16 @@ class virtual smt_lib_2_0 =
 						match v.[i] with
 						| 'a'..'z' | 'A'..'Z' | '0'..'9' |  '+' | '-' | '*' | '/'
 						| '_' -> x#putc v.[i]
-						| ' '	-> x#puts "<s>"
+						| ' '	-> x#puts "<sp>"
 						| '\''	-> x#puts "<q>"
 						| '<'	-> x#puts "<gt>"
 						| '>'	-> x#puts "<lt>"
+						| '#'	-> x#puts "<sh>"
+						| ':'	-> x#puts "<col>"
+						| '\\'	-> x#puts "<bs>"
+						| '.'	-> x#puts "<dot>"
+						| '{'	-> x#puts "<bl>"
+						| '}'  -> x#puts "<br>"
 						| c		-> x#putc '<'; x#put_hex (Char.code c); x#putc '>'
 						end;
 					sub (i+1);

@@ -189,9 +189,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	in
 
 	let sccs = dg#get_sccs in
-	let sccs = (* for CeTA, the order is crusial *)
-		if not params.cpf then scc_sorter sccs else sccs
-	in
+	let sccs = scc_sorter sccs in
 
 	let real_filter = List.filter (fun scc -> not (dg#triv_scc scc)) in
 
@@ -230,6 +228,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 					if remove_strict sccref then (
 						let subsccs = dg#get_subsccs !sccref in
 						let real_subsccs = real_filter subsccs in
+						let subsccs = scc_sorter subsccs in
 						let ret = dg_proc (n_reals - 1 + List.length real_subsccs) subsccs in
 						cpf (Xml.leave "acRedPairProc" << Xml.leave "acDPTerminationProof");
 						cpf (Xml.leave "component");
