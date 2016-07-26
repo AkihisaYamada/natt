@@ -197,8 +197,8 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 
 	let real_sccs = real_filter sccs in
 
-(*	remove_unusable trs estimator dg real_sccs;
-*)
+	remove_unusable trs estimator dg real_sccs;
+
 	let rec dg_proc n_reals sccs =
 		cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc");
 		let ret = loop n_reals sccs in
@@ -295,8 +295,8 @@ let dp_prove (trs : #trs) =
 		)
 	);
 	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
-	(dg#output_debug << endl) cerr;
 	log dg#output_edges;
+	(dg#output_debug << endl) cerr;
 
 	let ret = dp_remove trs estimator dg in
 	cpf (Xml.leave "acDependencyPairs");

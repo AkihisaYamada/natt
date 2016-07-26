@@ -375,6 +375,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 	(* Precedence over symbols *)
 	let spo =
 		match p.prec_mode with
+		| PREC_none -> fun _ _ -> weakly_ordered
 		| PREC_quasi ->
 			fun finfo ginfo ->
 				let pf = prec finfo in
@@ -384,30 +385,24 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			fun finfo ginfo ->
 				let pf = prec finfo in
 				let pg = prec ginfo in
-				if pf = pg then
-					weakly_ordered
-				else
-					Dup(Bool, prec finfo >^ prec ginfo)
+				if pf = pg then weakly_ordered else Cons(LB false, pf >^ pg)
 	in
 	(* Precedence of root symbols *)
 	let po =
-		if p.prec_mode = PREC_none then
-			fun _ _ -> weakly_ordered
-		else
-			let sub =
-				if p.mincons then
-					function
-					| []	-> fun ginfo -> Cons(pmin =^ prec ginfo, LB false)
-					| _		-> fun _ -> not_ordered
-				else
-					fun _ _ -> not_ordered
-			in
-			fun (WT((f:#sym),_,_)) (WT((g:#sym),ts,_)) ->
-				if f#is_var then
-					if g#is_var then Cons(LB(f#equals g), LB false)
-					else sub ts (lookup g)
-				else if g#is_var then not_ordered
-				else spo (lookup f) (lookup g)
+		let sub =
+			if p.mincons then
+				function
+				| []	-> fun ginfo -> Cons(pmin =^ prec ginfo, LB false)
+				| _		-> fun _ -> not_ordered
+			else
+				fun _ _ -> not_ordered
+		in
+		fun (WT((f:#sym),_,_)) (WT((g:#sym),ts,_)) ->
+			if f#is_var then
+				if g#is_var then Cons(LB(f#equals g), LB false)
+				else sub ts (lookup g)
+			else if g#is_var then not_ordered
+			else spo (lookup f) (lookup g)
 	in
 
 (*** Argument filters ***)
@@ -1255,50 +1250,47 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		if f#is_var then
 			Cons(var_eq f#name t, LB false)
 		else
-			let finfo = lookup f in
-			try (* for efficiency *)
-				if f#equals g then
-					match ss,ts with
-					| [s1], [t1] ->
-						let fltp = permed finfo 1 in
-						smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
-					| _ -> raise Continue
-				else raise Continue
-			with
-			| Continue -> 
-				smt_split (order_by_some_arg wpo finfo ss t)
-				(fun some_ge some_gt ->
-					let fl = argfilt_list finfo in
-					let nfl = smt_not fl in
-					smt_let Bool some_ge
-					(fun some_ge ->
-						let some_gt = (nfl &^ some_gt) |^ (fl &^ some_ge) in
-						if some_gt = LB true then
-							strictly_ordered
-						else if g#is_var then
-							Cons(some_ge |^ is_maxcons finfo, some_gt)
+			if f#equals g then
+				match ss,ts with
+				| [s1], [t1] ->
+					let fltp = permed (lookup f) 1 in
+					smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
+				| _ -> wpo3 s t
+			else wpo3 s t
+	and wpo3 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+		let finfo = lookup f in
+		smt_split (order_by_some_arg wpo finfo ss t)
+		(fun some_ge some_gt ->
+			smt_let Bool some_ge
+			(fun some_ge ->
+				let fl = argfilt_list finfo in
+				let some_gt = (smt_not fl &^ some_gt) |^ (fl &^ some_ge) in
+				if some_gt = LB true then
+					strictly_ordered
+				else if g#is_var then
+					Cons(some_ge |^ is_maxcons finfo, some_gt)
+				else
+					let ginfo = lookup g in
+					smt_split (order_all_args wpo s ginfo ts)
+					(fun all_ge all_gt ->
+						let gl = argfilt_list ginfo in
+						let ngl = smt_not gl in
+						if all_gt = LB false then
+							Cons(some_ge |^ (ngl &^ all_ge), some_gt)
 						else
-							let ginfo = lookup g in
-							smt_split (order_all_args wpo s ginfo ts)
-							(fun all_ge all_gt ->
-								let gl = argfilt_list ginfo in
-								let ngl = smt_not gl in
-								if all_gt = LB false then
-									Cons(some_ge |^ (ngl &^ all_ge), some_gt)
-								else
-									smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts))
-									(fun rest_ge rest_gt ->
-										smt_let Bool all_gt
-										(fun all_gt ->
-											let cond = fl &^ gl &^ all_gt in 
-											let ge = some_ge |^ (ngl &^ all_ge) |^ (cond &^ rest_ge) in
-											let gt = some_gt |^ (ngl &^ all_gt) |^ (cond &^ rest_gt) in
-											Cons(ge,gt)
-										)
-									)
+							smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts))
+							(fun rest_ge rest_gt ->
+								smt_let Bool all_gt
+								(fun all_gt ->
+									let cond = fl &^ gl &^ all_gt in 
+									let ge = some_ge |^ (ngl &^ all_ge) |^ (cond &^ rest_ge) in
+									let gt = some_gt |^ (ngl &^ all_gt) |^ (cond &^ rest_gt) in
+									Cons(ge,gt)
+								)
 							)
 					)
-				)
+			)
+		)
 	in
 	let frame =
 		if p.prec_mode = PREC_none && p.Params.status_mode = S_empty then

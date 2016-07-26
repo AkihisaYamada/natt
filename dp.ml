@@ -225,7 +225,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			pr#leave 2;
 			pr#endl;
 		method output_debug : 'a. (#Io.printer as 'a) -> unit = fun pr ->
-			pr#puts "  all edges: ";
+			pr#puts "  trivial edges: ";
 			pr#put_int edge_all;
 			pr#puts ", removed: ";
 			pr#put_int (edge_all - edge_real);
