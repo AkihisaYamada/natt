@@ -1325,9 +1325,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 	let output_proof (pr:#printer) =
 		let pr_exp = output_exp pr in
 		let pr_perm finfo =
-			pr#puts "sigma(";
-			finfo.sym#output pr;
-			pr#puts ") = ";
+			pr#puts "s: ";
 			let punct = ref "" in
 			let rbr =
 				if solver#get_bool (argfilt_list finfo) then
@@ -1354,9 +1352,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			| exp -> pr#puts " + "; pr_exp exp;
 		in
 		let pr_interpret finfo =
-			pr#puts "I(";
-			finfo.sym#output pr;
-			pr#puts ") = ";
+			pr#puts "w: ";
 			let n = finfo.arity in
 			let sc =
 				if finfo.symtype = Fun then subterm_coef finfo
@@ -1438,29 +1434,27 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			end
 		in
 		let pr_prec finfo =
-			if solver#get_bool (argfilt_list finfo) then begin
-				pr#puts "prec = ";
-				pr_exp (solver#get_value (prec finfo));
-			end;
+			pr#puts "p: ";
+			pr_exp (solver#get_value (prec finfo));
 		in
 		let pr_symbol fname finfo =
-			let flag = ref false in
+			pr#puts "      ";
+			finfo.sym#output pr;
 			if status_is_used then begin
 				pr#puts "\t";
 				pr_perm finfo;
-				flag := true;
 			end;
-			if weight_is_used then begin
-				pr#puts "\t";
-				pr_interpret finfo;
-				flag := true;
+			if solver#get_bool (argfilt_list finfo) then begin
+				if prec_is_used then begin
+					pr#puts "\t";
+					pr_prec finfo;
+				end;
+				if weight_is_used then begin
+					pr#puts "\t";
+					pr_interpret finfo;
+				end;
 			end;
-			if prec_is_used then begin
-				pr#puts "\t";
-				pr_prec finfo;
-				flag := true;
-			end;
-			if !flag then pr#endl;
+			pr#endl;
 		in
 		let pr_usable =
 			let folder is (i,_) =
