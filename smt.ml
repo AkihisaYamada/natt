@@ -80,6 +80,9 @@ let rec is_simple =
 	| LR _		-> true
 	| PB(EV _)	-> true
 	| Not(EV _)	-> true
+	| And(e1,e2)-> is_simple e1 && is_simple e2
+	| Or(e1,e2)	-> is_simple e1 && is_simple e2
+	| Eq(e1,e2)	-> is_simple e1 && is_simple e2
 	| Gt(e1,e2)	-> is_simple e1 && is_simple e2
 	| Ge(e1,e2)	-> is_simple e1 && is_simple e2
 	| _			-> false
@@ -94,8 +97,6 @@ let rec simple_eq e1 e2 =
 	| LR r1, LR r2	-> r1 = r2
 	| Not(EV v1), Not(EV v2) -> v1 = v2
 	| PB(EV v1), PB(EV v2) -> v1 = v2
-	| Ge(l1,r1),Ge(l2,r2) -> simple_eq l1 l2 && simple_eq r1 r2
-	| Gt(l1,r1),Gt(l2,r2) -> simple_eq l1 l2 && simple_eq r1 r2
 	| _ -> false
 
 let smt_expand e f =
@@ -132,7 +133,7 @@ let rec (+^) e1 e2 =
 	| Vec u, Vec v	-> Vec(Matrix.sum_vec (+^) u v)
 	| Vec u, _		-> Vec(List.map (fun e -> e +^ e2) u)
 	| _, Vec u		-> Vec(List.map (fun e -> e1 +^ e) u)
-	| Mat m, Mat n	-> Mat(Matrix.sum (+^) m n)
+	| Mat m, Mat n	-> Delay(fun _ -> Mat(Matrix.sum (+^) m n))
 	| Mat m, _		-> Mat(Matrix.mapij (fun i j e -> if i = j then e +^ e2 else e) m)
 	| _, Mat m		-> Mat(Matrix.mapij (fun i j e -> if i = j then e1 +^ e else e) m)
 	| PB c, _		-> if is_simple e2 then If(c, LI 1 +^ e2, e2) else Add(e1,e2)
@@ -156,14 +157,9 @@ let rec simplify_under e1 e2 =
 	| _, LB _
 	| _, LI _
 	| _, LR _ -> e2
+	| _, PB e3 -> smt_pb (simplify_under e1 e3)
 	| _, Add(e3,e4) -> simplify_under e1 e3 +^ simplify_under e1 e4
 	| _, Mul(e3,e4) -> simplify_under e1 e3 *^ simplify_under e1 e4
-	| _, If(e3,e4,e5) -> (
-		match simplify_under e1 e3 with
-		| LB b -> if b then simplify_under e1 e4 else simplify_under e1 e5
-		| e3 -> If(e3, simplify_under e1 e4, simplify_under e1 e5)
-	)
-	| _, PB e3 -> smt_pb (simplify_under e1 e3)
 	| _, And(e3,e4) -> (
 		let e3 = simplify_under e1 e3 in
 		if e3 = LB false then e3
@@ -184,49 +180,77 @@ let rec simplify_under e1 e2 =
 			else if e4 = LB true then e4
 			else Or(e3,e4)
 	)
+	| _, If(e3,e4,e5) -> (
+		match simplify_under e1 e3 with
+		| LB b -> if b then simplify_under e1 e4 else simplify_under e1 e5
+		| e3 ->
+			(* e4 and e5 should be already simplified w.r.t. e3 *)
+			If(e3, simplify_under e1 e4, simplify_under e1 e5)
+	)
 	| And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
-	| Eq(l1,r1), _ -> if simple_eq l1 e2 then r1 else e2
-	| Gt(l1,r1), Gt(l2,r2)
+	| Eq(l1,r1), Eq(l2,r2) ->
+		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
+		if simple_eq l1 l2 && simple_eq r1 r2 ||
+		   simple_eq l1 r2 && simple_eq r1 l2 then LB true
+		else Eq(l2,r2)
+	| Eq(l1,r1), Gt(l2,r2) ->
+		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
+		if simple_ge r2 l1 && simple_ge r1 l2 then LB false else Gt(l2,r2)
+	| Eq(l1,r1), Ge(l2,r2) ->
+		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
+		if simple_ge l2 l1 && simple_ge r1 r2 then LB true else Ge(l2,r2)
+	| Gt(l1,r1), Eq(l2,r2) ->
+		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
+		if simple_ge l2 l1 && simple_ge r1 r2 ||
+		   simple_ge r2 l1 && simple_ge r1 l2 then LB false
+		else Eq(l2,r2)
+	| Gt(l1,r1), Gt(l2,r2) ->
+		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
+		if simple_ge l2 l1 && simple_ge r1 r2 then LB true
+		else if simple_ge r2 l1 && simple_ge r1 l2 then LB false
+		else Gt(l2,r2)
 	| Gt(l1,r1), Ge(l2,r2) ->
-		let l1 = simplify_under e1 l1 in
 		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
 		if simple_ge l2 l1 && simple_ge r1 r2 then LB true
-		else if simple_ge r1 l2 && simple_ge r2 l1 then LB false
-		else e2
+		else if simple_ge r2 l1 && simple_ge r1 l2 then LB false
+		else Ge(l2,r2)
 	| Ge(l1,r1), Ge(l2,r2) ->
-		let l1 = simplify_under e1 l1 in
 		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
 		if simple_ge l2 l1 && simple_ge r1 r2 then LB true
-		else if simple_eq l1 r2 && simple_eq r1 l2 then Eq(l1,r1)
-		else e2
-	| _ ->
-		if simple_eq e1 e2 then LB true
-		else if simple_eq e1 (smt_not e2) then LB false
-		else e2
-
+		else if simple_ge r2 l1 && simple_ge r1 l2 then Eq(l2,r2)
+		else Ge(l2,r2)
+	| Ge(l1,r1), Gt(l2,r2) ->
+		let l2 = simplify_under e1 l2 in
+		let r2 = simplify_under e1 r2 in
+		if simple_ge r2 l1 && simple_ge r1 l2 then LB false
+		else Gt(l2,r2)
+	| EV v1, EV v2 -> if v1 = v2 then LB true else e2
+	| EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
+	| Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
+	| Not(EV v1), Not(EV v2) -> if v1 = v2 then LB true else e2
+	| _ -> e2
 and (&^) e1 e2 =
 	match e1 with
 	| LB b -> if b then e2 else e1
 	| _ ->
 		match simplify_under e1 e2 with
-		| LB b -> if b then e1 else e2
+		| LB b -> if b then e1 else LB false
 		| e2 -> And(e1,e2)
-
 and (|^) e1 e2 =
-	match e1, e2 with
-	| LB b, _ -> if b then e1 else e2
-	| _, LB b -> if b then e2 else e1
-	| _,Or(e3,e4)	->
-		if simple_eq e1 e3 || simple_eq e1 e4 then e2
-		else
-			let ne1 = smt_not e1 in
-			if simple_eq ne1 e3 || simple_eq ne1 e4 then LB true
-			else Or(e1,e2)
+	match e1 with
+	| LB b -> if b then e1 else e2
 	| _ ->
-		if simple_eq e1 e2 then e1
-		else if simple_eq e1 (smt_not e2) then LB true
-		else Or(e1,e2)
-
+		match simplify_under (smt_not e1) e2 with
+		| LB b -> if b then LB true else e1
+		| e2 -> Or(e1,e2)
+and (=>^) e1 e2 = smt_not e1 |^ e2
 and ( *^) e1 e2 =
 	match e1, e2 with
 	| LI 0, _		-> e1
@@ -240,23 +264,33 @@ and ( *^) e1 e2 =
 	| _, Mat m		-> Mat(List.map (List.map (fun e -> e1 *^ e)) m)
 	| Vec u, _		-> Vec(List.map (fun e -> e *^ e2) u)
 	| _, Vec u		-> Vec(List.map (fun e -> e1 *^ e) u)
-	| PB e1, _		-> pb_distribute e1 e2
-	| _, PB e2		-> pb_distribute e2 e1
+	| PB c, _		-> smt_if c e2 (LI 0)
+	| _, PB c		-> smt_if c e1 (LI 0)
+	| If(c,e,LI 0), _ ->
+		let e2 = simplify_under c e2 in
+		let e3 = e *^ e2 in
+		if e3 = LI 0 then e3 else If(c,e3,LI 0)
+	| _, If(c,e,LI 0) ->
+		let e1 = simplify_under c e1 in
+		let e3 = e1 *^ e in
+		if e3 = LI 0 then e3 else If(c,e3,LI 0)
 	| _				-> Mul(e1,e2)
-and pb_distribute e1 =
-	function
-	| LI 0			-> LI 0
-	| PB e2			-> smt_pb (e1 &^ e2)
-	| Mul(PB e2,e3) -> pb_distribute (e1 &^ e2) e3
-	| Mul(e2,PB e3)	-> pb_distribute (e1 &^ e3) e2
-	| e2			-> Mul(smt_pb e1, e2)
+and smt_if e1 e2 e3 =
+	match e1 with
+	| LB b	-> if b then e2 else e3
+	| _		->
+		let ne1 = smt_not e1 in
+		match simplify_under e1 e2, simplify_under ne1 e3 with
+		| LB b2, e3	-> if b2 then e1 |^ e3 else ne1 &^ e3
+		| e2, LB b3	-> if b3 then e1 =>^ e2 else e1 &^ e2
+		| e2, e3 ->
+			if simple_eq e2 e3 then e2
+			else if e2 = LI 0 then If(ne1, e3, e2) (* '0' is always the 'else' case *)
+			else If(e1,e2,e3)
 
 let (/^) e1 e2 =
 	if e1 = LI 0 || e2 = LI 1 then e1
 	else Div(e1,e2)
-
-
-let (=>^) e1 e2 = smt_not e1 |^ e2
 
 let smt_xor e1 e2 =
 	match e1, e2 with
@@ -273,16 +307,6 @@ let smt_for_all f = List.fold_left (fun ret e -> ret &^ f e) (LB true)
 let smt_for_all2 f = List.fold_left2 (fun ret e1 e2 -> ret &^ f e1 e2) (LB true)
 
 let smt_exists f = List.fold_left (fun ret e -> ret |^ f e) (LB false)
-
-let smt_if e1 e2 e3 =
-	match e1 with
-	| LB b	-> if b then e2 else e3
-	| _		->
-		let ne1 = smt_not e1 in
-		match simplify_under e1 e2, simplify_under ne1 e3 with
-		| LB b2, e3	-> if b2 then e1 |^ e3 else ne1 &^ e3
-		| e2, LB b3	-> if b3 then e1 =>^ e2 else e1 &^ e2
-		| e2, e3 -> if simple_eq e2 e3 then e2 else If(e1,e2,e3)
 
 let vector_scalar comp es1 e2 context =
 	let e2 = context#refer Int e2 in

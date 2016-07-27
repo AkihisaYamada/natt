@@ -1437,6 +1437,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				pr_sum ();
 			end
 		in
+		let pr_prec finfo =
+			if solver#get_bool (argfilt_list finfo) then begin
+				pr#puts "prec = ";
+				pr_exp (solver#get_value (prec finfo));
+			end;
+		in
 		let pr_symbol fname finfo =
 			let flag = ref false in
 			if status_is_used then begin
@@ -1449,35 +1455,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				pr_interpret finfo;
 				flag := true;
 			end;
+			if prec_is_used then begin
+				pr#puts "\t";
+				pr_prec finfo;
+				flag := true;
+			end;
 			if !flag then pr#endl;
-		in
-		let pr_prec pr =
-			let equiv = if p.prec_mode = PREC_quasi then " = " else ", " in
-			let rec sub =
-				function
-				| [] -> ()
-				| ((f:#sym),_)::[] ->
-					f#output pr;
-				| (f,i)::(g,j)::ps ->
-					f#output pr;
-					pr#puts (if i = j then equiv else " > ");
-					sub ((g,j)::ps)
-			in
-			pr#puts "    PREC: ";
-			sub
-			(	List.sort
-				(fun (_,i) (_,j) -> compare j i)
-				(	Hashtbl.fold
-					(fun fname finfo ps ->
-						if solver#get_bool (argfilt_list finfo) then
-							(finfo.sym, smt_eval_float (solver#get_value (prec finfo)))::ps
-						else ps
-					)
-					sigma
-					[]
-				)
-			);
-			pr#endl;
 		in
 		let pr_usable =
 			let folder is (i,_) =
@@ -1498,7 +1481,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			endl
 		in
 		Hashtbl.iter pr_symbol sigma;
-		if prec_is_used then pr_prec pr;
 		if usable_is_used || params.debug then pr_usable pr;
 		if p.dp && p.usable_w && p.w_mode <> W_none then pr_usable_w pr;
 		if p.mcw_mode = MCW_num then begin
