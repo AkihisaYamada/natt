@@ -80,9 +80,9 @@ let rec is_simple =
 	| LR _		-> true
 	| PB(EV _)	-> true
 	| Not(EV _)	-> true
-	| And(e1,e2)-> is_simple e1 && is_simple e2
+(*	| And(e1,e2)-> is_simple e1 && is_simple e2
 	| Or(e1,e2)	-> is_simple e1 && is_simple e2
-	| Eq(e1,e2)	-> is_simple e1 && is_simple e2
+*)	| Eq(e1,e2)	-> is_simple e1 && is_simple e2
 	| Gt(e1,e2)	-> is_simple e1 && is_simple e2
 	| Ge(e1,e2)	-> is_simple e1 && is_simple e2
 	| _			-> false
