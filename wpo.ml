@@ -1941,23 +1941,23 @@ object (x)
 			cpf (Xml.enter "acRedPairProc"); (* CAUTION: manually leave later *)
 			cpf output_cpf;
 			cpf (Xml.enter "dps" << Xml.enter "rules");
-			let folder i ret =
+			let folder i (cnt,rem_dps) =
 				if solver#get_bool (EV(gt_v i)) then (
 					cpf ((dg#find_dp i)#output_xml);
 					dg#remove_dp i;
 					sccref := list_remove ((=) i) !sccref;
-					i :: ret
-				) else ret
+					(cnt + 1, i :: rem_dps)
+				) else (cnt,rem_dps)
 			in
-			let rem_dps = List.fold_right folder !sccref [] in
+			let (cnt,rem_dps) = List.fold_right folder !sccref (0,[]) in
 			proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
 			cpf (Xml.leave "rules" << Xml.leave "dps" << put_usables_cpf);
 			x#pop;
-			true
+			cnt
 		with Inconsistent ->
 			comment (puts " ");
 			x#pop;
-			false
+			0
 
 	method direct current_usables =
 		try
