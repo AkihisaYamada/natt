@@ -175,7 +175,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	let use_usable_rules = ref false in
 	let proc_list =
 		let folder p procs =
-			if dg#minimal then p.usable <- false;
+			if not dg#minimal then p.usable <- false;
 			if p.usable then begin
 				use_usable_rules := true;
 			end else begin
