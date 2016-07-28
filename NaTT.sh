@@ -115,14 +115,14 @@ do
 	then
 		log=/dev/stderr
 	else
-		log="${f%.trs}.txt"
+		log="${f%.*}.txt"
 		log="$proof/${log//\//-}"
 	fi
 	if [ "$cpfdir" = "" ]
 	then
 		cpffile=
 	else
-		cpffile="${f%.trs}.xml"
+		cpffile="${f%.*}.xml"
 		cpffile="$cpfdir/${cpffile//\//-}"
 		cpfopt=-x:"$cpffile"
 	fi
