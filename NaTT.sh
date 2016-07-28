@@ -133,7 +133,7 @@ do
 	else
 		out=`eval $pre $cpfopt "$@" "$d$f" $options 2> "$log"`
 	fi
-	out=`echo $out | sed -E "s/(\w*).*/\1/;q"`
+	out=`echo $out | sed -E "s/([A-Z]+)/\1/;q"`
 	if [ "$out" = "" -o "$out" = "Killed" ]
 	then
 		echo -n "TIMEOUT	"
