@@ -1098,31 +1098,33 @@ class virtual smt_lib_2_0 =
 	end
 
 let create_solver debug_to debug_in debug_out command options =
-(*	match debug_in, debug_out with
+	let main = object
+			inherit smt_lib_2_0
+			inherit Proc.t command options
+		end
+	in
+	match debug_in, debug_out with
 	| true, true ->
 		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.t command options as proc
-			inherit Io.debug_out proc debug_to
-			inherit Io.debug_in proc debug_to
+			inherit Proc.t command options
+			inherit Io.debug_out main debug_to
+			inherit Io.debug_in main debug_to
 		end
 	| true, false ->
 		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.t command options as proc
-			inherit Io.debug_in proc debug_to
+			inherit Proc.t command options
+			inherit Io.debug_in main debug_to
 		end
 	| false, true ->
 		object (x)
 			inherit smt_lib_2_0
-			inherit Proc.t command options as proc
-			inherit Io.debug_out proc debug_to
+			inherit Proc.t command options
+			inherit Io.debug_out main debug_to
 		end
 	| _ ->
-*)		object (x)
-			inherit smt_lib_2_0
-			inherit Proc.t command options as proc
-		end;;
+		main
 
 let debug_exp e = if params.debug2 then (prerr_exp e; e) else e
 
