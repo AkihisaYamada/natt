@@ -97,6 +97,9 @@ let rec simple_eq e1 e2 =
 	| LR r1, LR r2	-> r1 = r2
 	| Not(EV v1), Not(EV v2) -> v1 = v2
 	| PB(EV v1), PB(EV v2) -> v1 = v2
+	| Ge(l1,r1),Ge(l2,r2) -> simple_eq l1 l2 && simple_eq r1 r2
+	| Gt(l1,r1),Gt(l2,r2) -> simple_eq l1 l2 && simple_eq r1 r2
+	| Eq(l1,r1),Eq(l2,r2) -> simple_eq l1 l2 && simple_eq r1 r2 || simple_eq l1 r2 && simple_eq r1 l2
 	| _ -> false
 
 let smt_expand e f =
@@ -178,6 +181,7 @@ let rec simplify_under e1 e2 =
 			if e3 = LB false then e4
 			else if e4 = LB false then e3
 			else if e4 = LB true then e4
+			else if simple_eq e3 e4 then e3
 			else Or(e3,e4)
 	)
 	| _, If(e3,e4,e5) -> (
@@ -188,12 +192,8 @@ let rec simplify_under e1 e2 =
 			If(e3, simplify_under e1 e4, simplify_under e1 e5)
 	)
 	| And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
-	| Eq(l1,r1), Eq(l2,r2) ->
-		let l2 = simplify_under e1 l2 in
-		let r2 = simplify_under e1 r2 in
-		if simple_eq l1 l2 && simple_eq r1 r2 ||
-		   simple_eq l1 r2 && simple_eq r1 l2 then LB true
-		else Eq(l2,r2)
+	| Not e3, _ ->
+		if simple_eq e3 e2 then LB false else e2
 	| Eq(l1,r1), Gt(l2,r2) ->
 		let l2 = simplify_under e1 l2 in
 		let r2 = simplify_under e1 r2 in
@@ -231,10 +231,6 @@ let rec simplify_under e1 e2 =
 		let r2 = simplify_under e1 r2 in
 		if simple_ge r2 l1 && simple_ge r1 l2 then LB false
 		else Gt(l2,r2)
-	| EV v1, EV v2 -> if v1 = v2 then LB true else e2
-	| EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
-	| Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
-	| Not(EV v1), Not(EV v2) -> if v1 = v2 then LB true else e2
 	| _ -> e2
 and (&^) e1 e2 =
 	match e1 with
@@ -264,8 +260,8 @@ and ( *^) e1 e2 =
 	| _, Mat m		-> Mat(List.map (List.map (fun e -> e1 *^ e)) m)
 	| Vec u, _		-> Vec(List.map (fun e -> e *^ e2) u)
 	| _, Vec u		-> Vec(List.map (fun e -> e1 *^ e) u)
-	| PB c, _		-> smt_if c e2 (LI 0)
-	| _, PB c		-> smt_if c e1 (LI 0)
+	| PB e1, _		-> pb_distribute e1 e2
+	| _, PB e2		-> pb_distribute e2 e1
 	| If(c,e,LI 0), _ ->
 		let e2 = simplify_under c e2 in
 		let e3 = e *^ e2 in
@@ -275,6 +271,16 @@ and ( *^) e1 e2 =
 		let e3 = e1 *^ e in
 		if e3 = LI 0 then e3 else If(c,e3,LI 0)
 	| _				-> Mul(e1,e2)
+and pb_distribute e1 e2 =
+	match e1 with
+	| LB b	-> if b then e2 else LI 0
+	| _ ->
+		match e2 with
+		| LI 0			-> LI 0
+		| PB e2			-> smt_pb (e1 &^ e2)
+		| Mul(PB e2,e3) -> pb_distribute (e1 &^ e2) e3
+		| Mul(e2,PB e3)	-> pb_distribute (e1 &^ e3) e2
+		| e2			-> Mul(smt_pb e1, e2)
 and smt_if e1 e2 e3 =
 	match e1 with
 	| LB b	-> if b then e2 else e3
