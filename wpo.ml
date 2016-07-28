@@ -1439,7 +1439,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		in
 		let pr_symbol fname finfo =
 			pr#puts "      ";
-			finfo.sym#output pr;
+			finfo.sym#output_pad 2 pr;
 			if status_is_used then begin
 				pr#puts "\t";
 				pr_perm finfo;

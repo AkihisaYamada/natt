@@ -4,19 +4,22 @@ open Io
 
 type symtype = Var | Fun | Th of string | Special
 
-let put_name name (pr:#Io.outputter) =
+let put_name_pad min name (pr:#Io.outputter) =
 	let n = String.length name in
-	let rec sub i =
+	let rec sub i min =
 		if i < n then begin
 			match name.[i] with
-			| '\\'	-> pr#puts "\\\\"; sub (i+1);
-			| '#'	-> pr#puts "\\#"; sub (i+1);
-			| '^'	-> pr#puts "\\^"; sub (i+1);
-			| ' '	-> pr#putc name.[i+1]; sub (i+2);
-			| c		-> pr#putc c; sub (i+1);
+			| '\\'	-> pr#puts "\\\\"; sub (i+1) (min-2);
+			| '#'	-> pr#puts "\\#"; sub (i+1) (min-2);
+			| '^'	-> pr#puts "\\^"; sub (i+1) (min-2);
+			| ' '	-> pr#putc name.[i+1]; sub (i+2) min;
+			| c		-> pr#putc c; sub (i+1) (min-1);
+		end else begin
+			for i = 1 to min do pr#putc ' ' done;
 		end;
 	in
-	sub 0
+	sub 0 min
+let put_name name (pr:#Io.outputter) = put_name_pad 0 name pr
 
 class virtual sym ty0 = object (x:'x)
 	val mutable ty = ty0
@@ -31,6 +34,7 @@ class virtual sym ty0 = object (x:'x)
 	method equals : 'b. (<name:string;..> as 'b) -> bool = fun y ->
 		x#name = y#name
 	method output : 'b. (#outputter as 'b) -> unit = put_name x#name
+	method output_pad : 'b. int -> (#outputter as 'b) -> unit = fun min os -> put_name_pad min x#name os
 	method virtual output_xml : 'b. (#printer as 'b) -> unit
 end
 
@@ -75,8 +79,8 @@ class sym_freezed (f:#sym) (g:#sym) i =
 		method name = name
 		method output_xml : 'b. (#printer as 'b) -> unit =
 			Xml.enclose_inline "name" (
-				put_name f#name << puts "&middot;" <<
-				put_name g#name << Xml.enclose "sup" (put_int i)
+				f#output << puts "&middot;" <<
+				g#output << Xml.enclose "sup" (put_int i)
 			)
 	end
 
