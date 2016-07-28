@@ -136,7 +136,7 @@ let rec (+^) e1 e2 =
 	| Vec u, Vec v	-> Vec(Matrix.sum_vec (+^) u v)
 	| Vec u, _		-> Vec(List.map (fun e -> e +^ e2) u)
 	| _, Vec u		-> Vec(List.map (fun e -> e1 +^ e) u)
-	| Mat m, Mat n	-> Delay(fun _ -> Mat(Matrix.sum (+^) m n))
+	| Mat m, Mat n	-> Mat(Matrix.sum (+^) m n)
 	| Mat m, _		-> Mat(Matrix.mapij (fun i j e -> if i = j then e +^ e2 else e) m)
 	| _, Mat m		-> Mat(Matrix.mapij (fun i j e -> if i = j then e1 +^ e else e) m)
 	| PB c, _		-> if is_simple e2 then If(c, LI 1 +^ e2, e2) else Add(e1,e2)
