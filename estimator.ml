@@ -101,15 +101,26 @@ class virtual t (trs:#trs) = object (x)
 	method instantiate_path :
 	'a. int -> sym term -> sym term -> (int * sym Subst.t) list =
 	fun lim (Node(f,ss) as s) (Node(g,ts) as t) ->
-		if f#is_var then [(0,Subst.singleton f t)]
-		else if g#is_var then [(0,Subst.singleton g s)]
+		debug2 ( endl << puts "& " << put_term s << puts " --> " << put_term t );
+		if f#is_var then
+			if VarSet.mem f#name (varset t) then
+				(debug2 (puts " ... occurs"); [])
+			else
+				(debug2 (puts " ... ok"); [(0,Subst.singleton f t)])
+		else if g#is_var then
+			if VarSet.mem g#name (varset s) then
+				(debug2 (puts " ... occurs"); [])
+			else
+				(debug2 (puts " ... ok"); [(0,Subst.singleton g s)])
+		else if not (x#may_reach s t) then
+			(debug2 (puts " ... no"); [])
 		else
 		let init =
-			debug2 (endl << enter 1 << put_term s << puts " --> " << put_term t << puts "?" );
+			debug2( puts "?" << enter 1;);
 			if f#equals g then (
-				debug2 (endl << enter 1 << puts "trying inner rewriting");
+				debug2 (endl << puts "| Inner:" << enter 1);
 				let init = x#instantiate_path_sub lim ss ts in
-				debug2 (endl << leave 1);
+				debug2 (leave 1);
 				init
 			) else []
 		in
@@ -122,7 +133,7 @@ class virtual t (trs:#trs) = object (x)
 				let v = "i" ^ string_of_int vcounter in
 				vcounter <- vcounter + 1;
 				let rule = trs#find_rule i in
-				debug2 (endl << enter 1 << puts "trying " << rule#output);
+				debug2 (endl << enter 1 << puts "| Rewrite: " << rule#output);
 				let l = Subst.vrename v rule#l in
 				let r = Subst.vrename v rule#r in
 				match Subst.unify s l with

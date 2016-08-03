@@ -25,6 +25,7 @@ let put_loop (dg : dg) u loop pr =
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v dp#l) in
 			let r = u#subst (Subst.vrename v dp#r) in
+			pr#endl;
 			put_dp i l r pr;
 			sub (pos+1) is;
 	in
@@ -57,7 +58,6 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				begin
 					let l1 = u1#subst dp1#l in
 					let r1 = u1#subst dp1#r in
-					let l2 = u1#subst l2 in
 					match Subst.matches l2 l1 with
 					| Some(u2) ->
 						let print_loop =
@@ -78,10 +78,10 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 								proof print_loop;
 								raise Nonterm;
 							end else begin
-								debug2 (puts "... only weak rules." << endl);
+								debug (print_loop << puts "... only weak rules." << endl);
 							end;
 						end;
-					| _ -> debug (put_term l2 << puts " doesn't match " << put_term l1 << endl);
+					| _ -> debug2 (put_term l2 << puts " doesn't match " << put_term l1 << endl);
 				end
 			| i3::rest ->
 				let dp3 = dg#find_dp i3 in
@@ -89,19 +89,20 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				let l3 = Subst.vrename v dp3#l in
 				let r3 = Subst.vrename v dp3#r in
 				let iterer (c2,u2) =
-					sub (pos + 1) loop (u1#compose u2) l3 r3 rest (strict || dp3#is_strict)
+					sub (pos + 1) loop (u1#compose u2) l3 r3 rest
+					(strict || dp3#is_strict)
 				in
 				List.iter iterer (estimator#instantiate_path nlim (u1#subst r2) l3);
 		in
 		let iterer2 loop =
-			debug2 (fun pr ->
+			debug (fun pr ->
 				pr#puts "    Checking loop: #";
 				pr#put_int i1;
 				List.iter (fun i -> pr#puts " -> #"; pr#put_int i;) loop;
 				pr#flush;
 			);
-			sub 1 loop (new Subst.t) dp1#l dp1#r loop (dg#find_dp i1)#is_strict;
-			debug2 endl;
+			sub 1 loop (new Subst.t) dp1#l dp1#r loop dp1#is_strict;
+			debug endl;
 		in
 		List.iter iterer2 (estimate_paths len trs dg scc i1 i1);
 	in
