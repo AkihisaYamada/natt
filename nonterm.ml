@@ -5,10 +5,9 @@ open Trs
 open Dp
 open Io
 
-let put_dp i l r pr =
-	let pr_term = output_term pr in
-	pr#puts "\t"; pr_term l; pr#puts "  ->"; pr#endl;
-	pr#puts "  #"; pr#put_int i; pr#puts "\t"; pr_term r; pr#puts "  ->>"; pr#endl
+let put_dp i l r =
+	puts "    " << put_term l << puts "\t-#" << put_int i << puts "->" << endl <<
+	puts "    " << put_term r
 
 let put_loop (dg : dg) u loop pr =
 	let rec sub pos =
@@ -18,8 +17,8 @@ let put_loop (dg : dg) u loop pr =
 			let dp = dg#find_dp i in
 			let v = string_of_int pos in
 			let l = u#subst (Subst.vrename v dp#l) in
-			pr#puts "   \t";
-			output_term pr l;
+			pr#puts "\t--->*\n    ";
+			put_term l pr;
 			pr#endl;
 		| i::is ->
 			let dp = dg#find_dp i in
