@@ -90,8 +90,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				let l3 = Subst.vrename v dp3#l in
 				let r3 = Subst.vrename v dp3#r in
 				let iterer (c2,u2) =
-					sub (pos + 1) loop (u1#compose u2) l3 r3 rest
-					(strict || (dg#find_dp i3)#is_strict)
+					sub (pos + 1) loop (u1#compose u2) l3 r3 rest (strict || dp3#is_strict)
 				in
 				List.iter iterer (estimator#instantiate_edge cnt nlim (u1#subst r2) l3);
 		in

@@ -347,15 +347,3 @@ type path = int * (int list)
 let path_append (c1,is1) (c2,is2) = (c1 + c2, is1 @ is2)
 let cu_append (c1,u1) (c2,u2) = (c1 + c2, u1#compose u2)
 
-let dbg s is t (c,u) =
-()(*
-prerr_endline "";
-prerr_term s;
-prerr_string " -";
-List.iter (fun i -> prerr_int i; prerr_string ">";) is;
-prerr_term t;
-prerr_endline "?";
-u#output stderr
-*)
-
-

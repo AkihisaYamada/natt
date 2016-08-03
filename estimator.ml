@@ -3,6 +3,7 @@ open Sym
 open Term
 open Trs
 open Params
+open Io
 
 type 'a connects_formula =
 	| False
@@ -17,6 +18,16 @@ let connects_and a b =
 (* symbol transition graph *)
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
+
+let dbg s is t (c, (u:#sym Subst.t)) =
+prerr_endline "";
+prerr_term s;
+prerr_string " -";
+List.iter (fun i -> prerr_int i; prerr_string "-";) is;
+prerr_string "> ";
+prerr_term t;
+prerr_endline "?";
+u#output cerr;
 
 class virtual t (trs:#trs) = object (x)
 
@@ -106,7 +117,8 @@ class virtual t (trs:#trs) = object (x)
 			let paths = x#estimate_paths (min 4 lim) s t in
 			let folder ret (c,is) =
 				let cus = instantiate_path (lim-c) s is t in
-				List.iter (dbg s is t) cus; cus @ ret
+				List.iter (dbg s is t) cus;
+				cus @ ret
 			in
 			List.fold_left folder [] paths
 		and sub2 lim ss ts =
@@ -129,10 +141,7 @@ class virtual t (trs:#trs) = object (x)
 				else if g#is_var then
 					if StrSet.mem g#name (varset s) then [] else [(0,Subst.singleton g s)]
 				else
-					(if f#equals g then
-						sub2 lim ss ts
-					else  []
-					) @ sub1 (lim-1) s t
+					(if f#equals g then sub2 lim ss ts else []) @ sub1 (lim-1) s t
 			| i::is ->
 				cnt := !cnt + 1;
 				let v = "i" ^ string_of_int !cnt in

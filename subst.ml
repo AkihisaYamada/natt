@@ -46,17 +46,14 @@ class ['a] t =
 				pr#puts "[ ]";
 			end else begin
 				let iterer fname s =
-					pr#endl;
 					put_name fname pr;
 					pr#puts " := ";
 					output_term pr s;
+					pr#puts "; ";
 				in
-				pr#putc '[';
-				pr#enter 2;
+				pr#puts "[ ";
 				Hashtbl.iter iterer table;
 				pr#putc ']';
-				pr#leave 2;
-				pr#endl;
 			end;
 	end;;
 
