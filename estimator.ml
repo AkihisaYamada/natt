@@ -19,35 +19,23 @@ let connects_and a b =
 module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
 module SymGoper = Graph.Oper.I(SymG)
 
-let dbg s is t (c, (u:#sym Subst.t)) =
-prerr_endline "";
-prerr_term s;
-prerr_string " -";
-List.iter (fun i -> prerr_int i; prerr_string "-";) is;
-prerr_string "> ";
-prerr_term t;
-prerr_endline "?";
-u#output cerr;
+let output_path path os =
+	os#puts "< ";
+	List.iter (fun i -> os#put_int i; os#puts " ";) path;
+	os#puts "> ";;
+
+let output_path_to s path t (c, (u:#sym Subst.t)) os =
+	output_term os s;
+	output_path path os;
+	output_term os t;
+	os#puts "?  ";
+	u#output os;;
 
 class virtual t (trs:#trs) = object (x)
 
-	method virtual may_reach_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool
+	val mutable vcounter = 0
 
-	method unifies : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
-	fun (Node(f,ss)) (Node(g,ts)) ->
-		f#is_var ||
-		g#is_var ||
-		f#equals g &&
-		match f#ty with
-		| Fun -> List.for_all2 x#unifies ss ts
-		| Th "C" ->
-			(	match ss, ts with
-				| [s1;s2], [t1;t2] ->
-					(x#unifies s1 t1 && x#unifies s2 t2) ||
-					(x#unifies s1 t2 && x#unifies s2 t1)
-				| _ -> raise (No_support "nonbinary commutative symbol")
-			)
-		| _ -> true
+	method virtual may_reach_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool
 
 	method may_connect_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
 		fun n (Node(f,ss)) (Node(g,ts)) ->
@@ -95,73 +83,62 @@ class virtual t (trs:#trs) = object (x)
 		Rules.fold folder f#weakly_defined_by
 		(Rules.fold folder f#defined_by [])
 
-	method estimate_paths :
-	'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> (int * int list) list =
-	fun lim (Node(f,_) as s) (Node(g,_) as t) ->
-		if term_eq s t || f#is_var || g#is_var then
-			[(0,[])]
-		else if lim > 0 then
-			let init = if x#unifies s t then [(1,[])] else [] in
-			let folder ret i =
-				List.map (path_append (1,[i]))
-					(x#estimate_paths (lim-1) (trs#find_rule i)#r t) @ ret
-			in
-			List.fold_left folder init (x#find_matchable s)
-		else
-			[]
-	
-	method instantiate_edge :
-	int ref -> int -> sym term -> sym term -> (int * sym Subst.t) list =
-	fun cnt ->
-		let rec sub1 lim s t =
-			let paths = x#estimate_paths (min 4 lim) s t in
-			let folder ret (c,is) =
-				let cus = instantiate_path (lim-c) s is t in
-				List.iter (dbg s is t) cus;
-				cus @ ret
-			in
-			List.fold_left folder [] paths
-		and sub2 lim ss ts =
+	method instantiate_path_sub :
+		int -> sym term list -> sym term list -> (int * sym Subst.t) list =
+		fun lim ss ts ->
 			match ss, ts with
 			| [], [] -> [(0, new Subst.t)]
-			| (s::ss), (t::ts) ->
-				let mapper (c1,u1) =
-					let ss' = List.map u1#subst ss in
-					let ts' = List.map u1#subst ts in
-					List.map (cu_append (c1,u1)) (sub2 (lim-c1) ss' ts')
+			| s::ss, t::ts ->
+				let cus = x#instantiate_path_sub lim ss ts in
+				let folder (c,u) ret =
+					let s = u#subst s in
+					let t = u#subst t in
+					let st = x#instantiate_path (lim-c) s t in
+					List.map (cu_append (c,u)) st @ ret
 				in
-				List.concat (List.map mapper (sub1 lim s t))
-			| _ -> []
-		and instantiate_path lim (Node(f,ss) as s) is (Node(g,ts) as t) =
-			match is with
-			| [] ->
-				if term_eq s t then [(0,new Subst.t)]
-				else if f#is_var then
-					if StrSet.mem f#name (varset t) then [] else [(0,Subst.singleton f t)]
-				else if g#is_var then
-					if StrSet.mem g#name (varset s) then [] else [(0,Subst.singleton g s)]
-				else
-					(if f#equals g then sub2 lim ss ts else []) @ sub1 (lim-1) s t
-			| i::is ->
-				cnt := !cnt + 1;
-				let v = "i" ^ string_of_int !cnt in
+				List.fold_right folder cus []
+
+	method instantiate_path :
+	'a. int -> sym term -> sym term -> (int * sym Subst.t) list =
+	fun lim (Node(f,ss) as s) (Node(g,ts) as t) ->
+		if f#is_var then [(0,Subst.singleton f t)]
+		else if g#is_var then [(0,Subst.singleton g s)]
+		else
+		let init =
+			debug2 (endl << enter 1 << put_term s << puts " --> " << put_term t << puts "?" );
+			if f#equals g then (
+				debug2 (endl << enter 1 << puts "trying inner rewriting");
+				let init = x#instantiate_path_sub lim ss ts in
+				debug2 (endl << leave 1);
+				init
+			) else []
+		in
+		if lim = 0 then (
+			debug2 (puts "exceeded limit");
+			init
+		)
+		else
+			let folder ret i =
+				let v = "i" ^ string_of_int vcounter in
+				vcounter <- vcounter + 1;
 				let rule = trs#find_rule i in
+				debug2 (endl << enter 1 << puts "trying " << rule#output);
 				let l = Subst.vrename v rule#l in
 				let r = Subst.vrename v rule#r in
-				let rec sub3 cus =
-					match cus with
-					| [] -> []
-					| (c1,u1)::cus ->
-						let r' = u1#subst r in
-						let t' = u1#subst t in
-						List.map (cu_append (c1+1,u1)) (instantiate_path (lim - c1) r' is t') @
-						sub3 cus
-				in
-				let ret = sub3 (sub1 lim s l) in
-				ret
-		in
-		fun lim (Node(f,ss)) (Node(g,ts)) ->
-			if f#equals g then sub2 lim ss ts else []
+				match Subst.unify s l with
+				| Some u ->
+					let s' = u#subst r in
+					let rest = x#instantiate_path (lim-1) s' t in
+					debug2 (leave 1);
+					List.map (cu_append (1,u)) rest @ ret
+				| None ->
+					debug2 ( puts " ... failed" << leave 1);
+					ret
+			in
+			let ret = List.fold_left folder init (x#find_matchable s) in
+			debug2 (leave 1);
+			debug2 (fun os -> List.iter (fun (c,(u:#sym Subst.t)) -> u#output os) ret);
+			ret
 
 	method output : 'a. (#Io.printer as 'a) -> unit = fun os -> ()
 end;;

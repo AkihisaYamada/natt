@@ -231,7 +231,9 @@ let rec simplify_under e1 e2 =
 		let r2 = simplify_under e1 r2 in
 		if simple_ge r2 l1 && simple_ge r1 l2 then LB false
 		else Gt(l2,r2)
-	| _ -> e2
+	| EV v1, EV v2 -> if v1 = v2 then LB true else e2
+	| EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
+	| _ -> if simple_eq e1 e2 then LB true else e2
 and (&^) e1 e2 =
 	match e1 with
 	| LB b -> if b then e2 else e1

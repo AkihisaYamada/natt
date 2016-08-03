@@ -53,7 +53,6 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 	let iterer len nlim i1 =
 		let dp1 = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =
-			let cnt = ref 0 in
 			match path with
 			| [] ->
 				begin
@@ -66,7 +65,8 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 							put_dp i1 l1 r1 <<
 							put_loop dg u1 loop <<
 							puts "  Looping with: " <<
-							u2#output
+							u2#output <<
+							endl
 						in
 						if strict then begin
 							comment (puts " found." << endl);
@@ -82,7 +82,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 								debug2 (puts "... only weak rules." << endl);
 							end;
 						end;
-					| _ -> ();
+					| _ -> debug (put_term l2 << puts " doesn't match " << put_term l1 << endl);
 				end
 			| i3::rest ->
 				let dp3 = dg#find_dp i3 in
@@ -92,7 +92,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				let iterer (c2,u2) =
 					sub (pos + 1) loop (u1#compose u2) l3 r3 rest (strict || dp3#is_strict)
 				in
-				List.iter iterer (estimator#instantiate_edge cnt nlim (u1#subst r2) l3);
+				List.iter iterer (estimator#instantiate_path nlim (u1#subst r2) l3);
 		in
 		let iterer2 loop =
 			debug2 (fun pr ->

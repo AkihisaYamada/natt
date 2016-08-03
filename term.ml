@@ -154,6 +154,8 @@ let rec output_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 		| []	-> if f#is_fun then pr#puts "()";
 		| t::ts	-> pr#putc '('; output_term pr t; sub ts
 
+let put_term pr s = output_term s pr
+
 let prerr_term t = output_term Io.cerr t
 let prerr_terms ts = List.iter (fun t -> prerr_term t; prerr_string "  ") ts
 let prerr_wterm wt = prerr_term (erase wt)
