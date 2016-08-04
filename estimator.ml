@@ -102,19 +102,12 @@ class virtual t (trs:#trs) = object (x)
 	'a. int -> sym term -> sym term -> (int * sym Subst.t) list =
 	fun lim (Node(f,ss) as s) (Node(g,ts) as t) ->
 		debug2 ( endl << puts "& " << put_term s << puts " --> " << put_term t );
-		if f#is_var then
-			if VarSet.mem f#name (varset t) then
-				(debug2 (puts " ... occurs"); [])
-			else
-				(debug2 (puts " ... ok"); [(0,Subst.singleton f t)])
-		else if g#is_var then
-			if VarSet.mem g#name (varset s) then
-				(debug2 (puts " ... occurs"); [])
-			else
-				(debug2 (puts " ... ok"); [(0,Subst.singleton g s)])
-		else if not (x#may_reach s t) then
+		if not (x#may_reach s t) then
 			(debug2 (puts " ... no"); [])
 		else
+		match Subst.unify s t with
+		| Some u -> (debug2 (puts " ... unifies"); [(0,u)])
+		| _ ->
 		let init =
 			debug2( puts "?" << enter 1;);
 			if f#equals g then (

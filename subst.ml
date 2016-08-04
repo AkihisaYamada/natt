@@ -1,3 +1,5 @@
+open Params
+open Io
 open Sym
 open Term
 
@@ -6,7 +8,7 @@ exception Inconsistent
 class ['a] t =
 	let rec subst1 (x:#sym) (Node(f,ss) as s) (Node(g,ts)) =
 		let ts' = List.map (subst1 x s) ts in
-		if x#equals f then Node(f,ss@ts') else Node(g,ts')
+		if x#equals g then Node(f,ss@ts') else Node(g,ts')
 	in
 	object (x:'x)
 		val table : (string, 'a term) Hashtbl.t = Hashtbl.create 16
@@ -19,11 +21,12 @@ class ['a] t =
 			fun f s ->
 				try if not (term_eq (x#find f) s) then raise Inconsistent
 				with Not_found -> Hashtbl.add table f#name s
-		method replace : 'b. (#sym as 'b) -> 'a term -> unit =
+		method replace : 'b. (#sym as 'b) -> 'a term -> 'x =
 			fun f s ->
 				let iterer gname t = Hashtbl.replace table gname (subst1 f s t) in
 				Hashtbl.iter iterer table;
 				if not (x#mem f) then Hashtbl.add table f#name s;
+				x
 		method compose (y:'x) =
 			let (z:'x) = x#copy in
 			let z_table = z#get_table in
@@ -57,25 +60,25 @@ class ['a] t =
 			end;
 	end;;
 
-let singleton f s = let ret = new t in ret#replace f s; ret
+let singleton f s = (new t)#replace f s
 
 let unify : (#sym as 'a) term -> 'a term -> 'a t option =
 	let rec sub1 (unifier : 'a t) (Node((f:'a),ss) as s) (Node(g,ts) as t) =
-		if f#equals g then
-			sub2 unifier ss ts
-		else if f#is_var then
-			if VarSet.mem f#name (varset t) then None else Some(unifier#replace f t; unifier)
+		if f#is_var then
+			if VarSet.mem f#name (varset t) then None else Some(unifier#replace f t)
 		else if g#is_var then
-			if VarSet.mem g#name (varset s) then None else Some(unifier#replace g s; unifier)
+			if VarSet.mem g#name (varset s) then None else Some(unifier#replace g s)
+		else if f#equals g then
+			sub2 unifier ss ts
 		else None
 	and sub2 unifier ss ts =
 		match ss, ts with
 		| [], [] -> Some(unifier)
 		| (s::ss), (t::ts) ->
 			(
-				match sub1 unifier s t with
+				match sub1 unifier (unifier#subst s) (unifier#subst t) with
 				| None -> None
-				| Some(unifier) -> sub2 unifier (List.map unifier#subst ss) (List.map unifier#subst ts)
+				| Some(unifier) -> sub2 unifier ss ts
 			)
 		| _ -> None
 	in

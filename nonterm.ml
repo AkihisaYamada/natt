@@ -66,27 +66,31 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 					| Some(u2) ->
 						let print_real_loop =
 							enter 2 <<
-							put_loop <<
-							puts "  Looping with: " <<
+							put_loop << endl <<
+							puts "Looping with: " <<
 							u2#output <<
-							leave 2 << endl
+							leave 2
 						in
 						if strict then begin
 							comment (puts " found.");
 							proof print_real_loop;
+							debug (leave 2);
+							comment endl;
 							raise Nonterm;
 						end else begin
 							let l3 = u2#subst l2 in
 							if duplicating l1 l3 then begin
-								proof (puts "  Duplicating loop.");
+								comment (puts " found duplicating loop.");
 								proof print_real_loop;
+								debug (leave 2);
+								comment endl;
 								raise Nonterm;
 							end else begin
-								debug (print_real_loop << puts "... only weak rules." << endl);
+								debug (print_real_loop << puts "... only weak rules.");
 							end;
 						end;
 					| _ ->
-						debug (put_loop << puts "... not looping."<< endl);
+						debug (put_loop << puts "... not looping.");
 				end
 			| i3::rest ->
 				let dp3 = dg#find_dp i3 in
@@ -102,21 +106,22 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 		let iterer2 loop =
 			debug (fun pr ->
 				pr#enter 2;
+				pr#endl;
 				pr#puts "Checking loop: #";
 				pr#put_int i1;
 				List.iter (fun i -> pr#puts " -> #"; pr#put_int i;) loop;
 				pr#flush;
 			);
 			sub 1 loop (new Subst.t) dp1#l dp1#r loop dp1#is_strict;
-			debug (leave 2 << endl);
+			debug (leave 2);
 		in
 		List.iter iterer2 (estimate_paths len trs dg scc i1 i1);
 	in
 	if lim > 0 then begin
-		comment (puts "  Finding a loop... " << flush);
-		debug2 endl;
+		comment (puts "Finding a loop... " << flush);
 		for len = 1 to lim do
 			List.iter (iterer len (max 0 (params.max_narrowing - List.length scc))) scc;
 		done;
-		comment (puts "failed." << endl);
+		comment (puts " failed." << endl);
+
 	end

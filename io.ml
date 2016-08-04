@@ -60,13 +60,10 @@ class pretty_printer (base : #outputter) maxdepth =
 		method enter_inline = x#enter maxdepth
 		method leave_inline = x#leave maxdepth
 		method endl =
-			if depth < maxdepth then begin
-				base#endl;
-				for i = 1 to depth do
-					base#putc ' ';
-				done;
-			end
-			else x#putc ' '
+			base#endl;
+			for i = 1 to min depth maxdepth do
+				base#putc ' ';
+			done;
 	end
 
 class debug_out main os =
