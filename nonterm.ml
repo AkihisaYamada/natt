@@ -74,7 +74,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 						if strict then begin
 							comment (puts " found.");
 							proof print_real_loop;
-							debug (leave 2);
+							log (leave 2);
 							comment endl;
 							raise Nonterm;
 						end else begin
@@ -82,7 +82,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 							if duplicating l1 l3 then begin
 								comment (puts " found duplicating loop.");
 								proof print_real_loop;
-								debug (leave 2);
+								log (leave 2);
 								comment endl;
 								raise Nonterm;
 							end else begin
@@ -104,7 +104,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				List.iter iterer (estimator#instantiate_path nlim r2 l3);
 		in
 		let iterer2 loop =
-			debug (fun pr ->
+			log (fun pr ->
 				pr#enter 2;
 				pr#endl;
 				pr#puts "Checking loop: #";
@@ -113,7 +113,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				pr#flush;
 			);
 			sub 1 loop (new Subst.t) dp1#l dp1#r loop dp1#is_strict;
-			debug (leave 2);
+			log (leave 2);
 		in
 		List.iter iterer2 (estimate_paths len trs dg scc i1 i1);
 	in
