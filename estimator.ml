@@ -139,7 +139,8 @@ class virtual t (trs:#trs) = object (x)
 				match Subst.unify s l with
 				| Some u ->
 					let s' = u#subst r in
-					let rest = x#instantiate_path (lim-1) s' t in
+					let t' = u#subst t in
+					let rest = x#instantiate_path (lim-1) s' t' in
 					debug2 (leave 1);
 					List.map (cu_append (1,u)) rest @ ret
 				| None ->
@@ -148,8 +149,8 @@ class virtual t (trs:#trs) = object (x)
 			in
 			let ret = List.fold_left folder init (x#find_matchable s) in
 			debug2 (leave 1);
-			debug2 (fun os -> List.iter (fun (c,(u:#sym Subst.t)) -> os#endl; u#output os;) ret);
-			ret
+(*			debug2 (fun os -> List.iter (fun (c,(u:#sym Subst.t)) -> os#endl; u#output os;) ret);
+*)			ret
 
 	method output : 'a. (#Io.printer as 'a) -> unit = fun os -> ()
 end;;

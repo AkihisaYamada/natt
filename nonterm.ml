@@ -8,7 +8,7 @@ open Io
 let put_dp i l r =
 	put_term l << puts "\t-#" << put_int i << puts "->" << endl << put_term r
 
-let put_loop (dg : dg) u loop pr =
+let put_chain (dg : dg) u loop pr =
 	let rec sub pos =
 		function
 		| [] -> ()
@@ -19,7 +19,6 @@ let put_loop (dg : dg) u loop pr =
 			pr#puts "\t--->*";
 			pr#endl;
 			put_term l pr;
-			pr#endl;
 		| i::is ->
 			let dp = dg#find_dp i in
 			let v = string_of_int pos in
@@ -60,32 +59,34 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 				begin
 					let l1 = u1#subst dp1#l in
 					let r1 = u1#subst dp1#r in
+					let put_loop =
+						endl << put_dp i1 l1 r1 << put_chain dg u1 loop
+					in
 					match Subst.matches l2 l1 with
 					| Some(u2) ->
-						let print_loop =
+						let print_real_loop =
 							enter 2 <<
-							endl <<
-							put_dp i1 l1 r1 <<
-							put_loop dg u1 loop <<
+							put_loop <<
 							puts "  Looping with: " <<
 							u2#output <<
 							leave 2 << endl
 						in
 						if strict then begin
 							comment (puts " found.");
-							proof print_loop;
+							proof print_real_loop;
 							raise Nonterm;
 						end else begin
 							let l3 = u2#subst l2 in
 							if duplicating l1 l3 then begin
 								proof (puts "  Duplicating loop.");
-								proof print_loop;
+								proof print_real_loop;
 								raise Nonterm;
 							end else begin
-								debug (print_loop << puts "... only weak rules." << endl);
+								debug (print_real_loop << puts "... only weak rules." << endl);
 							end;
 						end;
-					| _ -> debug2 (endl << put_term l2 << puts " doesn't match " << put_term l1);
+					| _ ->
+						debug (put_loop << puts "... not looping."<< endl);
 				end
 			| i3::rest ->
 				let dp3 = dg#find_dp i3 in
