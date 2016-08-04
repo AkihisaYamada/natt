@@ -90,7 +90,7 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 							end;
 						end;
 					| _ ->
-						debug (put_loop << puts "... not looping.");
+						debug (enter 2 << put_loop << leave 2 << endl << puts "... not looping.");
 				end
 			| i3::rest ->
 				let dp3 = dg#find_dp i3 in
