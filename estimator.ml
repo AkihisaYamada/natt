@@ -133,7 +133,7 @@ class virtual t (trs:#trs) = object (x)
 				let v = "i" ^ string_of_int vcounter in
 				vcounter <- vcounter + 1;
 				let rule = trs#find_rule i in
-				debug2 (endl << enter 1 << puts "| Rewrite: " << rule#output);
+				debug2 (endl << enter 1 << puts "| Rewrite: " << rule#output << puts " ?");
 				let l = Subst.vrename v rule#l in
 				let r = Subst.vrename v rule#r in
 				match Subst.unify s l with
@@ -148,7 +148,7 @@ class virtual t (trs:#trs) = object (x)
 			in
 			let ret = List.fold_left folder init (x#find_matchable s) in
 			debug2 (leave 1);
-			debug2 (fun os -> List.iter (fun (c,(u:#sym Subst.t)) -> u#output os) ret);
+			debug2 (fun os -> List.iter (fun (c,(u:#sym Subst.t)) -> os#endl; u#output os;) ret);
 			ret
 
 	method output : 'a. (#Io.printer as 'a) -> unit = fun os -> ()
