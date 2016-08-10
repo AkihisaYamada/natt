@@ -57,7 +57,7 @@ class virtual t (trs:#trs) = object (x)
 			(root t)#is_var ||
 			if n = 0 then x#may_reach_0 s t
 			else
-				x#may_connect_n (n-1) s t ||
+				x#may_connect_n n s t ||
 				let tester i =
 					let rule = trs#find_rule i in
 					let Node(_,ls) = rule#l in
