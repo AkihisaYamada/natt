@@ -55,9 +55,8 @@ class virtual t (trs:#trs) = object (x)
 		fun n (Node(f,ss) as s) t ->
 			f#is_var ||
 			(root t)#is_var ||
-			if n = 0 then x#may_reach_0 s t
-			else
-				x#may_connect_n n s t ||
+			x#may_reach_0 s t &&
+			( n = 0 || x#may_connect_n n s t ||
 				let tester i =
 					let rule = trs#find_rule i in
 					let Node(_,ls) = rule#l in
@@ -67,6 +66,7 @@ class virtual t (trs:#trs) = object (x)
 				let f = trs#find_sym f in
 				Rules.exists tester f#weakly_defined_by ||
 				Rules.exists tester f#defined_by
+			)
 
 	method may_connect : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
 		fun s t -> x#may_connect_n params.edge_length s t
