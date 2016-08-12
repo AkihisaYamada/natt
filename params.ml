@@ -97,7 +97,6 @@ type order_params =
 	mutable refer_w : bool;
 	mutable reset_mode : reset_mode;
 	mutable use_scope : bool;
-	mutable use_scope_ratio : int;
 	mutable remove_all : bool;
 	mutable smt_tool : smt_tool;
 	mutable peek_in : bool;
@@ -150,7 +149,6 @@ let order_default =
 	refer_w = true;
 	reset_mode = RESET_reset;
 	use_scope = true;
-	use_scope_ratio = 0;
 	remove_all = false;
 	smt_tool = z3cmd;
 	peek_in = false;
@@ -573,13 +571,8 @@ while !i < argc do
 			end;
 		| "-L", None -> params.max_loop <- 0;
 
-		| "-reset", _ ->
-			begin
-				match optarg with
-				| None -> p.use_scope <- false; p.use_scope_ratio <- 0;
-				| Some s -> p.use_scope <- false; p.use_scope_ratio <- safe_atoi s arg;
-			end;
-		| "-Reset", None -> p.use_scope <- true; p.use_scope_ratio <- 0;
+		| "-reset", None -> p.use_scope <- false;
+		| "-Reset", None -> p.use_scope <- true;
 		| "-reboot", None -> p.reset_mode <- RESET_reboot;
 		| "-smt", _ ->
 			begin

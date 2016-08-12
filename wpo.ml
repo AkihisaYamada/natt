@@ -1663,7 +1663,6 @@ object (x)
 
 	val mutable initialized = false
 	val mutable use_scope = p.use_scope
-	val mutable use_scope_last_size = 0
 	val mutable dp_flag_table = Hashtbl.create 256
 	val mutable rule_flag_table = Hashtbl.create 256
 
@@ -1673,12 +1672,6 @@ object (x)
 		initialized <- true;
 		debug (puts " Initializing.");
 
-		if p.use_scope_ratio > 0 then begin
-			let rules_size = List.length current_usables in
-			use_scope_last_size <- trs#get_size;
-			use_scope <-
-				(use_scope_last_size - rules_size) * p.use_scope_ratio < rules_size;
-		end;
 		if use_scope then begin
 			debug(puts " `Scope' mode.");
 			dplist := dg#get_dps;
@@ -1894,15 +1887,7 @@ object (x)
 		initialized <- false;
 
 	method push current_usables dps =
-		if initialized then begin
-			if p.use_scope_ratio > 0 then
-				let curr_size = trs#get_size in
-				if (use_scope_last_size - curr_size) * p.use_scope_ratio > curr_size then
-				begin
-					x#reset;
-					x#init current_usables dps;
-				end;
-		end else begin
+		if not initialized then begin
 			x#init current_usables dps;
 		end;
 		List.iter x#add_rule current_usables;
