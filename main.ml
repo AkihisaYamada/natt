@@ -56,18 +56,6 @@ let uncurry =
 	else
 		fun _ _ -> false
 
-
-let relative_test (trs : #trs) =
-	trs#exists_rule (fun i rule ->
-		if rule#is_weak && rule#is_duplicating then (
-			comment (puts "Weak rule e" << put_int i << puts " is duplicating" << endl);
-			true
-		) else if not(trs#const_term rule#r) then (
-			comment (puts "Weak rule e" << put_int i << puts " calls a strict rule" << endl);
-			true
-		) else false
-	);;
-
 let theory_test (trs : #trs) =
 	let ths = trs#get_ths in
 	let ths = StrSet.remove "A" ths in
@@ -108,8 +96,8 @@ let trivial_test (trs : #trs) =
 let dummy_estimator = Estimator.tcap (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
-let rule_remove next (trs : #trs) =
-	if Array.length params.orders_removal == 0 then
+let rule_remove (trs : #trs) next =
+	if Array.length params.orders_removal = 0 then
 		next trs
 	else
 		let proc_list =
@@ -346,13 +334,13 @@ let prove_termination (trs : #trs) =
 			theory_test trs;
 			extra_test trs;
 			trivial_test trs;
-			rule_remove (fun trs ->
+			rule_remove trs (fun trs ->
 				if uncurry trs dummy_dg then
-					rule_remove dp_prove trs
-				else if params.mode = MODE_dp then
+					rule_remove trs dp_prove
+				else if params.dp then
 					dp_prove trs
 				else raise Unknown
-			) trs
+			)
 		with
 		| Success -> YES
 		| Unknown -> MAYBE
@@ -413,38 +401,6 @@ object (x)
 			if x#duplicating then err "Duplicating TRS";
 			warn "Non-duplicating TRS";
 			exit 0;
-		| MODE_id	->
-			trs#iter_rules (fun i rule -> if term_eq rule#l rule#r then trs#remove_rule i);
-			trs#output_wst cout;
-		| MODE_dist	->
-(*				let tester _ rule =
-				match rule#r with
-				| Node(Th "AC",_,
-					[Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
-					 Node(Th "AC",_,[Node(Var,_,_); Node(Var,_,_)]);
-					]) ->
-					(match rule#l with
-					 | Node(Th "AC",_,
-					 	[Node(Var,_,_);
-						 Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
-						]) -> true
-					 | Node(Th "AC",_,
-						[Node(Th "AC",_,[Node(Var,_,_);Node(Var,_,_)]);
-						 Node(Var,_,_);
-						]) -> true
-					 | _ -> false
-					)
-				| _ -> false
-			in
-			if trs#exists_rule tester then
-				print_endline "Distribution like rule"
-			else if x#duplicating then
-				print_endline "Duplicating TRS"
-			else
-				print_endline "";
-*)()
-		| MODE_relative_test ->
-			if relative_test trs then exit 1;
 		| _ ->
 			Array.iter
 				(fun p ->
