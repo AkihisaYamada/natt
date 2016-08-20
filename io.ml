@@ -66,8 +66,10 @@ class pretty_printer (base : #outputter) maxdepth =
 			done;
 	end
 
+let pretty_wrap_out os = new pretty_printer (new wrap_out os) 32
+
 class debug_out main os =
-	let debugger = new pretty_printer (new wrap_out os) 32 in
+	let debugger = pretty_wrap_out os in
 	object (x)
 		inherit printer
 		method puts s = main#puts s; debugger#puts s;
@@ -99,8 +101,6 @@ class finalized finalizer =
 			Gc.finalise fin x;
 			at_exit (fun _ -> !rfin x)
 	end
-
-let pretty_wrap_out os = new pretty_printer (new wrap_out os) 32
 
 let cerr = pretty_wrap_out stderr
 let cout = pretty_wrap_out stdout

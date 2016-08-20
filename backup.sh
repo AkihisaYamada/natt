@@ -1,5 +1,11 @@
 #!/bin/sh
 
+if which gmake
+then
+	make=gmake
+else
+	make=make
+fi
 pwd=`pwd`
 bak=~/NaTT.backup
 tar="tar"
@@ -28,7 +34,7 @@ then
 		exit 1
 	fi
 	
-	gmake || exit 1
+	$make || exit 1
 	
 	cd "$bak"
 	
@@ -40,7 +46,7 @@ then
 	if [ "$release" = "y" ]
 	then
 		rm -f NaTT/*
-		(cd "$pwd"; echo cp $bin $script $common \"$bak/NaTT\")
+		(cd "$pwd"; eval cp $bin $script $common \"$bak/NaTT\")
 		$tar -czf $1.bin.tar.gz NaTT
 		rm -f NaTT/*
 		(cd "$pwd"; eval cp $src $script $common \"$bak/NaTT\")
