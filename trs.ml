@@ -294,7 +294,12 @@ class trs =
 				Xml.tag "Csymbols" pr;
 			end;
 		method output_xml_rules : 'a. (#Io.printer as 'a) -> unit =
-			Xml.enclose "rules" (fun pr -> x#iter_rules (fun _ rule -> rule#output_xml pr))
+			Xml.enclose "rules" (fun pr ->
+(*				x#iter_rules (fun _ rule -> rule#output_xml pr)
+*)				for i = 1 to rule_cnt do
+					(x#find_rule i)#output_xml pr;
+				done
+			)
 		method output_xml : 'a. (#Io.printer as 'a) -> unit =
 			Xml.enclose "trs" x#output_xml_rules << x#output_xml_ths
 

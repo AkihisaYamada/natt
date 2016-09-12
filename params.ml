@@ -1,4 +1,4 @@
-let version = "1.5";
+let version = "1.6";
 
 type base_ty =
 | TY_int
@@ -51,16 +51,10 @@ type mode =
 | MODE_order
 | MODE_flat
 | MODE_uncurry
-| MODE_dp
-| MODE_theory
-| MODE_debug
 | MODE_simple
-| MODE_dist
 | MODE_dup
 | MODE_through
 | MODE_higher_xml
-| MODE_id
-| MODE_relative_test
 type smt_tool = string * string list
 
 type order_params =
@@ -222,6 +216,7 @@ type params_type =
 {
 	mutable mode : mode;
 	mutable file : string;
+	mutable dp : bool;
 	mutable edge_mode : estimator_mode;
 	mutable edge_length : int;
 	mutable sort_scc : sort_mode;
@@ -252,8 +247,9 @@ let params =
 {
 	mode = MODE_order;
 	file = "";
+	dp = false;
 	edge_mode = E_sym_trans;
-	edge_length = 1;
+	edge_length = 8;
 	sort_scc = SORT_asc;
 	uncurry = false;
 	max_loop = 0;
@@ -278,7 +274,6 @@ let params =
 	naive_C = false;
 };;
 
-let dp = ref false in
 let err msg =
 	prerr_endline msg;
 	print_endline "ERR";
@@ -319,7 +314,7 @@ in
 let i = ref 1 in
 let pp = ref order_default in
 let register_order p =
-	if !dp then begin
+	if params.dp then begin
 		params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
 		pp := params.orders_dp.(Array.length params.orders_dp - 1);
 	end else begin
@@ -328,7 +323,8 @@ let register_order p =
 	end;
 in
 let apply_edg () =
-	dp := true;
+	if params.dp then err "'EDG' cannot be applied twice!";
+	params.dp <- true;
 	order_default.dp <- true;
 	order_default.sc_mode <- W_bool;
 	order_default.collapse <- not params.cpf;
@@ -439,8 +435,7 @@ while !i < argc do
 			params.cpf <- true;
 			params.naive_C <- true;
 			params.edge_mode <- E_tcap;
-			(* for CeTA, the order is crusial *)
-			params.sort_scc <- SORT_none;
+			params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
 		| "x", Some file ->
 			params.cpf <- true;
 			params.cpf_to <- open_out file;
@@ -588,14 +583,12 @@ while !i < argc do
 		| "-z3", None -> p.smt_tool <- z3cmd;
 		| "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
 		| "-dup", None -> default := false; params.mode <- MODE_dup;
-		| "-relative-test", None -> params.mode <- MODE_relative_test;
 		| "-tcap", None -> params.edge_mode <- E_tcap;
 		| "-edge", Some s -> params.edge_length <- safe_atoi s arg;
 		| "t", mode ->
 			default := false;
 			begin
 				match mode with
-				| Some "id" -> params.mode <- MODE_id;
 				| Some "ho" -> params.mode <- MODE_higher_xml;
 				| Some str -> err ("Unknown transformation mode: " ^ str ^ "!");
 				| _ -> params.mode <- MODE_through;
@@ -605,16 +598,14 @@ while !i < argc do
 		match arg with
 		| "UNCURRY" ->
 			default := false;
-			if p.dp then err "UNCURRY after EDG is not yet supported!";
+			if params.dp then err "UNCURRY after EDG is not yet supported!";
 			params.uncurry <- true;
 		| "EDG" ->
 			default := false;
-			params.mode <- MODE_dp;
-			if p.dp then err "'EDG' cannot be applied twice!";
 			apply_edg ();
 		| "LOOP" ->
 			default := false;
-			if not p.dp then err "LOOP cannot be applied before EDG!";
+			if not params.dp then err "LOOP cannot be applied before EDG!";
 			params.max_loop <- 3;
 		| "WPO" ->
 			default := false;
@@ -666,7 +657,6 @@ while !i < argc do
 done;
 if !default then begin
 	(* the default strategy *)
-	params.mode <- MODE_dp;
 	apply_polo ();
 	!pp.sc_mode <- W_bool;
 	params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)

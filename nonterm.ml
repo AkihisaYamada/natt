@@ -53,12 +53,12 @@ let find_loop lim (trs : trs) (estimator : Estimator.t) (dg : dg) scc =
 	let iterer len nlim i1 =
 		let dp1 = dg#find_dp i1 in
 		let rec sub pos loop u1 l2 r2 path strict =
-			let l2 = u1#subst l2 in
 			match path with
 			| [] ->
 				begin
 					let l1 = u1#subst dp1#l in
 					let r1 = u1#subst dp1#r in
+					let l2 = u1#subst l2 in
 					let put_loop =
 						endl << put_dp i1 l1 r1 << put_chain dg u1 loop
 					in
