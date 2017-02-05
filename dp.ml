@@ -198,11 +198,11 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
 		method output_dp : 'a. int -> (#Io.printer as 'a) -> unit = fun i pr ->
-			output_tbl_index pr "   #" (i, x#find_dp i)
+			print_tbl_index pr "   #" (i, x#find_dp i)
 		method output_dp_xml : 'a. int -> (#Io.printer as 'a) -> unit = fun i ->
 			(x#find_dp i)#output_xml
 		method output_dps : 'a. (#Io.printer as 'a) -> unit = fun pr ->
-			output_tbl pr "   #" dp_table
+			print_tbl pr "   #" dp_table
 		method output_dps_xml : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			x#iter_dps (fun _ rule -> rule#output_xml pr)
 		method output_scc_xml : 'a. int list -> (#Io.printer as 'a) -> unit = fun scc pr ->

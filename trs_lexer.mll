@@ -27,6 +27,7 @@ exception Lexing_error of string
 
 }
 
+let digit = [ '0'-'9' ]
 let letter = ['a'-'z' 'A'-'Z' '0'-'9' '\'']
 let symbol = ['#' '+' '-' '*' '/' '.' '\\' ':' '=' '<' '>' '@' '!' '[' ']']
 
@@ -52,10 +53,16 @@ rule token = parse
       { LPAR }
   | ")"
       { RPAR }
+  | "||"
+      { BBAR }
   | "|"
       { BAR }
   | ","
       { COMMA }
+  | ":"
+      { COLON(Lexing.lexeme_start_p lexbuf, Lexing.lexeme lexbuf) }
+  | digit+
+      { DIGITS(Lexing.lexeme_start_p lexbuf, Lexing.lexeme lexbuf) }
   | ('_' | letter | symbol )+
       { ident (Lexing.lexeme_start_p lexbuf) (Lexing.lexeme lexbuf) }
   | _ 

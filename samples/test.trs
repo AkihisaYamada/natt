@@ -1,4 +1,4 @@
 (VAR x y z )
 (RULES 
-	f(x,x) -> f(x,s(x))
+	f(s(x)) -> f(x)
 )
