@@ -191,19 +191,22 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       | W_none ->
         if j = 1 && k = 1 then LI 1 else LI 0
       | _ ->
+        let flag =
+          match p.mat_mode with
+          | MAT_full -> true
+          | MAT_upper -> finfo.is_defined || j < k
+          | MAT_lower -> finfo.is_defined || j > k
+        in
         let coef =
-          if p.upper_triangular && not finfo.is_defined then
-            if j > k then LI 0
-            else if j = k then
-              if j = 1 then LI 1
-              else add_number W_bool (supply_matrix_index v j k)
-            else
-              add_number p.sc_mode (supply_matrix_index v j k)
-          else
+          if flag then
             add_number p.sc_mode (supply_matrix_index v j k)
+          else if j = k then
+            if j = 1 then LI 1
+            else add_number W_bool (supply_matrix_index v j k)
+          else LI 0
         in
         (* Additional constraints *)
-        if not p.dp && not p.upper_triangular && j = 1 && k = 1 then
+        if not p.dp && flag && j = 1 && k = 1 then
           (* if not in DP mode, assert top left element >= 1 *)
           if p.sc_mode = W_num then (
             solver#add_assertion (coef >=^ LI 1);
@@ -1989,7 +1992,7 @@ object (x)
       cpf output_cpf;
       cpf (Xml.enter "trs" << Xml.enter "rules");
       if p.remove_all then begin
-        comment (puts " removes all.");
+        comment (puts " removes all." << endl);
         List.iter trs#remove_rule current_usables;
       end else begin
         comment (puts " removes:");

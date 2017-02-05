@@ -55,6 +55,10 @@ type mode =
 | MODE_dup
 | MODE_through
 | MODE_higher_xml
+type mat_mode =
+| MAT_full
+| MAT_upper
+| MAT_lower
 type smt_tool = string * string list
 
 type order_params =
@@ -62,7 +66,7 @@ type order_params =
   mutable dp : bool;
   mutable w_mode : w_mode;
   mutable w_dim : int;
-  mutable upper_triangular : bool;
+  mutable mat_mode : mat_mode;
   mutable w_max : int;
   mutable w_neg : bool;
   mutable ext_mset : bool;
@@ -117,7 +121,7 @@ let order_default =
   base_ty = TY_int;
   w_mode = W_none;
   w_dim = 1;
-  upper_triangular = false;
+  mat_mode = MAT_full;
   w_max = 0;
   w_neg = false;
   ext_lex = false;
@@ -476,7 +480,8 @@ while !i < argc do
       p.w_dim <- safe_atoi s arg;
       if p.w_dim > 10 then err "too big dimension!";
 
-    | "-triangular", None -> p.upper_triangular <- true;
+    | "-upper", None -> p.mat_mode <- MAT_upper;
+    | "-lower", None -> p.mat_mode <- MAT_lower;
     | "f", None -> p.collapse <- true;
     | "F", None -> p.collapse <- false;
     | "u", None -> if not p.dp then err "-u cannot be applied here!"; p.usable <- true;
