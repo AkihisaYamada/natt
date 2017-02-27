@@ -5,8 +5,8 @@
 %}
 
 %token EOF
-%token LPAR RPAR COMMA BAR ARROW DARROW EQUAL ARROWEQ
-%token <Lexing.position * string> ID
+%token LPAR RPAR COMMA BAR BBAR ARROW DARROW EQUAL ARROWEQ
+%token <Lexing.position * string> ID DIGITS COLON
 %token <string> STRING OTHER
 %token <Lexing.position> CONTEXTSENSITIVE EQUATIONS INNERMOST RULES STRATEGY THEORY VAR OUTERMOST
 
@@ -29,7 +29,9 @@ decl:
 
 anylist:
 | /* epsilon */             { [] }
-| id anylist                { (snd $1)::$2 }
+| id anylist                { snd $1 :: $2 }
+| DIGITS anylist            { snd $1 :: $2 }
+| COLON anylist             { snd $1 :: $2 }
 | STRING anylist            { $1::$2 }
 | OTHER anylist             { $1::$2 }
 | LPAR anylist RPAR anylist { ("("::$2) @ (")"::$4) }
@@ -47,6 +49,8 @@ idlist:
 
 id:
 | ID               { $1 }
+| DIGITS           { $1 }
+| COLON            { $1 }
 | CONTEXTSENSITIVE { $1,"CONTEXTSENSITIVE" }
 | EQUATIONS        { $1,"EQUATIONS" }
 | INNERMOST        { $1,"INNERMOST" }
@@ -85,6 +89,7 @@ listofrules:
 rule:
 | term ARROW term                  { Rew([],$1,$3) }
 | term ARROW term BAR condlist     { Rew($5,$1,$3) }
+| term ARROW distrib               { DistRew($1,$3) }
 | term ARROWEQ term                  { RelRew([],$1,$3) }
 /*
 | term ARROWEQ term BAR condlist     { RelRew($5,$1,$3) }
@@ -100,6 +105,16 @@ cond:
 | term ARROW term   { Arrow($1,$3) }
 | term DARROW term  { Darrow($1,$3) }
 ;
+
+distrib:
+| term BBAR distrib0 { (1,$1)::$3 }
+| DIGITS COLON term BBAR distrib0 { (int_of_string (snd $1),$3)::$5 }
+
+distrib0:
+| term { [(1,$1)] }
+| DIGITS COLON term { [(int_of_string (snd $1),$3)]}
+| term BBAR distrib0 { (1,$1)::$3 }
+| DIGITS COLON term BBAR distrib0 { (int_of_string (snd $1),$3)::$5 }
 
 term:
 | id                      { Term($1,[]) }

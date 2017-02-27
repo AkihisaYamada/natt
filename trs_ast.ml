@@ -5,7 +5,10 @@ type term = Term of ident * (term list)
 
 type cond = Arrow of term * term | Darrow of term * term
 
-type rule = Rew of cond list * term * term | RelRew of cond list * term * term
+type rule =
+  | Rew of cond list * term * term
+  | RelRew of cond list * term * term
+  | DistRew of term * (int * term) list
 
 type theory =
   | Builtin of ident * ident list
