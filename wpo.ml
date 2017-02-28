@@ -26,56 +26,60 @@ let delete_common =
   in
   sub []
 
-type finfo =
-{
-  sym : sym;
-  symtype : symtype;
-  is_associative : bool;
-  is_commutative : bool;
-  is_defined : bool;
-  arity : int;
-  mutable max : bool;
-  mutable maxpol : bool;
-  mutable maxfilt_exp : int -> exp;
-  mutable status_mode : status_mode;
-  mutable argfilt_exp : int -> exp;
-  mutable argfilt_list_exp : exp;
-  mutable is_const_exp : exp;
-  mutable is_quasi_const_exp : exp;
-  mutable perm_exp : int -> int -> exp;
-  mutable permed_exp : int -> exp;
-  mutable mapped_exp : int -> exp;
-  mutable mset_status_exp : exp;
-  mutable weight_exp : exp;
-  mutable subterm_coef_exp : int -> exp;
-  mutable subterm_penalty_exp : int -> exp;
-  mutable prec_exp : exp;
-}
-let default_finfo (f:#sym_detailed) =
-{
-  sym = (f:>sym);
-  symtype = f#ty;
-  arity = f#arity;
-  is_commutative = f#is_commutative;
-  is_associative = f#is_associative;
-  is_defined = f#is_defined;
-  max = false;
-  maxpol = false;
-  maxfilt_exp = k_comb (LB false);
-  status_mode = S_none;
-  argfilt_exp = k_comb Nil;
-  argfilt_list_exp = Nil;
-  is_const_exp = LB(f#arity = 0);
-  is_quasi_const_exp = LB(f#arity = 0);
-  perm_exp = k_comb (k_comb (LB false));
-  permed_exp = k_comb (LB false);
-  mapped_exp = k_comb (LB false);
-  mset_status_exp = LB false;
-  weight_exp = LI 0;
-  subterm_coef_exp = k_comb (LI 1);
-  subterm_penalty_exp = k_comb (LI 0);
-  prec_exp = LI 0;
-}
+class wpo_sym (sym:#sym_detailed) = object
+  val base : sym_detailed = sym
+  method base = base
+  val mutable sum = false
+  val mutable max = false
+  val mutable maxpol = false
+  val mutable status_mode = S_none
+  val mutable weight = LI 0
+  val mutable subterm_coef : int -> exp = k_comb (LI 1)
+  val mutable subterm_penalty : int -> exp = k_comb (LI 0)
+  val mutable maxfilt : int -> exp = k_comb (LB true)
+  val mutable argfilt : int -> exp = k_comb Nil
+  val mutable argfilt_list = LB true
+  val mutable is_const = LB(sym#arity = 0)
+  val mutable is_quasi_const = LB(sym#arity = 0)
+  val mutable perm : int -> int -> exp = k_comb (k_comb (LB false))
+  val mutable permed : int -> exp = k_comb (LB false)
+  val mutable mapped : int -> exp = k_comb (LB false)
+  val mutable mset_status = LB false
+  val mutable prec = LI 0
+  method max = max
+  method maxpol = maxpol
+  method status_mode = status_mode
+  method weight = weight
+  method subterm_coef = subterm_coef
+  method subterm_penalty = subterm_penalty
+  method maxfilt = maxfilt
+  method argfilt = argfilt
+  method argfilt_list = argfilt_list
+  method is_const = is_const
+  method is_quasi_const = is_quasi_const
+  method perm = perm
+  method permed = permed
+  method mapped = mapped
+  method mset_status = mset_status
+  method lex_status = smt_not mset_status
+  method prec = prec
+  method set_max x = max <- x
+  method set_maxpol x = maxpol <- x
+  method set_status_mode x = status_mode <- x
+  method set_weight x = weight <- x
+  method set_subterm_coef x = subterm_coef <- x
+  method set_subterm_penalty x = subterm_penalty <- x
+  method set_maxfilt x = maxfilt <- x
+  method set_argfilt x = argfilt <- x
+  method set_argfilt_list x = argfilt_list <- x
+  method set_is_const x = is_const <- x
+  method set_is_quasi_const x = is_quasi_const <- x
+  method set_perm x = perm <- x
+  method set_permed x = permed <- x
+  method set_mapped x = mapped <- x
+  method set_mset_status x = mset_status <- x
+  method set_prec x = prec <- x
+end
 
 class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 
@@ -99,7 +103,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   in
   let () = solver#set_base_ty weight_ty in
   (* Signature as the set of function symbols with their informations. *)
-  let sigma = Hashtbl.create 256 in
+  let sigma : (string,wpo_sym) Hashtbl.t = Hashtbl.create 256 in
   let lookup_name name =
     try Hashtbl.find sigma name with  _ -> raise (Internal name)
   in
@@ -108,8 +112,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   let nest fname = Mset.count fname !nest_map in
 
 (*** Weights ***)
-  let weight finfo = finfo.weight_exp in
-
   let makebin a b =
     smt_if a (smt_if b (LI 3) (LI 2)) (smt_if b (LI 1) (LI 0))
   in
@@ -154,12 +156,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       fun v _ _ -> v
   in
   (* constant part *)
-  let add_weight =
+  let add_weight : string -> wpo_sym -> unit =
     let bind_lower =
       if p.w_neg then
         if p.w_max = 0 then fun _ _ -> ()
         else fun _ fw -> solver#add_assertion (fw >=^ LI (- p.w_max))
-      else fun finfo fw -> solver#add_assertion (fw >=^ if finfo.arity = 0 then mcw else LI 0)
+      else fun finfo fw -> solver#add_assertion (fw >=^ if finfo#base#arity = 0 then mcw else LI 0)
     in
     let bind_upper =
       if p.w_max = 0 then fun _ _ -> ()
@@ -172,20 +174,19 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       fw
     in
     fun fname finfo ->
-      if not p.ac_w && finfo.is_associative then begin
-        finfo.weight_exp <- LI 0
+      if not p.ac_w && finfo#base#is_associative then begin
+        finfo#set_weight (LI 0)
       end else begin
         let v =
           if p.w_dim > 1 then supply_index ("w_" ^ fname)
           else k_comb ("w_" ^ fname)
         in
-        finfo.weight_exp <- makevec (sub finfo v);
+        finfo#set_weight (makevec (sub finfo v));
       end;
   in
 
   (* Coefficients *)
-  let subterm_coef finfo = finfo.subterm_coef_exp in
-  let add_subterm_coef fname finfo =
+  let add_subterm_coef fname (finfo : wpo_sym) =
     let sub v j k =
       match p.sc_mode with
       | W_none ->
@@ -194,8 +195,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         let flag =
           match p.mat_mode with
           | MAT_full -> true
-          | MAT_upper -> finfo.is_defined || j < k
-          | MAT_lower -> finfo.is_defined || j > k
+          | MAT_upper -> finfo#base#is_defined || j < k
+          | MAT_lower -> finfo#base#is_defined || j > k
         in
         let coef =
           if flag then
@@ -222,9 +223,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           coef
         )
     in
-    match finfo.symtype with
+    match finfo#base#ty with
     | Th "C" ->
-      finfo.subterm_coef_exp <- k_comb (makemat (sub ("sc_" ^ fname)));
+      finfo#set_subterm_coef (k_comb (makemat (sub ("sc_" ^ fname))));
     | Th "A" | Th "AC" ->
       let coef =
         if not p.dp || p.sc_mode = W_none then
@@ -232,23 +233,20 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         else
           PB(solver#new_variable ("sc_" ^ fname) Bool)
       in
-      finfo.subterm_coef_exp <- k_comb coef
+      finfo#set_subterm_coef (k_comb coef)
     | _ ->
-      let n = finfo.arity in
+      let n = finfo#base#arity in
       let v = (if n > 1 then supply_index else k_comb) ("sc_" ^ fname) in
       let array = Array.make n (LI 0) in
       for i = 1 to n do
         array.(i-1) <- makemat (sub (v i));
       done;
-      finfo.subterm_coef_exp <- fun i -> array.(i-1);
+      finfo#set_subterm_coef (fun i -> array.(i-1));
   in
 
   (* Max-polynomial *)
-  let max_status finfo = finfo.max in
-  let maxfilt finfo = finfo.maxfilt_exp in
-  let subterm_penalty finfo = finfo.subterm_penalty_exp in
   let add_subterm_penalty fname finfo =
-    if max_status finfo then begin
+    if finfo#max then begin
       let sub v j k =
         let pen = add_number p.sp_mode (supply_matrix_index v j k) in
         if not p.w_neg then solver#add_assertion (pen >=^ LI 0);
@@ -256,39 +254,39 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         pen
       in
       let use_maxpol () =
-        finfo.maxpol <- true;
+        finfo#set_maxpol true;
         debug2 (puts "    using maxpol for " << puts fname << endl);
       in
-      match finfo.symtype with
+      match finfo#base#ty with
       | Th "C" ->
         if p.Params.max_poly &&
           (p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
         then begin
-          finfo.subterm_penalty_exp <- k_comb (makemat (sub ("sp_" ^ fname)));
-          finfo.maxfilt_exp <- k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool);
+          finfo#set_subterm_penalty (k_comb (makemat (sub ("sp_" ^ fname))));
+          finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
           use_maxpol ();
         end else begin
-          finfo.maxpol <- false;
-          finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
+          finfo#set_maxpol false;
+          finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
         end;
       | Th "A" | Th "AC" ->
         if p.Params.max_poly &&
           (p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
         then begin
-          finfo.maxfilt_exp <- k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool);
+          finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
           use_maxpol ();
         end else begin
-          finfo.maxpol <- false;
-          finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
+          finfo#set_maxpol false;
+          finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
         end;
       | _ ->
-        let n = finfo.arity in
+        let n = finfo#base#arity in
         let vsp = (if n > 1 then supply_index else k_comb) ("sp_" ^ fname) in
         let array = Array.make n (LI 0) in
         for i = 1 to n do
           array.(i-1) <- makemat (sub (vsp i));
         done;
-        finfo.subterm_penalty_exp <- (fun i -> array.(i-1));
+        finfo#set_subterm_penalty (fun i -> array.(i-1));
         if p.Params.max_poly &&
           (p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
         then begin
@@ -298,10 +296,10 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
             solver#add_variable (vmf i) Bool;
           done;
           use_maxpol ();
-          finfo.maxfilt_exp <- emf;
+          finfo#set_maxfilt emf;
         end else begin
-          finfo.maxpol <- false;
-          finfo.maxfilt_exp <- (fun i -> subterm_coef finfo i <>^ LI 0);
+          finfo#set_maxpol false;
+          finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
         end;
     end;
   in
@@ -366,10 +364,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 (*** Precedence ***)
   let pmin = LI 0 in
   let pmax = ref (LI 0) in
-  let prec finfo = finfo.prec_exp in
   let add_prec_default fname finfo =
     let fp = solver#new_variable ("p_" ^ fname) weight_ty in
-    finfo.prec_exp <- fp;
+    finfo#set_prec fp;
     solver#add_assertion (pmin <=^ fp);
     solver#add_assertion (fp <=^ !pmax);
   in
@@ -384,7 +381,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     match p.prec_mode with
     | PREC_none -> fun _ _ -> ()
     | _ -> fun fname finfo ->
-      (if finfo.is_associative then add_prec_ac else add_prec_default) fname finfo
+      (if finfo#base#is_associative then add_prec_ac else add_prec_default) fname finfo
   in
   (* Precedence over symbols *)
   let spo =
@@ -392,13 +389,13 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     | PREC_none -> fun _ _ -> weakly_ordered
     | PREC_quasi ->
       fun finfo ginfo ->
-        let pf = prec finfo in
-        let pg = prec ginfo in
+        let pf = finfo#prec in
+        let pg = ginfo#prec in
         Cons(pf =^ pg, pf >^ pg)
     | _ ->
       fun finfo ginfo ->
-        let pf = prec finfo in
-        let pg = prec ginfo in
+        let pf = finfo#prec in
+        let pg = ginfo#prec in
         if pf = pg then weakly_ordered else Cons(LB false, pf >^ pg)
   in
   (* Precedence of root symbols *)
@@ -406,7 +403,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     let sub =
       if p.mincons then
         function
-        | []  -> fun ginfo -> Cons(pmin =^ prec ginfo, LB false)
+        | []  -> fun ginfo -> Cons(pmin =^ ginfo#prec, LB false)
         | _   -> fun _ -> not_ordered
       else
         fun _ _ -> not_ordered
@@ -420,56 +417,54 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   in
 
 (*** Argument filters ***)
-  let argfilt finfo = finfo.argfilt_exp in
   let add_argfilt =
     (* argument is filtered iff coef = 0 *)
     if not p.dp || p.sc_mode = W_none then
       fun _ finfo ->
-        finfo.argfilt_exp <- k_comb (LB true);
+        finfo#set_argfilt (k_comb (LB true));
     else if p.sc_mode = W_bool && p.w_dim = 1 && not p.Params.max_poly then
       fun _ finfo ->
-        finfo.argfilt_exp <- fun i -> subterm_coef finfo i <>^ LI 0;
+        finfo#set_argfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
     else
       (* give an alias for coef <> 0 *)
       let iterer =
         if p.Params.max_poly then
           fun finfo vf i ->
             solver#add_definition (vf i) Bool
-            ( (subterm_coef finfo i <>^ LI 0) |^ 
-              if finfo.maxpol then maxfilt finfo i else LB false
+            ( (finfo#subterm_coef i <>^ LI 0) |^ 
+              if finfo#maxpol then finfo#maxfilt i else LB false
             );
         else
           fun finfo vf i ->
-            solver#add_definition (vf i) Bool (subterm_coef finfo i <>^ LI 0);
+            solver#add_definition (vf i) Bool (finfo#subterm_coef i <>^ LI 0);
       in
       fun fname finfo ->
         let v = "af_" ^ fname in
-        match finfo.symtype with
+        match finfo#base#ty with
         | Fun | Th "A" ->
           let vf i = supply_index v i in
           let ef i = EV(vf i) in
-          for i = 1 to finfo.arity do
+          for i = 1 to finfo#base#arity do
             iterer finfo vf i;
           done;
-          finfo.argfilt_exp <- ef;
+          finfo#set_argfilt ef;
         | Th "AC" | Th "C" ->
           let vf _ = v in
           let ef _ = EV(v) in
           iterer finfo vf 1;
-          finfo.argfilt_exp <- ef;
+          finfo#set_argfilt ef;
         | _ -> ()
   in
   (* collapsing argument filters *)
-  let argfilt_list finfo = finfo.argfilt_list_exp in
   let add_argfilt_list =
     if p.collapse then
       fun fname finfo to_n ->
         let v = "afl_" ^ fname in
-        finfo.argfilt_list_exp <- EV(v);
+        finfo#set_argfilt_list (EV(v));
         solver#add_variable v Bool;
-        solver#add_assertion (EV(v) |^ ES1(List.map (argfilt finfo) to_n));
+        solver#add_assertion (EV(v) |^ ES1(List.map finfo#argfilt to_n));
     else
-      fun _ finfo _ -> finfo.argfilt_list_exp <- LB true
+      fun _ finfo _ -> finfo#set_argfilt_list (LB true)
   in
 
 (*** Usable rules ***)
@@ -510,25 +505,15 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   in
 
 (*** Status ***)
-  let perm finfo = finfo.perm_exp in
-  (* test if $f$'s $i$th argument has position after permutation *)
-  let permed finfo = finfo.permed_exp in
-  (* test if $f$ has $k$th argument after permutation *)
-  let mapped finfo = finfo.mapped_exp in
-  (* multiset status *)
-  let mset_status finfo = finfo.mset_status_exp in
-  (* lexicographic status *)
-  let lex_status finfo = smt_not finfo.mset_status_exp in
-
   let add_perm =
     let sub_lex =
       let sub_perm fname finfo n =
-        match finfo.status_mode with
-        | S_empty -> finfo.perm_exp <- (fun _ _ -> LB false)
-        | S_none -> finfo.perm_exp <- (fun i k -> LB(i = k) &^ argfilt finfo i)
+        match finfo#status_mode with
+        | S_empty -> finfo#set_perm (fun _ _ -> LB false)
+        | S_none -> finfo#set_perm (fun i k -> LB(i = k) &^ finfo#argfilt i)
         | _ ->
-          if finfo.status_mode = S_total && n = 1 then begin
-            finfo.perm_exp <- k_comb (argfilt finfo);
+          if finfo#status_mode = S_total && n = 1 then begin
+            finfo#set_perm (k_comb finfo#argfilt);
           end else begin
             let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
             let perm_e i k = EV(perm_v i k) in
@@ -537,56 +522,56 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
                 solver#add_variable (perm_v i k) Bool;
               done;
             done;
-            finfo.perm_exp <- perm_e;
+            finfo#set_perm perm_e;
           end;
       in
       let sub_permed fname finfo n =
-        match finfo.status_mode with
+        match finfo#status_mode with
         | S_empty ->
-          finfo.permed_exp <- (fun i -> LB false)
+          finfo#set_permed (fun i -> LB false)
         | S_partial ->
           let permed_v i = supply_index ("permed_" ^ fname) i in
           let permed_e i = EV(permed_v i) in
           for i = 1 to n do
             solver#add_variable (permed_v i) Bool;
           done;
-          finfo.permed_exp <- permed_e;
-        | _ -> finfo.permed_exp <- argfilt finfo;
+          finfo#set_permed permed_e;
+        | _ -> finfo#set_permed finfo#argfilt;
       in
       let sub_mapped fname finfo n to_n =
-        match finfo.status_mode with
-        | S_empty -> finfo.mapped_exp <- k_comb (LB false);
-        | S_none -> finfo.mapped_exp <- argfilt finfo;
+        match finfo#status_mode with
+        | S_empty -> finfo#set_mapped (k_comb (LB false));
+        | S_none -> finfo#set_mapped finfo#argfilt;
         | _ ->
-          if p.dp && (p.sc_mode <> W_none || finfo.status_mode = S_partial) then
+          if p.dp && (p.sc_mode <> W_none || finfo#status_mode = S_partial) then
             let mapped_v k = supply_index ("mapped_" ^ fname) k in
             let mapped_e k = EV(mapped_v k) in
             for k = 1 to n do
               solver#add_variable (mapped_v k) Bool;
             done;
             solver#add_assertion (OD (List.map mapped_e to_n));
-            finfo.mapped_exp <- mapped_e;
+            finfo#set_mapped mapped_e;
           else
-            finfo.mapped_exp <- k_comb (LB true)
+            finfo#set_mapped (k_comb (LB true))
       in
       fun fname finfo n to_n ->
         sub_perm fname finfo n;
         sub_permed fname finfo n;
         sub_mapped fname finfo n to_n;
         for i = 1 to n do
-          let p_i = permed finfo i in
+          let p_i = finfo#permed i in
           if p.status_copy then begin
             for j = 1 to n do
-              solver#add_assertion (perm finfo i j =>^ p_i);
+              solver#add_assertion (finfo#perm i j =>^ p_i);
             done;
-            solver#add_assertion (p_i =>^ smt_exists (perm finfo i) to_n);
+            solver#add_assertion (p_i =>^ smt_exists (finfo#perm i) to_n);
           end else begin
-            let (zero,one) = split (ZeroOne (List.map (perm finfo i) to_n)) solver in
+            let (zero,one) = split (ZeroOne (List.map (finfo#perm i) to_n)) solver in
             solver#add_assertion (p_i =>^ one);
             solver#add_assertion (p_i |^ zero);
           end;
-          let m_i = mapped finfo i in
-          let mapper j = perm finfo j i in
+          let m_i = finfo#mapped i in
+          let mapper j = finfo#perm j i in
           let (zero,one) = split (ZeroOne (List.map mapper to_n)) solver in
           solver#add_assertion (m_i =>^ one);
           solver#add_assertion (m_i |^ zero);
@@ -594,47 +579,48 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     in
     let sub_c =
       let sub_perm finfo =
-        finfo.perm_exp <-
-        match finfo.status_mode with
-        | S_empty -> k_comb (k_comb (LB false));
-        | S_partial -> fun i j -> if i = j then permed finfo i else LB false;
-        | _ -> fun i j -> if i = j then argfilt finfo i else LB false;
+        finfo#set_perm (
+        match finfo#status_mode with
+        | S_empty -> k_comb (k_comb (LB false))
+        | S_partial -> fun i j -> if i = j then finfo#permed i else LB false
+        | _ -> fun i j -> if i = j then finfo#argfilt i else LB false
+        )
       in
       let sub_permed fname finfo =
-        match finfo.status_mode with
-        | S_empty -> finfo.permed_exp <- k_comb (LB false);
+        match finfo#status_mode with
+        | S_empty -> finfo#set_permed (k_comb (LB false));
         | S_partial ->
           let permed_v = "permed_" ^ fname in
           let permed_e _ = EV(permed_v) in
           solver#add_variable permed_v Bool;
-          finfo.permed_exp <- permed_e;
+          finfo#set_permed permed_e;
         | _ ->
-          finfo.permed_exp <- finfo.argfilt_exp
+          finfo#set_permed finfo#argfilt;
       in
       fun fname finfo ->
         sub_perm finfo;
         sub_permed fname finfo;
-        finfo.mapped_exp <- finfo.permed_exp;
+        finfo#set_mapped finfo#permed;
     in
     fun fname finfo to_n ->
-      finfo.status_mode <-
+      finfo#set_status_mode
         (if p.status_nest > 0 && nest fname > p.status_nest then S_empty
          else p.Params.status_mode);
-      match finfo.symtype with
+      match finfo#base#ty with
       | Th th ->
         if (p.max_mode <> MAX_all || p.sp_mode <> W_none) &&
           (th = "A" || th = "AC") &&
-          max_status finfo
+          finfo#max
         then begin
           (* in this case, we cannot ensure monotonicity... *)
-          finfo.status_mode <- S_empty;
+          finfo#set_status_mode S_empty;
         end;
         if th = "C" || th = "AC" then begin
           sub_c fname finfo;
         end else begin
-          sub_lex fname finfo finfo.arity to_n;
+          sub_lex fname finfo finfo#base#arity to_n;
         end;
-      | _ -> sub_lex fname finfo finfo.arity to_n;
+      | _ -> sub_lex fname finfo finfo#base#arity to_n;
   in
 
   let add_mset_status =
@@ -647,28 +633,24 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         fun _ -> LB true
     in
     fun fname finfo ->
-      match finfo.symtype with
+      match finfo#base#ty with
       | Th "C"
-      | Th "AC" -> finfo.mset_status_exp <- LB true;
-      | _ -> if finfo.arity > 1 then finfo.mset_status_exp <- sub fname;
+      | Th "AC" -> finfo#set_mset_status (LB true);
+      | _ -> if finfo#base#arity > 1 then finfo#set_mset_status (sub fname);
   in
 
 (*** Tests for arity ***)
-  let is_const finfo = finfo.is_const_exp in
-  let is_quasi_const finfo = finfo.is_quasi_const_exp in
   let is_unary =
     if p.dp && p.sc_mode <> W_none then
       fun finfo to_n ->
-        argfilt_list finfo &^
-        ES1(List.map (argfilt finfo) to_n) &^
-        smt_exists (permed finfo) to_n
+        finfo#argfilt_list &^ ES1(List.map finfo#argfilt to_n)
     else
       fun _ -> function [_] -> LB true | _ -> LB false
   in
 
 (*** preparing for function symbols ***)
-  let add_symbol fname finfo =
-    let n = finfo.arity in
+  let add_symbol fname (finfo:wpo_sym) =
+    let n = finfo#base#arity in
     let to_n = intlist 1 n in
 
     add_weight fname finfo;
@@ -686,27 +668,27 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     (* for status *)
     add_mset_status fname finfo;
 
-    let afl = argfilt_list finfo in
-    let fw = weight finfo in
-    let fp = prec finfo in
+    let afl = finfo#argfilt_list in
+    let fw = finfo#weight in
+    let fp = finfo#prec in
 
     (* if $\pi(f)$ is collapsing, then $w(f) = 0$ *)
     solver#add_assertion (afl |^ (fw =^ LI 0));
 
     for i = 1 to n do
-      let pi = permed finfo i in
-      let coef = subterm_coef finfo i in
+      let pi = finfo#permed i in
+      let coef = finfo#subterm_coef i in
 
       (* collapsing filter *)
-      solver#add_assertion (afl |^ (argfilt finfo i =>^ pi));
+      solver#add_assertion (afl |^ (finfo#argfilt i =>^ pi));
       solver#add_assertion (afl |^ (pi =>^ (coef =^ LI 1)));
 
       (* permed position must be a simple position *)
       if p.w_neg then solver#add_assertion (pi =>^ (fw >=^ LI 0));
-      solver#add_assertion (smt_not pi |^ (coef >=^ LI 1) |^ maxfilt finfo i);
+      solver#add_assertion (smt_not pi |^ (coef >=^ LI 1) |^ finfo#maxfilt i);
 
-      if max_status finfo then begin
-        let pen = subterm_penalty finfo i in
+      if finfo#max then begin
+        let pen = finfo#subterm_penalty i in
         if p.w_neg then solver#add_assertion (pi =>^ (pen >=^ LI 0));
         solver#add_assertion (afl |^ (pen =^ LI 0));
       end;
@@ -716,32 +698,32 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     then begin
       let v = "const_" ^ fname in
       solver#add_definition v Bool
-        (afl &^ smt_for_all (fun i -> smt_not (argfilt finfo i)) to_n);
-      finfo.is_const_exp <- EV(v);
-      if finfo.status_mode = S_partial && (p.mincons || p.maxcons) then begin
+        (afl &^ smt_for_all (fun i -> smt_not (finfo#argfilt i)) to_n);
+      finfo#set_is_const (EV(v));
+      if finfo#status_mode = S_partial && (p.mincons || p.maxcons) then begin
         let v = "qconst_" ^ fname in
         solver#add_definition v Bool
-          (afl &^ smt_for_all (fun i -> smt_not (permed finfo i)) to_n);
-        finfo.is_quasi_const_exp <- EV(v);
+          (afl &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
+        finfo#set_is_quasi_const (EV(v));
       end else begin
-        finfo.is_quasi_const_exp <- EV(v);
+        finfo#set_is_quasi_const (EV(v));
       end;
     end;
 
     if p.w_neg || p.mcw_val > 0 then
       (* asserting $mcw$ be the minimal weight of constants. *)
-      if max_status finfo then
+      if finfo#max then
         solver#add_assertion (fw >=^ mcw)
       else
-        solver#add_assertion (is_const finfo =>^ (fw >=^ mcw));
+        solver#add_assertion (finfo#is_const =>^ (fw >=^ mcw));
 
     if p.adm then begin
-      if max_status finfo then
+      if finfo#max then
         for i = 1 to n do
-          solver#add_assertion (argfilt finfo i =>^ (subterm_penalty finfo i >^ LI 0));
+          solver#add_assertion (finfo#argfilt i =>^ (finfo#subterm_penalty i >^ LI 0));
         done
       else if p.mcw_val = 0 then
-        solver#add_assertion (is_const finfo |^ (fw >^ LI 0))
+        solver#add_assertion (finfo#is_const |^ (fw >^ LI 0))
       else begin
         solver#add_assertion (fp <=^ !pmax);
         (* asserting admissibility of weight and precedence. *)
@@ -752,7 +734,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       solver#add_assertion (fp <=^ !pmax);
     end;
 
-    let qc = is_quasi_const finfo in
+    let qc = finfo#is_quasi_const in
     if p.mincons then begin
       solver#add_assertion (qc =>^ (fp >=^ pmin));
     end;
@@ -761,8 +743,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       solver#add_assertion (smt_not maxcons |^ qc |^ (fp <^ !pmax));
       if not p.adm then begin
         let strictly_simple =
-          if max_status finfo then
-            smt_for_all (fun i -> subterm_penalty finfo i >^ LI 0) to_n
+          if finfo#max then
+            smt_for_all (fun i -> finfo#subterm_penalty i >^ LI 0) to_n
           else
             fw >^ LI 0
         in
@@ -804,15 +786,15 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     in
     let sub =
       function
-      | []  -> (emptytbl, weight finfo)
+      | []  -> (emptytbl, finfo#weight)
       | vces  ->
         let vc = Hashtbl.create 4 in
         let (vc,e) =
           match fty with
           | Th "AC"
-          | Th "A"  -> sub_ac (subterm_coef finfo 1) vc (weight finfo) (-2) (LI 0) vces
-          | Th "C"  -> sub_c (subterm_coef finfo 1) vc (weight finfo) (LI 0) vces
-          | _     -> sub_lex (subterm_coef finfo) 1 vc (weight finfo) vces
+          | Th "A"  -> sub_ac (finfo#subterm_coef 1) vc finfo#weight (-2) (LI 0) vces
+          | Th "C"  -> sub_c  (finfo#subterm_coef 1) vc finfo#weight (LI 0) vces
+          | _       -> sub_lex (finfo#subterm_coef) 1 vc finfo#weight vces
         in
         vc_refer solver vc;
         (vc, refer_w e)
@@ -839,11 +821,11 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       | []    -> ret
       | ws::wss ->
         sub_fun finfo (i + 1)
-        (List.fold_left (folder (maxfilt finfo i) (subterm_penalty finfo i)) ret ws) wss
+        (List.fold_left (folder (finfo#maxfilt i) (finfo#subterm_penalty i)) ret ws) wss
     in
     let sub_c finfo =
-      let af = maxfilt finfo 1 in
-      let sp = subterm_penalty finfo 1 in
+      let af = finfo#maxfilt 1 in
+      let sp = finfo#subterm_penalty 1 in
       let rec sub ret =
         function
         | []    -> ret
@@ -852,7 +834,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       sub
     in
     let sub_ac finfo =
-      let af = maxfilt finfo 1 in
+      let af = finfo#maxfilt 1 in
       let rec sub ret =
         function
         | []    -> ret
@@ -878,9 +860,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         if f#is_var then weight_var f argws
         else
           let finfo = lookup f in
-          if max_status finfo then
+          if finfo#max then
             let init =
-              if finfo.maxpol then
+              if finfo#maxpol then
                 weight_summand f#ty finfo (list_product argws)
               else if p.w_neg then
                 (* make it lower bounded by mcw *)
@@ -923,7 +905,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         else
           fun finfo ginfo order ss ts ->
             if finfo == ginfo then
-              filtered_lex_extension (permed finfo) order ss ts
+              filtered_lex_extension finfo#permed order ss ts
             else not_ordered
       else
         (* simple lexicographic extension is used. *)
@@ -932,13 +914,13 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       if p.prec_mode = PREC_quasi then
         fun finfo ginfo ->
           if finfo == ginfo then
-            permuted_lex_extension (perm finfo) (mapped finfo)
+            permuted_lex_extension finfo#perm finfo#mapped
           else
-            permuted_lex_extension2 (perm finfo) (perm ginfo) (mapped finfo) (mapped ginfo)
+            permuted_lex_extension2 finfo#perm ginfo#perm finfo#mapped ginfo#mapped
       else
         fun finfo ginfo ->
           if finfo == ginfo then
-            permuted_lex_extension (perm finfo) (mapped finfo)
+            permuted_lex_extension finfo#perm finfo#mapped
           else
             fun _ _ _ -> not_ordered
   in
@@ -946,8 +928,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   let statused_compargs finfo ginfo order ss ts =
     match ss, ts with
     | [], []  -> weakly_ordered
-    | [], _   -> Cons(is_quasi_const ginfo, LB false)
-    | _, []   -> Cons(LB true, smt_not (is_quasi_const finfo))
+    | [], _   -> Cons(ginfo#is_quasi_const, LB false)
+    | _, []   -> Cons(LB true, smt_not finfo#is_quasi_const)
     | _ ->
       Delay
       (fun context ->
@@ -955,13 +937,13 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           split (lexperm_compargs finfo ginfo order ss ts) context
         in
         let (mge,mgt) =
-          split (filtered_mset_extension (permed finfo) (permed ginfo) order ss ts) context
+          split (filtered_mset_extension finfo#permed ginfo#permed order ss ts) context
         in
         Cons
-        ( (mset_status finfo &^ mset_status ginfo &^ mge) |^
-          (lex_status finfo &^ lex_status ginfo &^ lge),
-          (mset_status finfo &^ mset_status ginfo &^ mgt) |^
-          (lex_status finfo &^ lex_status ginfo &^ lgt)
+        ( (finfo#mset_status &^ ginfo#mset_status &^ mge) |^
+          (finfo#lex_status  &^ ginfo#lex_status  &^ lge),
+          (finfo#mset_status &^ ginfo#mset_status &^ mgt) |^
+          (finfo#lex_status  &^ ginfo#lex_status  &^ lgt)
         )
       )
   in
@@ -971,7 +953,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       if p.ext_lex then
         statused_compargs
       else
-        fun finfo ginfo -> filtered_mset_extension (permed finfo) (permed ginfo)
+        fun finfo ginfo -> filtered_mset_extension finfo#permed ginfo#permed
     else if p.ext_lex then
       lexperm_compargs
     else
@@ -1051,8 +1033,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           sub precond (preargs @ [t]) ret ss
         else
           let ginfo = lookup g in
-          let p_g = permed ginfo in
-          let afl_g = argfilt_list ginfo in
+          let p_g = ginfo#permed in
+          let afl_g = ginfo#argfilt_list in
           (* pop-out an argument *)
           let precond = solver#refer Bool precond in
           let ret = sub2 precond preargs ret afl_g p_g 1 ts in
@@ -1147,20 +1129,20 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   in
   (* compargs for f and g *)
   let compargs fname gname finfo ginfo =
-    match finfo.symtype, ginfo.symtype with
+    match finfo#base#ty, ginfo#base#ty with
     | Fun, Fun -> default_compargs finfo ginfo
     | Th "C", Th "C" -> fun order ss ts ->
-      smt_if (mapped finfo 1)
-        (smt_if (mapped ginfo 1) (mset_extension order ss ts) strictly_ordered)
-        (smt_if (mapped ginfo 1) weakly_ordered not_ordered)
+      smt_if (finfo#mapped 1)
+        (smt_if (ginfo#mapped 1) (mset_extension order ss ts) strictly_ordered)
+        (smt_if (ginfo#mapped 1) weakly_ordered not_ordered)
     | Th "A", Th "A"
     | Th "AC", Th "AC"  -> fun order ss ts ->
-      smt_if (mapped finfo 1)
-        (smt_if (mapped ginfo 1)
+      smt_if (finfo#mapped 1)
+        (smt_if (ginfo#mapped 1)
           (flat_compargs fname gname finfo order ss ts)
           strictly_ordered
         )
-        (smt_if (mapped ginfo 1) weakly_ordered not_ordered)
+        (smt_if (ginfo#mapped 1) weakly_ordered not_ordered)
     | _ -> fun _ _ _ -> not_ordered
   in
 
@@ -1178,8 +1160,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         smt_split (order s t)
         (fun curr_ge curr_gt ->
           sub (i+1) 
-          (some_ge |^ (permed finfo i &^ curr_ge))
-          (some_gt |^ (permed finfo i &^ curr_gt)) order finfo ss t
+          (some_ge |^ (finfo#permed i &^ curr_ge))
+          (some_gt |^ (finfo#permed i &^ curr_gt)) order finfo ss t
         )
     in
     if p.Params.status_mode = S_empty then
@@ -1191,7 +1173,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         match ss with
         | [s] -> order s t
         | _ ->
-          if max_status finfo then
+          if finfo#max then
             sub 1 (LB false) (LB false) order finfo ss t
           else
             Cons(LB false, LB false)
@@ -1208,8 +1190,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           smt_let Bool curr_gt
           (fun curr_gt ->
             sub (j+1)
-            (all_ge &^ (permed ginfo j =>^ curr_ge))
-            (all_gt &^ (permed ginfo j =>^ curr_gt)) order s ginfo ts
+            (all_ge &^ (ginfo#permed j =>^ curr_ge))
+            (all_gt &^ (ginfo#permed j =>^ curr_gt)) order s ginfo ts
           )
         )
     in
@@ -1222,7 +1204,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         match ts with
         | [t] -> order s t
         | _ ->
-          if max_status ginfo then
+          if ginfo#max then
             sub 1 (LB true) (LB true) order s ginfo ts
           else
             Cons(LB true, LB true)
@@ -1233,13 +1215,13 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 (*** WPO frame ***)
   let is_mincons =
     if p.mincons then
-      fun finfo -> is_quasi_const finfo &^ (prec finfo =^ pmin)
+      fun finfo -> finfo#is_quasi_const &^ (finfo#prec =^ pmin)
     else
       fun _ -> LB false
   in
   let is_maxcons =
     if p.maxcons then
-      fun finfo -> maxcons &^ is_quasi_const finfo &^ (prec finfo =^ !pmax)
+      fun finfo -> maxcons &^ finfo#is_quasi_const &^ (finfo#prec =^ !pmax)
     else
       fun _ -> LB false
   in
@@ -1251,9 +1233,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       let rec sub j =
         function
         | [] -> LB true
-        | t::ts -> (argfilt ginfo j =>^ var_eq xname t) &^ sub (j+1) ts
+        | t::ts -> (ginfo#argfilt j =>^ var_eq xname t) &^ sub (j+1) ts
       in
-      is_mincons ginfo |^ (smt_not (argfilt_list ginfo) &^ Delay(fun _ -> sub 1 ts))
+      is_mincons ginfo |^ (smt_not ginfo#argfilt_list &^ Delay(fun _ -> sub 1 ts))
   in
   let rec wpo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
     if ac_eq s t then
@@ -1267,7 +1249,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       if f#equals g then
         match ss,ts with
         | [s1], [t1] ->
-          let fltp = permed (lookup f) 1 in
+          let fltp = (lookup f)#permed 1 in
           smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
         | _ -> wpo3 s t
       else wpo3 s t
@@ -1277,7 +1259,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     (fun some_ge some_gt ->
       smt_let Bool some_ge
       (fun some_ge ->
-        let fl = argfilt_list finfo in
+        let fl = finfo#argfilt_list in
         let some_gt = (smt_not fl &^ some_gt) |^ (fl &^ some_ge) in
         if some_gt = LB true then
           strictly_ordered
@@ -1287,7 +1269,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           let ginfo = lookup g in
           smt_split (order_all_args wpo s ginfo ts)
           (fun all_ge all_gt ->
-            let gl = argfilt_list ginfo in
+            let gl = ginfo#argfilt_list in
             let ngl = smt_not gl in
             if all_gt = LB false then
               Cons(some_ge |^ (ngl &^ all_ge), some_gt)
@@ -1342,16 +1324,16 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       pr#puts "s: ";
       let punct = ref "" in
       let rbr =
-        if solver#get_bool (argfilt_list finfo) then
-          if solver#get_bool (mset_status finfo) then
+        if solver#get_bool finfo#argfilt_list then
+          if solver#get_bool finfo#mset_status then
             (pr#puts "{"; "}")
           else (pr#puts "["; "]")
         else ""
       in
-      let n = finfo.arity in
+      let n = finfo#base#arity in
       for j = 1 to n do
         for i = 1 to n do
-          if solver#get_bool (perm finfo i j) then begin
+          if solver#get_bool (finfo#perm i j) then begin
             pr#puts !punct;
             pr#put_int i;
             punct := ",";
@@ -1367,10 +1349,10 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     in
     let pr_interpret finfo =
       pr#puts "w: ";
-      let n = finfo.arity in
+      let n = finfo#base#arity in
       let sc =
-        if finfo.symtype = Fun then subterm_coef finfo
-        else (fun v _ -> v) (subterm_coef finfo 1)
+        if finfo#base#ty = Fun then finfo#subterm_coef
+        else (fun v _ -> v) (finfo#subterm_coef 1)
       in
       let init = ref true in
       let pr_sum () =
@@ -1391,18 +1373,18 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
             init := false;
           end;
         done;
-        let w = solver#get_value (weight finfo) in
+        let w = solver#get_value finfo#weight in
         if !init then begin
           pr_exp w;
         end else if not (zero w) then begin
           pr_exp_append w;
         end;
       in
-      if max_status finfo then begin
-        let usemax = solver#get_bool (argfilt_list finfo) in
+      if finfo#max then begin
+        let usemax = solver#get_bool finfo#argfilt_list in
         for i = 1 to n do
-          let pen = solver#get_value (subterm_penalty finfo i) in
-          if solver#get_bool (maxfilt finfo i) then begin
+          let pen = solver#get_value (finfo#subterm_penalty i) in
+          if solver#get_bool (finfo#maxfilt i) then begin
             if !init then begin
               if usemax then pr#puts "max(";
             end else begin
@@ -1418,13 +1400,13 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           end;
         done;
         if !init then begin
-          if finfo.maxpol then begin
+          if finfo#maxpol then begin
             pr_sum ();
           end else begin
             pr_exp mcw;
           end;
         end else begin
-          if finfo.maxpol then begin
+          if finfo#maxpol then begin
             pr#puts ", ";
             init := true;
             pr_sum ();
@@ -1437,7 +1419,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
             pr#puts ")";
           end;
         end;
-      end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
+      end else if p.w_neg && not (solver#get_bool finfo#is_const) then begin
         pr#puts "max(";
         pr_sum ();
         pr#puts ", ";
@@ -1449,16 +1431,16 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     in
     let pr_prec finfo =
       pr#puts "p: ";
-      pr_exp (solver#get_value (prec finfo));
+      pr_exp (solver#get_value finfo#prec);
     in
-    let pr_symbol fname finfo =
+    let pr_symbol fname (finfo:wpo_sym) =
       pr#puts "      ";
-      finfo.sym#output_pad 2 pr;
+      finfo#base#output_pad 2 (pr:>Io.outputter);
       if status_is_used then begin
         pr#puts "\t";
         pr_perm finfo;
       end;
-      if solver#get_bool (argfilt_list finfo) then begin
+      if solver#get_bool finfo#argfilt_list then begin
         if prec_is_used then begin
           pr#puts "\t";
           pr_prec finfo;
@@ -1501,10 +1483,10 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   let output_cpf =
     let put_status finfo pr =
       Xml.enter "status" pr;
-      let n = finfo.arity in
+      let n = finfo#base#arity in
       for j = 1 to n do
         for i = 1 to n do
-          if solver#get_bool (perm finfo i j) then begin
+          if solver#get_bool (finfo#perm i j) then begin
             Xml.enclose_inline "position" (put_int i) pr;
           end;
         done;
@@ -1512,12 +1494,12 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
       Xml.leave "status" pr;
     in
     let put_prec finfo =
-      Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value (prec finfo))))
+      Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value finfo#prec)))
     in
-    let pr_precstat pr _ finfo =
+    let pr_precstat pr _ (finfo:wpo_sym) =
       Xml.enclose "precedenceStatusEntry" (
-        finfo.sym#output_xml <<
-        Xml.enclose_inline "arity" (put_int finfo.arity) <<
+        finfo#base#output_xml <<
+        Xml.enclose_inline "arity" (put_int finfo#base#arity) <<
         put_prec finfo <<
         put_status finfo
       ) pr
@@ -1539,14 +1521,14 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
         | _ -> put_inte e
       )
     in
-    let pr_interpret pr _ finfo =
+    let pr_interpret pr _ (finfo:wpo_sym) =
       Xml.enter "interpret" pr;
-      finfo.sym#output_xml pr;
-      let n = finfo.arity in
+      finfo#base#output_xml pr;
+      let n = finfo#base#arity in
       Xml.enclose_inline "arity" (put_int n) pr;
       let sc =
-        if finfo.symtype = Fun then subterm_coef finfo
-        else (fun v _ -> v) (subterm_coef finfo 1)
+        if finfo#base#ty = Fun then finfo#subterm_coef
+        else k_comb (finfo#subterm_coef 1)
       in
       let put_sum pr =
         Xml.enter "polynomial" pr;
@@ -1574,19 +1556,19 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
             ) pr;
           end;
         done;
-        put_coef (solver#get_value (weight finfo)) pr;
+        put_coef (solver#get_value finfo#weight) pr;
         Xml.leave "sum" pr;
         Xml.leave "polynomial" pr;
       in
-      if max_status finfo then begin
-        let usemax = solver#get_bool (argfilt_list finfo) in
+      if finfo#max then begin
+        let usemax = solver#get_bool finfo#argfilt_list in
         if usemax then begin
           Xml.enter "polynomial" pr;
           Xml.enter "max" pr;
         end;
         for i = 1 to n do
-          let pen = solver#get_value (subterm_penalty finfo i) in
-          if solver#get_bool (maxfilt finfo i) then begin
+          let pen = solver#get_value (finfo#subterm_penalty i) in
+          if solver#get_bool (finfo#maxfilt i) then begin
             Xml.enclose "polynomial" (
               Xml.enclose "sum" (
                 Xml.enclose "polynomial" (
@@ -1597,7 +1579,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
             ) pr;
           end;
         done;
-        if finfo.maxpol then begin
+        if finfo#maxpol then begin
           put_sum pr;
         end else begin
           put_coef (solver#get_value mcw) pr;
@@ -1606,7 +1588,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
           Xml.leave "max" pr;
           Xml.leave "polynomial" pr;
         end;
-      end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
+      end else if p.w_neg && not (solver#get_bool finfo#is_const) then begin
         Xml.enclose "polynomial" (
           Xml.enclose "max" (
             put_sum <<
@@ -1705,9 +1687,9 @@ object (x)
     (* generating the signature *)
     Hashtbl.clear sigma;
     let iterer f =
-      if not f#is_var then Hashtbl.add sigma f#name (default_finfo f);
+      Hashtbl.add sigma f#name (new wpo_sym f);
     in
-    trs#iter_syms iterer;
+    trs#iter_funs iterer;
 
     (* count nesting *)
     if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
@@ -1734,12 +1716,12 @@ object (x)
     (* choice of max_status *)
     let set_max =
       let set_max_finfo fname finfo =
-        not finfo.max &&
-        finfo.arity > 1 &&
+        not finfo#max &&
+        finfo#base#arity > 1 &&
         (p.max_nest = 0 || nest fname <= p.max_nest) &&
         (
           debug2 (putc ' ' << put_name fname);
-          finfo.max <- true;
+          finfo#set_max true;
           true
         )
       in
@@ -1750,7 +1732,7 @@ object (x)
           let argvss = List.map get_weight args in
           let vs =
             if f#is_var then [Mset.singleton f#name]
-            else if (lookup f).max then
+            else if (lookup f)#max then
               List.concat argvss
             else
               List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
@@ -1819,16 +1801,16 @@ object (x)
         | []    -> ()
         | pf::pfs -> subsub pf pfs; sub pfs
       in
-      sub (Hashtbl.fold (fun _ finfo vs -> prec finfo::vs) sigma [])
+      sub (Hashtbl.fold (fun _ finfo vs -> finfo#prec :: vs) sigma [])
     end;
 
     if p.prec_mode <> PREC_none then begin
       (* special treatment of associative symbols *)
       let iterer fname finfo =
-        if finfo.is_associative then begin
+        if finfo#base#is_associative then begin
           (* marked associative symbols have the precedence of unmarked one *)
           if marked_name fname then begin
-            finfo.prec_exp <- (lookup_name (unmark_name fname)).prec_exp;
+            finfo#set_prec (lookup_name (unmark_name fname))#prec;
           end;
         end;
       in
@@ -1841,15 +1823,15 @@ object (x)
     try
       Hashtbl.add rule_flag_table i ();
       let rule = trs#find_rule i in
-      debug2 (puts "    Initializing rule " << put_int i << endl );
+      debug2 (puts "    Initializing rule " << put_int i << endl);
       let (WT(_,_,lw) as la) = annote rule#l in
       let (WT(_,_,rw) as ra) = annote rule#r in
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion
-            (usable_w i =>^ set_usable argfilt usable_w rule#r);
+            (usable_w i =>^ set_usable (fun finfo -> finfo#argfilt) usable_w rule#r);
           solver#add_assertion
-            (usable i =>^ set_usable permed usable rule#r);
+            (usable i =>^ set_usable (fun finfo -> finfo#permed) usable rule#r);
           let wge, wgt = split (wo lw rw) solver in
           let wge = solver#refer Bool wge in
           solver#add_assertion (usable_w i =>^ wge);
@@ -1863,7 +1845,7 @@ object (x)
           end;
         end else if p.usable then begin
           solver#add_assertion
-            (usable i =>^ set_usable argfilt usable rule#r);
+            (usable i =>^ set_usable (fun finfo -> finfo#argfilt) usable rule#r);
           solver#add_assertion 
             (usable i =>^ weakly (frame la ra));
         end else begin
@@ -1890,10 +1872,10 @@ object (x)
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
       if p.usable_w then begin
-        solver#add_assertion (set_usable argfilt usable_w dp#r);
-        solver#add_assertion (set_usable permed usable dp#r);
+        solver#add_assertion (set_usable (fun finfo -> finfo#argfilt) usable_w dp#r);
+        solver#add_assertion (set_usable (fun finfo -> finfo#permed) usable dp#r);
       end else begin
-        solver#add_assertion (set_usable argfilt usable dp#r);
+        solver#add_assertion (set_usable (fun finfo -> finfo#argfilt) usable dp#r);
       end;
     end;
 
