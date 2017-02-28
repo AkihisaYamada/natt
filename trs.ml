@@ -77,11 +77,13 @@ class trs =
     val sym_table = Hashtbl.create 64(* the symbol table *)
     val rule_table : (int, rule) Hashtbl.t = Hashtbl.create 256
     val prule_table : (int, prule) Hashtbl.t = Hashtbl.create 4
+    val mutable fun_cnt = 0
     val mutable rule_cnt = 0
     val mutable strict_rule_cnt = 0
     val mutable prule_cnt = 0
     val mutable ths = Ths.empty(* the set of used built-in theories *)
 (* information retrieval *)
+    method get_fun_count = fun_cnt
     method get_size = rule_cnt + prule_cnt
     method get_size_strict = strict_rule_cnt
     method get_ths = ths
@@ -92,7 +94,7 @@ class trs =
       fun f ->
         let f' = new sym_detailed (f:>sym) in
         Hashtbl.add sym_table f#name f';
-        if f#is_var then f'#set_arity 0;
+        if f#is_var then f'#set_arity 0 else fun_cnt <- fun_cnt + 1;
         f'
     method get_sym_name name =
       try Hashtbl.find sym_table name
@@ -109,6 +111,8 @@ class trs =
         try Hashtbl.find sym_table f#name with Not_found -> new sym_detailed (f:>sym)
     method iter_syms : (sym_detailed -> unit) -> unit =
       fun iterer -> Hashtbl.iter (fun _ f -> iterer f) sym_table
+    method iter_funs : (sym_detailed -> unit) -> unit =
+      fun iterer -> Hashtbl.iter (fun _ f -> if f#is_fun then iterer f) sym_table
     method fold_syms : 'b. (sym_detailed -> 'b -> 'b) -> 'b -> 'b =
       fun folder acc ->
         Hashtbl.fold (fun _ -> folder) sym_table acc
