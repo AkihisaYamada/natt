@@ -2,7 +2,7 @@ TOOL=$(shell pwd)/../NaTT.sh	# this is ugly!
 
 test: NaTT
 	TOOL=$(PWD)/NaTT.sh; \
-	cd ~/tpdb/trs; \
+	cd ~/tpdb/TRS_Standard; \
 	if [ -e tmp_result ]; then rm tmp_result; fi; \
 	while read f; do \
 		$$TOOL -V $$f | tee -a tmp_result; \
