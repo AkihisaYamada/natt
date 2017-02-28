@@ -71,6 +71,159 @@ exception Internal of string
 exception Invalid_formula of string
 exception Response of string * exp
 
+
+
+class virtual sexp_printer =
+  object (x)
+    inherit Io.printer
+    method virtual pr_v : string -> unit
+    method virtual pr_ds : dec list -> unit
+    method pr_e e =
+      let pr = x#puts in
+      let pr_e = x#pr_e in
+      let pr_i = x#put_int in
+      let pr_f = x#put_float in
+      let rec withpunc put punc =
+        function
+        | []  -> ();
+        | [e] -> put e;
+        | e::es -> put e; pr punc; withpunc put punc es
+      in
+      let rec pr_and =
+        function
+        | And(e1,e2) -> pr_and e1; x#endl; pr_and e2;
+        | e -> pr_e e;
+      in
+      let rec pr_or =
+        function
+        | Or(e1,e2) -> pr_or e1; x#endl; pr_or e2;
+        | e -> pr_e e;
+      in
+      let rec pr_xor =
+        function
+        | Xor(e1,e2) -> pr_xor e1; x#endl; pr_xor e2;
+        | e -> pr_e e;
+      in
+      let rec pr_add =
+        function
+        | Add(e1,e2) -> pr_add e1; pr " "; pr_add e2;
+        | e -> pr_e e;
+      in
+      let rec pr_mul =
+        function
+        | Mul(e1,e2) -> pr_mul e1; pr " "; pr_mul e2;
+        | e -> pr_e e;
+      in
+      match e with
+      | EOF     -> pr "<EOF>";
+      | Nil     -> pr "()";
+      | NegInf    -> pr "-INF";
+      | EV v      -> x#pr_v v;
+      | LI i      -> if i < 0 then (pr "(- "; pr_i (-i); pr ")";) else pr_i i;
+      | LR r      -> if r < 0.0 then (pr "(- "; pr_f (-. r); pr ")";) else pr_f r;
+      | LB b      -> pr (if b then "true" else "false");
+      | Add(e1,e2)  -> pr "(+ "; pr_add e1; pr " "; pr_add e2; pr ")";
+      | Sub(e1,e2)  -> pr "(- "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Neg e1    -> pr "(- "; pr_e e1; pr ")";
+      | Mul(PB(e1),e2)-> pr_e (If(e1,e2,LI 0))
+      | Mul(e1,PB(e2))-> pr_e (If(e2,e1,LI 0))
+      | Mul(e1,e2)  -> pr "(* "; pr_mul e1; pr " "; pr_mul e2; pr ")";
+      | Div(e1,e2)  -> pr "(/ "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Mod(e1,e2)  -> pr "(mod "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Eq(e1,e2)   -> pr "(= "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Ge(e1,e2)   -> pr "(>= "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Gt(e1,e2)   -> pr "(> "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Le(e1,e2)   -> pr "(<= "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Lt(e1,e2)   -> pr "(< "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | And(e1,e2)  ->
+         pr "(and ";
+         x#enter 5;
+         pr_and e1; x#endl;
+         pr_and e2;
+         x#leave 5;
+         pr ")";
+      | Or(e1,e2)   ->
+        pr "(or ";
+        x#enter 4;
+        pr_or e1; x#endl;
+        pr_or e2;
+        x#leave 4;
+        pr ")";
+      | Xor(e1,e2)  ->
+        pr "(xor ";
+        x#enter 5;
+        pr_xor e1; x#endl;
+        pr_xor e2;
+        x#leave 5;
+        pr ")";
+      | Not e1    ->
+        pr "(not ";
+        x#enter 5;
+        pr_e e1;
+        x#leave 5;
+        pr ")";
+      | Imp(e1,e2)  ->
+        pr "(=> ";
+        x#enter 4;
+        pr_e e1; x#endl;
+        pr_e e2;
+        x#leave 4;
+        pr ")";
+      | ForAll(ds,e)  ->
+        pr "(forall (";
+        x#enter 7;
+        x#pr_ds ds; pr ")"; x#endl;
+        pr_e e;
+        pr ")";
+        x#leave 7;
+        x#endl;
+      | Exists(ds,e)  ->
+        pr "(exists (";
+        x#enter 7;
+        x#pr_ds ds; pr ") ";
+        x#leave 7;
+        pr_e e; pr ")";
+        x#endl;
+      | Cons(e1,e2) -> pr "(cons "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Dup(_,e)    -> pr "(dup "; pr_e e; pr ")";
+      | Car(e)    -> pr "(car "; pr_e e; pr ")";
+      | Cdr(e)    -> pr "(cdr "; pr_e e; pr ")";
+      | If(e1,e2,e3)  -> x#enter_inline;
+                 pr "(ite "; pr_e e1; pr " "; pr_e e2; pr " "; pr_e e3; pr ")";
+                 x#leave_inline;
+      | Max(es)   -> pr "(max"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
+      | ZeroOne(es) -> pr "(zeroone"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
+      | ES1(es)   -> pr "(es1"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
+      | AtMost1(es) -> pr "(atmost1"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
+      | OD(es)    -> pr "(od"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
+      | App(es)   -> pr "("; withpunc pr_e " " es; pr ")";
+      | Delay f   -> pr "(delay...)";
+      | PB(e)     -> pr_e (If(e, LI 1, LI 0));
+      | Vec(es)   -> pr "["; withpunc pr_e ";" es; pr "]";
+      | Mat(ess)    -> pr "["; withpunc (withpunc pr_e ",") ";" ess; pr "]";
+  end;;
+
+class sexp_printer_wrap (base : #Io.printer) = object
+  inherit sexp_printer
+  inherit Io.printer
+  (* Tedious! Can't be done elegantly? *)
+  method puts = base#puts
+  method putc = base#putc
+  method put_int = base#put_int
+  method flush = base#flush
+  method close = base#close
+  method endl = base#endl
+  method enter = base#enter
+  method leave = base#leave
+  method pr_v = base#puts
+  method pr_ds = raise (No_support "SMT")
+end;;
+
+let output_exp (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e
+
+let prerr_exp = output_exp Io.cerr
+
+
 let rec is_simple =
   function
   | Nil   -> true
@@ -356,8 +509,10 @@ let rec (>=^) e1 e2 =
   | PB e1, LI i2  -> if 0 >= i2 then LB true else if 1 = i2 then e1 else LB false
   | PB e1, PB e2  -> e2 =>^ e1
   | Vec v1, Vec v2-> smt_for_all2 (>=^) v1 v2
-  | Vec v1, _   -> raise (Internal "Vec >= ?")
-  | _, Vec v2   -> raise (Internal "? >= Vec")
+  | Vec v1, LI 0
+  | Vec v1, LR 0.0 -> smt_for_all (fun e1 -> e1 >=^ e2) v1
+  | Vec _, _      -> raise (Internal "Vec >= ?")
+  | Mat _, Vec _  -> raise (Internal "? >= Vec")
   | Mat m1, Mat m2-> smt_for_all2 (smt_for_all2 (>=^)) m1 m2
   | Mat m1, _   -> Delay(matrix_scalar (>=^) m1 e2)
   | _, Mat m2   -> Delay(scalar_matrix (>=^) e1 m2)
@@ -370,6 +525,8 @@ let rec (>^) e1 e2 =
   | PB e1, PB e2  -> e1 &^ smt_not e2
   | PB e1, LI i -> if i = 0 then e1 else LB false
   | Vec(e1::v1), Vec(e2::v2) -> (e1 >^ e2) &^ smt_for_all2 (>=^) v1 v2
+  | Vec(e1::v1), LI 0
+  | Vec(e1::v1), LR 0.0 -> (e1 >^ e2) &^ smt_for_all (fun e1 -> e1 >=^ e2) v1
   | Vec(_), _ -> raise (Internal "Vec > ?")
   | _, Vec(_)   -> raise (Internal "? > Vec")
   | _       -> if simple_eq e1 e2 then LB false else Gt(e1,e2)
@@ -713,156 +870,6 @@ class virtual solver_frame =
     method virtual reset : unit
   end
 ;;
-
-class virtual sexp_printer =
-  object (x)
-    inherit Io.printer
-    method virtual pr_v : string -> unit
-    method virtual pr_ds : dec list -> unit
-    method pr_e e =
-      let pr = x#puts in
-      let pr_e = x#pr_e in
-      let pr_i = x#put_int in
-      let pr_f = x#put_float in
-      let rec withpunc put punc =
-        function
-        | []  -> ();
-        | [e] -> put e;
-        | e::es -> put e; pr punc; withpunc put punc es
-      in
-      let rec pr_and =
-        function
-        | And(e1,e2) -> pr_and e1; x#endl; pr_and e2;
-        | e -> pr_e e;
-      in
-      let rec pr_or =
-        function
-        | Or(e1,e2) -> pr_or e1; x#endl; pr_or e2;
-        | e -> pr_e e;
-      in
-      let rec pr_xor =
-        function
-        | Xor(e1,e2) -> pr_xor e1; x#endl; pr_xor e2;
-        | e -> pr_e e;
-      in
-      let rec pr_add =
-        function
-        | Add(e1,e2) -> pr_add e1; pr " "; pr_add e2;
-        | e -> pr_e e;
-      in
-      let rec pr_mul =
-        function
-        | Mul(e1,e2) -> pr_mul e1; pr " "; pr_mul e2;
-        | e -> pr_e e;
-      in
-      match e with
-      | EOF     -> pr "<EOF>";
-      | Nil     -> pr "()";
-      | NegInf    -> pr "-INF";
-      | EV v      -> x#pr_v v;
-      | LI i      -> if i < 0 then (pr "(- "; pr_i (-i); pr ")";) else pr_i i;
-      | LR r      -> if r < 0.0 then (pr "(- "; pr_f (-. r); pr ")";) else pr_f r;
-      | LB b      -> pr (if b then "true" else "false");
-      | Add(e1,e2)  -> pr "(+ "; pr_add e1; pr " "; pr_add e2; pr ")";
-      | Sub(e1,e2)  -> pr "(- "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Neg e1    -> pr "(- "; pr_e e1; pr ")";
-      | Mul(PB(e1),e2)-> pr_e (If(e1,e2,LI 0))
-      | Mul(e1,PB(e2))-> pr_e (If(e2,e1,LI 0))
-      | Mul(e1,e2)  -> pr "(* "; pr_mul e1; pr " "; pr_mul e2; pr ")";
-      | Div(e1,e2)  -> pr "(/ "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Mod(e1,e2)  -> pr "(mod "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Eq(e1,e2)   -> pr "(= "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Ge(e1,e2)   -> pr "(>= "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Gt(e1,e2)   -> pr "(> "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Le(e1,e2)   -> pr "(<= "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Lt(e1,e2)   -> pr "(< "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | And(e1,e2)  ->
-         pr "(and ";
-         x#enter 5;
-         pr_and e1; x#endl;
-         pr_and e2;
-         x#leave 5;
-         pr ")";
-      | Or(e1,e2)   ->
-        pr "(or ";
-        x#enter 4;
-        pr_or e1; x#endl;
-        pr_or e2;
-        x#leave 4;
-        pr ")";
-      | Xor(e1,e2)  ->
-        pr "(xor ";
-        x#enter 5;
-        pr_xor e1; x#endl;
-        pr_xor e2;
-        x#leave 5;
-        pr ")";
-      | Not e1    ->
-        pr "(not ";
-        x#enter 5;
-        pr_e e1;
-        x#leave 5;
-        pr ")";
-      | Imp(e1,e2)  ->
-        pr "(=> ";
-        x#enter 4;
-        pr_e e1; x#endl;
-        pr_e e2;
-        x#leave 4;
-        pr ")";
-      | ForAll(ds,e)  ->
-        pr "(forall (";
-        x#enter 7;
-        x#pr_ds ds; pr ")"; x#endl;
-        pr_e e;
-        pr ")";
-        x#leave 7;
-        x#endl;
-      | Exists(ds,e)  ->
-        pr "(exists (";
-        x#enter 7;
-        x#pr_ds ds; pr ") ";
-        x#leave 7;
-        pr_e e; pr ")";
-        x#endl;
-      | Cons(e1,e2) -> pr "(cons "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Dup(_,e)    -> pr "(dup "; pr_e e; pr ")";
-      | Car(e)    -> pr "(car "; pr_e e; pr ")";
-      | Cdr(e)    -> pr "(cdr "; pr_e e; pr ")";
-      | If(e1,e2,e3)  -> x#enter_inline;
-                 pr "(ite "; pr_e e1; pr " "; pr_e e2; pr " "; pr_e e3; pr ")";
-                 x#leave_inline;
-      | Max(es)   -> pr "(max"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
-      | ZeroOne(es) -> pr "(zeroone"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
-      | ES1(es)   -> pr "(es1"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
-      | AtMost1(es) -> pr "(atmost1"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
-      | OD(es)    -> pr "(od"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
-      | App(es)   -> pr "("; withpunc pr_e " " es; pr ")";
-      | Delay f   -> pr "(delay...)";
-      | PB(e)     -> pr_e (If(e, LI 1, LI 0));
-      | Vec(es)   -> pr "["; withpunc pr_e ";" es; pr "]";
-      | Mat(ess)    -> pr "["; withpunc (withpunc pr_e ",") ";" ess; pr "]";
-  end;;
-
-class sexp_printer_wrap (base : #Io.printer) = object
-  inherit sexp_printer
-  inherit Io.printer
-  (* Tedious! Can't be done elegantly? *)
-  method puts = base#puts
-  method putc = base#putc
-  method put_int = base#put_int
-  method flush = base#flush
-  method close = base#close
-  method endl = base#endl
-  method enter = base#enter
-  method leave = base#leave
-  method pr_v = base#puts
-  method pr_ds = raise (No_support "SMT")
-end;;
-
-let output_exp (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e
-
-let prerr_exp = output_exp Io.cerr
 
 let smt_apply =
   function
