@@ -1605,6 +1605,7 @@ object (x)
       if p.remove_all then begin
         comment (puts " removes all." << endl);
         List.iter trs#remove_rule current_usables;
+        trs#iter_prules (fun i _ -> trs#remove_prule i);
       end else begin
         comment (puts " removes:");
         List.iter
