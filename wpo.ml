@@ -26,13 +26,16 @@ let delete_common =
 class processor =
   (* SMT variables *)
   let mcw_v = "w" in
-  let usable_v i = "u_" ^ string_of_int i in
-  let usable_w_v i = "uw_" ^ string_of_int i in
+  let usable_v i = "u" ^ string_of_int i in
+  let usable_w_v i = "uw" ^ string_of_int i in
+  let usable_p_v i = "uP" ^ string_of_int i in
   let maxcons_v = "maxcons" in
   let gt_v i = "gt#" ^ string_of_int i in
   let ge_v i = "ge#" ^ string_of_int i in
   let gt_r_v i = "gt" ^ string_of_int i in
   let ge_r_v i = "ge" ^ string_of_int i in
+  let gt_p_v i = "gtP" ^ string_of_int i in (* probabilistic rules *)
+  let ge_p_v i = "geP" ^ string_of_int i in
   let supply_index v i = v ^ "_" ^ string_of_int i in
   let supply_index2 v j k = supply_index (supply_index v j) k in
   let makebin a b =
@@ -254,11 +257,11 @@ class processor =
     let comp vname value e = (vc_lookup vc1 vname >=^ value) &^ e in
     Hashtbl.fold comp vc2 (LB true)
   in
-  let vc_add vc coef vname value =
+  let vc_merge_one vc coef vname value =
     Hashtbl.replace vc vname (vc_lookup vc vname +^ (coef *^ value))
   in
-  let vc_merge vc1 coef vc2 =
-    Hashtbl.iter (vc_add vc1 coef) vc2
+  let vc_mul_add vc1 coef vc2 =
+    Hashtbl.iter (vc_merge_one vc1 coef) vc2
   in
   let vc_mul vc coef =
     Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (coef *^ value)) vc
@@ -268,13 +271,13 @@ class processor =
   in
 
   (* weight order *)
+  let polo (vc1,e1) (vc2,e2) =
+    smt_if (vc_cond vc1 vc2) (smt_order e1 e2) not_ordered
+  in
   let wo =
     if p.w_mode = W_none then
       fun _ _ -> weakly_ordered
     else
-      let polo (vc1,e1) (vc2,e2) =
-        smt_if (vc_cond vc1 vc2) (smt_order e1 e2) not_ordered
-      in
       let rec sub2 ge gt ws1 w2 =
         if gt = LB true then (gt,gt)
         else
@@ -411,7 +414,7 @@ class processor =
 
 (*** Usable rules ***)
   let usable =
-    if p.dp && dg#minimal && p.usable then
+    if (if p.dp then dg#minimal && p.usable else not p.remove_all) then
       fun i -> EV(usable_v i)
     else
       fun _ -> LB true
@@ -421,6 +424,12 @@ class processor =
       fun i -> EV(usable_w_v i)
     else
       usable
+  in
+  let usable_p =
+    if (if p.dp then dg#minimal && p.usable else not p.remove_all) then
+      fun i -> EV(usable_p_v i)
+    else
+      fun _ -> LB true
   in
   let rec set_usable filt usable s =
     smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
@@ -437,13 +446,20 @@ class processor =
       sub 1 ss
   in
   let add_usable =
-    if not p.dp || not p.usable then
+    if (if p.dp then not p.usable else p.remove_all) then
       fun _ -> ()
     else
       fun i ->
         solver#add_variable (usable_v i) Bool;
         if p.usable_w then
           solver#add_variable (usable_w_v i) Bool;
+  in
+  let add_usable_p =
+    if (if p.dp then not p.usable else p.remove_all) then
+      fun _ -> ()
+    else
+      fun i ->
+        solver#add_variable (usable_p_v i) Bool;
   in
 
 (*** Status ***)
@@ -708,14 +724,14 @@ class processor =
       function
       | [] -> (vc, w +^ coef *^ (e +^ (LI i *^ w)))
       | (vc',e')::vws ->
-        vc_merge vc coef vc';
+        vc_mul_add vc coef vc';
         sub_ac coef vc w (i + 1) (e +^ e') vws
     in
     let rec sub_c coef vc w e =
       function
       | [] -> (vc, w +^ (coef *^ e))
       | (vc',e')::vws ->
-        vc_merge vc coef vc';
+        vc_mul_add vc coef vc';
         sub_c coef vc w (e +^ e') vws
     in
     let rec sub_lex coef i vc e =
@@ -723,7 +739,7 @@ class processor =
       | [] -> (vc,e)
       | (vc',e')::vws ->
         let c = coef i in
-        vc_merge vc c vc';
+        vc_mul_add vc c vc';
         sub_lex coef (i + 1) vc (e +^ (c *^ e')) vws
     in
     let sub =
@@ -746,7 +762,7 @@ class processor =
   let weight_var f argws =
     if argws <> [] then raise (Internal "higher order variable");
     let vc = Hashtbl.create 1 in
-    (vc_add vc (LI 1) f#name (LI 1);[(vc,mcw)])
+    (vc_merge_one vc (LI 1) f#name (LI 1);[(vc,mcw)])
   in
   let weight_max =
     let folder af sp ret (vc,e) =
@@ -1231,7 +1247,7 @@ class processor =
     )
   in
   let frame =
-    if p.prec_mode = PREC_none && p.Params.status_mode = S_empty then
+    if p.prec_mode = PREC_none && p.status_mode = S_empty then
       fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
     else wpo
   in
@@ -1245,8 +1261,9 @@ object (x)
   val mutable use_scope_last_size = 0
   val mutable dp_flag_table = Hashtbl.create 256
   val mutable rule_flag_table = Hashtbl.create 256
+  val mutable prule_flag_table = Hashtbl.create 4
 
-  method using_usable = p.dp && p.usable
+  method using_usable = if p.dp then p.usable else p.remove_all
 
   method init current_usables dps =
     initialized <- true;
@@ -1400,13 +1417,39 @@ object (x)
       Hashtbl.iter iterer sigma;
     end;
     List.iter (fun (i,_) -> add_usable i) !usables;
+    trs#iter_prules (fun i _ -> add_usable_p i);
+
+  method private add_prule i =
+    if not (Hashtbl.mem prule_flag_table i) then
+    try
+      Hashtbl.add prule_flag_table i ();
+      let prule = trs#find_prule i in
+      debug2 (puts "  Initializing probabilistic rule " << put_int i << endl);
+      match get_weight (annote prule#l) with
+      | [(vc,e)] ->
+        let coef = LI(prule#sum) in
+        let vc = Hashtbl.copy vc in
+        vc_mul vc coef;
+        let lw = (vc, coef *^ e) in
+        let folder (vc,e) coef r =
+          match get_weight (annote r) with
+          | [(vc',e')] -> vc_mul_add vc (LI coef) vc'; (vc, e +^ (LI coef *^ e'))
+          | _ -> raise (Internal "unsupported weight for probabilistic rule")
+        in
+        let rw = prule#fold_rs folder (Hashtbl.create 4, LI 0) in
+        let (ge,gt) = split (polo lw rw) solver in
+        solver#add_assertion (usable_p i =>^ ge);
+        solver#add_definition (gt_p_v i) Bool gt;
+      | _ -> raise (Internal "unsupported weight for probabilistic rule")
+    with Inconsistent ->
+      debug (puts " inconsistency detected." << endl);
 
   method private add_rule i =
     if not (Hashtbl.mem rule_flag_table i) then
     try
       Hashtbl.add rule_flag_table i ();
       let rule = trs#find_rule i in
-      debug2 (puts "    Initializing rule " << put_int i << endl);
+      debug2 (puts "  Initializing rule " << put_int i << endl);
       let (WT(_,_,lw) as la) = annote rule#l in
       let (WT(_,_,rw) as ra) = annote rule#r in
       if p.dp then begin
@@ -1496,10 +1539,10 @@ object (x)
       x#reset;
 
   method reduce current_usables sccref =
-    comment ( puts (name_order p) << putc '.' << flush );
+    comment (puts (name_order p) << putc '.' << flush);
     try
       x#push current_usables !sccref;
-      comment (putc '.' << flush );
+      comment (putc '.' << flush);
       if p.remove_all then begin
         let iterer i =
           solver#add_assertion
@@ -1513,7 +1556,7 @@ object (x)
         in
         solver#add_assertion (List.fold_right folder !sccref (LB false));
       end;
-      comment (putc '.' << flush );
+      comment (putc '.' << flush);
       solver#check;
       comment (puts " succeeded." << endl);
       proof (x#output_proof << x#output_usables usable !usables);
@@ -1541,13 +1584,17 @@ object (x)
     try
       comment (puts "Direct " << puts (name_order p) << puts " ." << flush);
       x#push current_usables [];
+      trs#iter_prules (fun i _ -> x#add_prule i);
 
       comment (putc '.' << flush);
-      (* usable i should be true until i is removed. *)
-      List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
 
       if not p.remove_all then begin
-        solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
+        (* usable i should be true until i is removed. *)
+        List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
+        solver#add_assertion
+          (smt_exists (fun i -> EV(gt_r_v i)) current_usables |^
+           trs#fold_prules (fun i _ ret -> ret |^ EV(gt_p_v i)) (LB false)
+          );
       end;
       comment (putc '.' << flush);
       solver#check;
@@ -1568,6 +1615,13 @@ object (x)
             comment(fun _ -> prerr_string " "; prerr_int i;);
           end;
         ) current_usables;
+        trs#iter_prules
+        (fun i _ ->
+          if solver#get_bool (EV(gt_p_v i)) then begin
+            trs#remove_prule i;
+            comment(fun _ -> prerr_string " p"; prerr_int i;);
+          end;
+        );
         comment endl;
       end;
       proof x#output_proof;

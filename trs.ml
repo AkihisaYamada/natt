@@ -85,7 +85,7 @@ class trs =
 (* information retrieval *)
     method get_fun_count = fun_cnt
     method get_size = rule_cnt + prule_cnt
-    method get_size_strict = strict_rule_cnt
+    method get_size_strict = strict_rule_cnt + prule_cnt
     method get_ths = ths
     method is_theoried = not (Ths.is_empty ths)
     method is_probabilistic = prule_cnt > 0
@@ -212,7 +212,6 @@ class trs =
       f#p_define_by i;
       prule_cnt <- prule_cnt + 1;
     method add_prule prule =
-      prule_cnt <- prule_cnt + 1;
       x#add_prule_i prule_cnt prule;
     method remove_prule i =
       let prule = x#find_prule i in
