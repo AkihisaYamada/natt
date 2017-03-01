@@ -1,0 +1,6 @@
+(VAR x y)
+(RULES
+	f(s(x)) -> f(s(x)) || f(x)
+	add(0,x) -> x
+	add(s(x),y) -> s(add(x,y))
+)
