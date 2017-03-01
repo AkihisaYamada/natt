@@ -23,6 +23,8 @@ exception Unsound of string
 exception Internal of string
 exception No_support of string
 
+let k_comb x _ = x
+
 let rec intlist m n = if m > n then [] else m :: intlist (m+1) n
 
 let rec list_remove f =

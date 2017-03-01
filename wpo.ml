@@ -7,12 +7,9 @@ open Smt
 open Preorder
 open Params
 open Io
+open Wpo_info
 
 exception Continue
-
-let k_comb x _ = x
-let supply_index v i = v ^ "_" ^ string_of_int i
-
 
 (* delete common elements from ss and ts *)
 let delete_common =
@@ -26,77 +23,45 @@ let delete_common =
   in
   sub []
 
-class wpo_sym (sym:#sym_detailed) = object
-  val base : sym_detailed = sym
-  method base = base
-  val mutable sum = false
-  val mutable max = false
-  val mutable maxpol = false
-  val mutable status_mode = S_none
-  val mutable weight = LI 0
-  val mutable subterm_coef : int -> exp = k_comb (LI 1)
-  val mutable subterm_penalty : int -> exp = k_comb (LI 0)
-  val mutable maxfilt : int -> exp = k_comb (LB true)
-  val mutable argfilt : int -> exp = k_comb Nil
-  val mutable argfilt_list = LB true
-  val mutable is_const = LB(sym#arity = 0)
-  val mutable is_quasi_const = LB(sym#arity = 0)
-  val mutable perm : int -> int -> exp = k_comb (k_comb (LB false))
-  val mutable permed : int -> exp = k_comb (LB false)
-  val mutable mapped : int -> exp = k_comb (LB false)
-  val mutable mset_status = LB false
-  val mutable prec = LI 0
-  method max = max
-  method maxpol = maxpol
-  method status_mode = status_mode
-  method weight = weight
-  method subterm_coef = subterm_coef
-  method subterm_penalty = subterm_penalty
-  method maxfilt = maxfilt
-  method argfilt = argfilt
-  method argfilt_list = argfilt_list
-  method is_const = is_const
-  method is_quasi_const = is_quasi_const
-  method perm = perm
-  method permed = permed
-  method mapped = mapped
-  method mset_status = mset_status
-  method lex_status = smt_not mset_status
-  method prec = prec
-  method set_max x = max <- x
-  method set_maxpol x = maxpol <- x
-  method set_status_mode x = status_mode <- x
-  method set_weight x = weight <- x
-  method set_subterm_coef x = subterm_coef <- x
-  method set_subterm_penalty x = subterm_penalty <- x
-  method set_maxfilt x = maxfilt <- x
-  method set_argfilt x = argfilt <- x
-  method set_argfilt_list x = argfilt_list <- x
-  method set_is_const x = is_const <- x
-  method set_is_quasi_const x = is_quasi_const <- x
-  method set_perm x = perm <- x
-  method set_permed x = permed <- x
-  method set_mapped x = mapped <- x
-  method set_mset_status x = mset_status <- x
-  method set_prec x = prec <- x
-end
-
-class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
-
+class processor =
   (* SMT variables *)
-
   let mcw_v = "w" in
   let usable_v i = "u_" ^ string_of_int i in
   let usable_w_v i = "uw_" ^ string_of_int i in
   let maxcons_v = "maxcons" in
-
-  let usables = ref [] in
-  let dplist = ref [] in
+  let gt_v i = "gt#" ^ string_of_int i in
+  let ge_v i = "ge#" ^ string_of_int i in
+  let gt_r_v i = "gt" ^ string_of_int i in
+  let ge_r_v i = "ge" ^ string_of_int i in
+  let supply_index v i = v ^ "_" ^ string_of_int i in
+  let supply_index2 v j k = supply_index (supply_index v j) k in
+  let makebin a b =
+    smt_if a (smt_if b (LI 3) (LI 2)) (smt_if b (LI 1) (LI 0))
+  in
+  fun p (trs : trs) (estimator : Estimator.t) (dg : dg) ->
   let weight_ty =
     match p.base_ty with
     | TY_int -> Int
     | TY_real -> Real
   in
+  (* Matrix interpretations *)
+  let to_dim = intlist 1 p.w_dim in
+  let makemat =
+    if p.w_dim > 1 then
+      fun f -> Mat(List.map (fun j -> List.map (fun k -> f j k) to_dim) to_dim)
+    else
+      fun f -> f 1 1
+  in
+  let makevec =
+    if p.w_dim > 1 then
+      fun f -> Vec(List.map f to_dim)
+    else
+      fun f -> f 1
+  in
+  let supply_matrix_index = if p.w_dim > 1 then supply_index2 else fun v _ _ -> v in
+
+  let usables = ref [] in
+  let dplist = ref [] in
   let solver =
     let (tool,options) = p.smt_tool in
     create_solver p.peek_to p.peek_in p.peek_out tool options
@@ -112,9 +77,6 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   let nest fname = Mset.count fname !nest_map in
 
 (*** Weights ***)
-  let makebin a b =
-    smt_if a (smt_if b (LI 3) (LI 2)) (smt_if b (LI 1) (LI 0))
-  in
   let add_number w_mode =
     match w_mode with
     | W_num -> fun v -> solver#new_variable v weight_ty
@@ -135,28 +97,8 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     | MCW_bool  -> PB(EV mcw_v)
     | MCW_const -> mcw_val
   in
-  (* Matrix interpretations *)
-  let to_dim = intlist 1 p.w_dim in
-  let makemat =
-    if p.w_dim > 1 then
-      fun f -> Mat(List.map (fun j -> List.map (fun k -> f j k) to_dim) to_dim)
-    else
-      fun f -> f 1 1
-  in
-  let makevec =
-    if p.w_dim > 1 then
-      fun f -> Vec(List.map f to_dim)
-    else
-      fun f -> f 1
-  in
-  let supply_matrix_index =
-    if p.w_dim > 1 then
-      fun v j k -> supply_index (supply_index v j) k
-    else
-      fun v _ _ -> v
-  in
   (* constant part *)
-  let add_weight : string -> wpo_sym -> unit =
+  let add_weight =
     let bind_lower =
       if p.w_neg then
         if p.w_max = 0 then fun _ _ -> ()
@@ -186,7 +128,7 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
   in
 
   (* Coefficients *)
-  let add_subterm_coef fname (finfo : wpo_sym) =
+  let add_subterm_coef fname finfo =
     let sub v j k =
       match p.sc_mode with
       | W_none ->
@@ -1294,368 +1236,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
     else wpo
   in
 
-(*** Printing proofs ***)
-  let zero =
-    function
-    | LI 0 -> true
-    | LR 0.0 -> true
-    | Vec u -> Matrix.is_zero_vec (LI 0) u
-    | Mat m -> Matrix.is_zero (LI 0) m
-    | _ -> false
-  in
-  let one =
-    function
-    | LI 1 -> true
-    | LR 1.0 -> true
-    | Mat m -> Matrix.is_unit (LI 0) (LI 1) m
-    | _ -> false
-  in
-  let status_is_used =
-    p.ext_mset && p.ext_lex ||
-    p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
-    p.collapse
-  in
-  let weight_is_used = p.w_mode <> W_none in
-  let usable_is_used = p.dp && p.usable in
-  let prec_is_used = p.prec_mode <> PREC_none in
-  let output_proof (pr:#printer) =
-    let pr_exp = output_exp pr in
-    let pr_perm finfo =
-      pr#puts "s: ";
-      let punct = ref "" in
-      let rbr =
-        if solver#get_bool finfo#argfilt_list then
-          if solver#get_bool finfo#mset_status then
-            (pr#puts "{"; "}")
-          else (pr#puts "["; "]")
-        else ""
-      in
-      let n = finfo#base#arity in
-      for j = 1 to n do
-        for i = 1 to n do
-          if solver#get_bool (finfo#perm i j) then begin
-            pr#puts !punct;
-            pr#put_int i;
-            punct := ",";
-          end;
-        done;
-      done;
-      pr#puts rbr;
-    in
-    let pr_exp_append =
-      function
-      | Neg exp -> pr#puts " - "; pr_exp exp;
-      | exp -> pr#puts " + "; pr_exp exp;
-    in
-    let pr_interpret finfo =
-      pr#puts "w: ";
-      let n = finfo#base#arity in
-      let sc =
-        if finfo#base#ty = Fun then finfo#subterm_coef
-        else (fun v _ -> v) (finfo#subterm_coef 1)
-      in
-      let init = ref true in
-      let pr_sum () =
-        for i = 1 to n do
-          let coef = solver#get_value (sc i) in
-          if not (zero coef) then begin
-            let coef =
-              match coef with
-              | Neg coef -> pr#puts (if !init then "-" else " - "); coef
-              | _ -> if not !init then pr#puts " + "; coef
-            in
-            if not (one coef) then begin
-              pr_exp coef;
-              pr#puts " * ";
-            end;
-            pr#puts "x";
-            pr#put_int i;
-            init := false;
-          end;
-        done;
-        let w = solver#get_value finfo#weight in
-        if !init then begin
-          pr_exp w;
-        end else if not (zero w) then begin
-          pr_exp_append w;
-        end;
-      in
-      if finfo#max then begin
-        let usemax = solver#get_bool finfo#argfilt_list in
-        for i = 1 to n do
-          let pen = solver#get_value (finfo#subterm_penalty i) in
-          if solver#get_bool (finfo#maxfilt i) then begin
-            if !init then begin
-              if usemax then pr#puts "max(";
-            end else begin
-              pr#puts ", ";
-            end;
-            pr#puts "x"; pr#put_int i;
-            if not (zero pen) then begin
-              match pen with
-              | Neg pen -> pr#puts " - "; pr_exp pen;
-              | _ -> pr#puts " + "; pr_exp pen;
-            end;
-            init := false;
-          end;
-        done;
-        if !init then begin
-          if finfo#maxpol then begin
-            pr_sum ();
-          end else begin
-            pr_exp mcw;
-          end;
-        end else begin
-          if finfo#maxpol then begin
-            pr#puts ", ";
-            init := true;
-            pr_sum ();
-          end;
-          if p.w_neg then begin
-            pr#puts ", ";
-            pr_exp mcw;
-          end;
-          if usemax then begin
-            pr#puts ")";
-          end;
-        end;
-      end else if p.w_neg && not (solver#get_bool finfo#is_const) then begin
-        pr#puts "max(";
-        pr_sum ();
-        pr#puts ", ";
-        pr_exp mcw;
-        pr#puts ")";
-      end else begin
-        pr_sum ();
-      end
-    in
-    let pr_prec finfo =
-      pr#puts "p: ";
-      pr_exp (solver#get_value finfo#prec);
-    in
-    let pr_symbol fname (finfo:wpo_sym) =
-      pr#puts "      ";
-      finfo#base#output_pad 2 (pr:>Io.outputter);
-      if status_is_used then begin
-        pr#puts "\t";
-        pr_perm finfo;
-      end;
-      if solver#get_bool finfo#argfilt_list then begin
-        if prec_is_used then begin
-          pr#puts "\t";
-          pr_prec finfo;
-        end;
-        if weight_is_used then begin
-          pr#puts "\t";
-          pr_interpret finfo;
-        end;
-      end;
-      pr#endl;
-    in
-    let pr_usable =
-      let folder is (i,_) =
-        if solver#get_bool (usable i) then i::is else is
-      in
-      puts "    USABLE RULES: {" <<
-      Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
-      puts " }" <<
-      endl
-    in
-    let pr_usable_w =
-      let folder is (i,_) =
-        if solver#get_bool (usable_w i) then i::is else is
-      in
-      puts "    USABLE RULES(WEIGHT): {" <<
-      Abbrev.put_ints " " (List.fold_left folder [] !usables) <<
-      puts " }" <<
-      endl
-    in
-    Hashtbl.iter pr_symbol sigma;
-    if usable_is_used || params.debug then pr_usable pr;
-    if p.dp && p.usable_w && p.w_mode <> W_none then pr_usable_w pr;
-    if p.mcw_mode = MCW_num then begin
-      pr#puts "    w0 = ";
-      pr_exp (solver#get_value mcw);
-      pr#endl;
-    end;
-  in
-  (* Print CPF proof *)
-  let output_cpf =
-    let put_status finfo pr =
-      Xml.enter "status" pr;
-      let n = finfo#base#arity in
-      for j = 1 to n do
-        for i = 1 to n do
-          if solver#get_bool (finfo#perm i j) then begin
-            Xml.enclose_inline "position" (put_int i) pr;
-          end;
-        done;
-      done;
-      Xml.leave "status" pr;
-    in
-    let put_prec finfo =
-      Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value finfo#prec)))
-    in
-    let pr_precstat pr _ (finfo:wpo_sym) =
-      Xml.enclose "precedenceStatusEntry" (
-        finfo#base#output_xml <<
-        Xml.enclose_inline "arity" (put_int finfo#base#arity) <<
-        put_prec finfo <<
-        put_status finfo
-      ) pr
-    in
-    let put_inte e =
-      Xml.enclose_inline "coefficient" (Xml.enclose_inline "integer" (put_int (smt_eval_int e)))
-    in
-    let put_vec es =
-      Xml.enclose "vector" (fun pr -> List.iter (fun e -> put_inte e pr) es)
-    in
-    let put_mat ess =
-      Xml.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) (Matrix.trans ess))
-    in
-    let put_coef e =
-      Xml.enclose "polynomial" (
-        match e with
-        | Vec es -> Xml.enclose "coefficient" (put_vec es)
-        | Mat ess -> Xml.enclose "coefficient" (put_mat ess)
-        | _ -> put_inte e
-      )
-    in
-    let pr_interpret pr _ (finfo:wpo_sym) =
-      Xml.enter "interpret" pr;
-      finfo#base#output_xml pr;
-      let n = finfo#base#arity in
-      Xml.enclose_inline "arity" (put_int n) pr;
-      let sc =
-        if finfo#base#ty = Fun then finfo#subterm_coef
-        else k_comb (finfo#subterm_coef 1)
-      in
-      let put_sum pr =
-        Xml.enter "polynomial" pr;
-        Xml.enter "sum" pr;
-        for i = 1 to n do
-          let coef = solver#get_value (sc i) in
-          if zero coef then begin
-            (* nothing *)
-          end else if one coef then begin
-            Xml.enclose "polynomial" (
-              Xml.enclose_inline "variable" (
-                put_int i
-              )
-            ) pr;
-          end else begin
-            Xml.enclose "polynomial" (
-              Xml.enclose "product" (
-                put_coef coef <<
-                Xml.enclose "polynomial" (
-                  Xml.enclose_inline "variable" (
-                    put_int i
-                  )
-                )
-              )
-            ) pr;
-          end;
-        done;
-        put_coef (solver#get_value finfo#weight) pr;
-        Xml.leave "sum" pr;
-        Xml.leave "polynomial" pr;
-      in
-      if finfo#max then begin
-        let usemax = solver#get_bool finfo#argfilt_list in
-        if usemax then begin
-          Xml.enter "polynomial" pr;
-          Xml.enter "max" pr;
-        end;
-        for i = 1 to n do
-          let pen = solver#get_value (finfo#subterm_penalty i) in
-          if solver#get_bool (finfo#maxfilt i) then begin
-            Xml.enclose "polynomial" (
-              Xml.enclose "sum" (
-                Xml.enclose "polynomial" (
-                  Xml.enclose_inline "variable" (put_int i)
-                ) <<
-                put_coef pen
-              )
-            ) pr;
-          end;
-        done;
-        if finfo#maxpol then begin
-          put_sum pr;
-        end else begin
-          put_coef (solver#get_value mcw) pr;
-        end;
-        if usemax then begin
-          Xml.leave "max" pr;
-          Xml.leave "polynomial" pr;
-        end;
-      end else if p.w_neg && not (solver#get_bool finfo#is_const) then begin
-        Xml.enclose "polynomial" (
-          Xml.enclose "max" (
-            put_sum <<
-            put_coef (solver#get_value mcw)
-          )
-        ) pr;
-      end else begin
-        put_sum pr;
-      end;
-      Xml.leave "interpret" pr;
-    in
-    fun pr ->
-      Xml.enter "orderingConstraintProof" pr;
-      if prec_is_used || status_is_used then begin
-        Xml.enter "redPair" pr;
-        Xml.enter "weightedPathOrder" pr;
-        Xml.enter "precedenceStatus" pr;
-        Hashtbl.iter (pr_precstat pr) sigma;
-        Xml.leave "precedenceStatus" pr;
-      end;
-      Xml.enter "redPair" pr;
-      Xml.enter "interpretation" pr;
-      Xml.enclose "type" (
-        if p.w_dim > 1 then
-          Xml.enclose "matrixInterpretation" (
-            Xml.enclose_inline "domain" (Xml.tag "naturals") <<
-            Xml.enclose_inline "dimension" (put_int p.w_dim) <<
-            Xml.enclose_inline "strictDimension" (puts "1")
-          )
-        else
-          Xml.enclose "polynomial" (
-            Xml.enclose_inline "domain" (Xml.tag "naturals") <<
-            Xml.enclose_inline "degree" (puts "1")
-          )
-      ) pr;
-      Hashtbl.iter (pr_interpret pr) sigma;
-      Xml.leave "interpretation" pr;
-      Xml.leave "redPair" pr;
-      if prec_is_used || status_is_used then begin
-        Xml.leave "weightedPathOrder" pr;
-        Xml.leave "redPair" pr;
-      end;
-      Xml.leave "orderingConstraintProof" pr;
-  in
-  let put_usables_cpf =
-    Xml.enclose "usableRules" (
-      Xml.enclose "rules" (fun (pr:#printer) ->
-        let iterer (i, (rule:rule)) =
-          if solver#get_bool (usable i) then rule#output_xml pr;
-        in
-        List.iter iterer !usables;
-      )
-    )
-  in
-
-
-  let putdot pr =
-    pr#putc '.';
-    pr#flush;
-  in
-
-  let gt_v i = "gt#" ^ string_of_int i in
-  let ge_v i = "ge#" ^ string_of_int i in
-  let gt_r_v i = "gt" ^ string_of_int i in
-  let ge_r_v i = "ge" ^ string_of_int i in
-
 object (x)
+
+  inherit Wpo_printer.t p solver sigma mcw
 
   val mutable initialized = false
   val mutable use_scope = p.use_scope
@@ -1913,10 +1496,10 @@ object (x)
       x#reset;
 
   method reduce current_usables sccref =
-    comment ( puts (name_order p) << putdot );
+    comment ( puts (name_order p) << putc '.' << flush );
     try
       x#push current_usables !sccref;
-      comment putdot;
+      comment (putc '.' << flush );
       if p.remove_all then begin
         let iterer i =
           solver#add_assertion
@@ -1930,13 +1513,12 @@ object (x)
         in
         solver#add_assertion (List.fold_right folder !sccref (LB false));
       end;
-      comment putdot;
+      comment (putc '.' << flush );
       solver#check;
       comment (puts " succeeded." << endl);
-      proof output_proof;
+      proof (x#output_proof << x#output_usables usable !usables);
       cpf (Xml.enter "acRedPairProc"); (* CAUTION: manually leave later *)
-      cpf output_cpf;
-      cpf (Xml.enter "dps" << Xml.enter "rules");
+      cpf (x#output_cpf << Xml.enter "dps" << Xml.enter "rules");
       let folder i (cnt,rem_dps) =
         if solver#get_bool (EV(gt_v i)) then (
           cpf ((dg#find_dp i)#output_xml);
@@ -1947,7 +1529,7 @@ object (x)
       in
       let (cnt,rem_dps) = List.fold_right folder !sccref (0,[]) in
       proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
-      cpf (Xml.leave "rules" << Xml.leave "dps" << put_usables_cpf);
+      cpf (Xml.leave "rules" << Xml.leave "dps" << x#put_usables_cpf usable !usables);
       x#pop;
       cnt
     with Inconsistent ->
@@ -1957,21 +1539,21 @@ object (x)
 
   method direct current_usables =
     try
-      comment (puts "Direct " << puts (name_order p) << puts " " << putdot);
+      comment (puts "Direct " << puts (name_order p) << puts " ." << flush);
       x#push current_usables [];
 
-      comment putdot;
+      comment (putc '.' << flush);
       (* usable i should be true until i is removed. *)
       List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
 
       if not p.remove_all then begin
         solver#add_assertion (smt_exists (fun i -> EV(gt_r_v i)) current_usables);
       end;
-      comment putdot;
+      comment (putc '.' << flush);
       solver#check;
 
       cpf (Xml.enter "acRuleRemoval"); (* CAUTION: enter but won't leave *)
-      cpf output_cpf;
+      cpf x#output_cpf;
       cpf (Xml.enter "trs" << Xml.enter "rules");
       if p.remove_all then begin
         comment (puts " removes all." << endl);
@@ -1988,7 +1570,7 @@ object (x)
         ) current_usables;
         comment endl;
       end;
-      proof output_proof;
+      proof x#output_proof;
       cpf (Xml.leave "rules" << Xml.leave "trs");
       x#pop;
       true

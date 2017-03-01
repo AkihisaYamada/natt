@@ -224,6 +224,21 @@ let output_exp (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e
 let prerr_exp = output_exp Io.cerr
 
 
+let is_zero =
+  function
+  | LI 0 -> true
+  | LR 0.0 -> true
+  | Vec u -> Matrix.is_zero_vec (LI 0) u
+  | Mat m -> Matrix.is_zero (LI 0) m
+  | _ -> false
+
+let is_one =
+  function
+  | LI 1 -> true
+  | LR 1.0 -> true
+  | Mat m -> Matrix.is_unit (LI 0) (LI 1) m
+  | _ -> false
+
 let rec is_simple =
   function
   | Nil   -> true

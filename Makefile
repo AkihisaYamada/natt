@@ -38,6 +38,8 @@ OCAML_SRCS=\
 	estimator.ml \
 	dp.ml \
 	app.ml \
+	wpo_info.ml \
+	wpo_printer.ml \
 	wpo.ml \
 	nonterm.ml \
 	main.ml
