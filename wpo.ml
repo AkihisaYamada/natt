@@ -131,28 +131,15 @@ class processor =
   in
 
   (* Coefficients *)
-  let add_subterm_coef fname finfo =
-    let sub v j k =
-      match p.sc_mode with
-      | W_none ->
-        if j = 1 && k = 1 then LI 1 else LI 0
-      | _ ->
-        let flag =
-          match p.mat_mode with
-          | MAT_full -> true
-          | MAT_upper -> finfo#base#is_defined || j < k
-          | MAT_lower -> finfo#base#is_defined || j > k
-        in
-        let coef =
-          if flag then
-            add_number p.sc_mode (supply_matrix_index v j k)
-          else if j = k then
-            if j = 1 then LI 1
-            else add_number W_bool (supply_matrix_index v j k)
-          else LI 0
-        in
+  let add_subterm_coef =
+    match p.sc_mode with
+    | W_none -> fun fname finfo ->
+      finfo#set_subterm_coef (k_comb (LI 0))
+    | _ ->
+      let coef_default v j k =
+        let coef = add_number p.sc_mode (supply_matrix_index v j k) in
         (* Additional constraints *)
-        if not p.dp && flag && j = 1 && k = 1 then
+        if not p.dp && j = 1 && k = 1 then
           (* if not in DP mode, assert top left element >= 1 *)
           if p.sc_mode = W_num then (
             solver#add_assertion (coef >=^ LI 1);
@@ -167,27 +154,46 @@ class processor =
             solver#add_assertion (coef <=^ LI p.sc_max);
           coef
         )
-    in
-    match finfo#base#ty with
-    | Th "C" ->
-      finfo#set_subterm_coef (k_comb (makemat (sub ("sc_" ^ fname))));
-    | Th "A" | Th "AC" ->
-      let coef =
-        if not p.dp || p.sc_mode = W_none then
-          LI 1
-        else
-          PB(solver#new_variable ("sc_" ^ fname) Bool)
       in
-      finfo#set_subterm_coef (k_comb coef)
-    | _ ->
-      let n = finfo#base#arity in
-      let v = (if n > 1 then supply_index else k_comb) ("sc_" ^ fname) in
-      let array = Array.make n (LI 0) in
-      for i = 1 to n do
-        array.(i-1) <- makemat (sub (v i));
-      done;
-      finfo#set_subterm_coef (fun i -> array.(i-1));
-  in
+      let coef =
+        match p.mat_mode with
+        | MAT_full  -> fun _ -> coef_default
+        | MAT_upper -> fun finfo v j k ->
+          if finfo#base#is_defined || j < k then
+            coef_default v j k
+          else if j = k then
+            if j = 1 then LI 1
+            else add_number W_bool (supply_matrix_index v j k)
+          else LI 0
+        | MAT_lower -> fun finfo v j k ->
+          if finfo#base#is_defined || j > k then
+            coef_default v j k
+          else if j = k then
+            if j = 1 then LI 1
+            else add_number W_bool (supply_matrix_index v j k)
+          else LI 0
+      in
+      fun fname finfo ->
+        match finfo#base#ty with
+        | Th "C" ->
+          finfo#set_subterm_coef (k_comb (makemat (coef finfo ("sc_" ^ fname))));
+        | Th "A" | Th "AC" ->
+          let coef =
+            if not p.dp || p.sc_mode = W_none then
+              LI 1
+            else
+              PB(solver#new_variable ("sc_" ^ fname) Bool)
+          in
+          finfo#set_subterm_coef (k_comb coef)
+        | _ ->
+          let n = finfo#base#arity in
+          let v = (if n > 1 then supply_index else k_comb) ("sc_" ^ fname) in
+          let array = Array.make n (LI 0) in
+          for i = 1 to n do
+            array.(i-1) <- makemat (coef finfo (v i));
+          done;
+          finfo#set_subterm_coef (fun i -> array.(i-1));
+    in
 
   (* Max-polynomial *)
   let add_subterm_penalty fname finfo =
@@ -199,7 +205,7 @@ class processor =
         pen
       in
       let use_maxpol () =
-        finfo#set_maxpol true;
+        finfo#set_sum true;
         debug2 (puts "    using maxpol for " << puts fname << endl);
       in
       match finfo#base#ty with
@@ -211,7 +217,7 @@ class processor =
           finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
           use_maxpol ();
         end else begin
-          finfo#set_maxpol false;
+          finfo#set_sum false;
           finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
         end;
       | Th "A" | Th "AC" ->
@@ -221,7 +227,7 @@ class processor =
           finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
           use_maxpol ();
         end else begin
-          finfo#set_maxpol false;
+          finfo#set_sum false;
           finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
         end;
       | _ ->
@@ -243,7 +249,7 @@ class processor =
           use_maxpol ();
           finfo#set_maxfilt emf;
         end else begin
-          finfo#set_maxpol false;
+          finfo#set_sum false;
           finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
         end;
     end;
@@ -377,7 +383,7 @@ class processor =
           fun finfo vf i ->
             solver#add_definition (vf i) Bool
             ( (finfo#subterm_coef i <>^ LI 0) |^ 
-              if finfo#maxpol then finfo#maxfilt i else LB false
+              if finfo#max then finfo#maxfilt i else LB false
             );
         else
           fun finfo vf i ->
@@ -762,7 +768,8 @@ class processor =
   let weight_var f argws =
     if argws <> [] then raise (Internal "higher order variable");
     let vc = Hashtbl.create 1 in
-    (vc_merge_one vc (LI 1) f#name (LI 1);[(vc,mcw)])
+    vc_merge_one vc (LI 1) f#name (LI 1);
+    [(vc,mcw)]
   in
   let weight_max =
     let folder af sp ret (vc,e) =
@@ -776,27 +783,28 @@ class processor =
     in
     let rec sub_fun finfo i ret =
       function
-      | []    -> ret
+      | []      -> ret
       | ws::wss ->
-        sub_fun finfo (i + 1)
-        (List.fold_left (folder (finfo#maxfilt i) (finfo#subterm_penalty i)) ret ws) wss
+        let mf = finfo#maxfilt i in
+        let sp = finfo#subterm_penalty i in
+        sub_fun finfo (i + 1) (List.fold_left (folder mf sp) ret ws) wss
     in
     let sub_c finfo =
-      let af = finfo#maxfilt 1 in
+      let mf = finfo#maxfilt 1 in
       let sp = finfo#subterm_penalty 1 in
       let rec sub ret =
         function
-        | []    -> ret
-        | ws::wss -> sub (List.fold_left (folder af sp) ret ws) wss
+        | []      -> ret
+        | ws::wss -> sub (List.fold_left (folder mf sp) ret ws) wss
       in
       sub
     in
     let sub_ac finfo =
-      let af = finfo#maxfilt 1 in
+      let mf = finfo#maxfilt 1 in
       let rec sub ret =
         function
-        | []    -> ret
-        | ws::wss -> sub (List.fold_left (folder af (LI 0)) ret ws) wss
+        | []      -> ret
+        | ws::wss -> sub (List.fold_left (folder mf (LI 0)) ret ws) wss
       in
       sub
     in
@@ -820,7 +828,7 @@ class processor =
           let finfo = lookup f in
           if finfo#max then
             let init =
-              if finfo#maxpol then
+              if finfo#sum then
                 weight_summand f#ty finfo (list_product argws)
               else if p.w_neg then
                 (* make it lower bounded by mcw *)
