@@ -642,20 +642,22 @@ class processor =
     for i = 1 to n do
       let pi = finfo#permed i in
       let coef = finfo#subterm_coef i in
+      let maxf = finfo#maxfilt i in
+      let pen = finfo#subterm_penalty i in
 
-      (* collapsing filter *)
-      solver#add_assertion (afl |^ (finfo#argfilt i =>^ pi));
-      solver#add_assertion (afl |^ (pi =>^ (coef =^ LI 1)));
+      (* permed position must be weakly monotone *)
+      solver#add_assertion (smt_not pi |^ (coef >=^ LI 1) |^ maxf);
 
       (* permed position must be a simple position *)
-      if p.w_neg then solver#add_assertion (pi =>^ (fw >=^ LI 0));
-      solver#add_assertion (smt_not pi |^ (coef >=^ LI 1) |^ finfo#maxfilt i);
-
-      if finfo#max then begin
-        let pen = finfo#subterm_penalty i in
-        if p.w_neg then solver#add_assertion (pi =>^ (pen >=^ LI 0));
-        solver#add_assertion (afl |^ (pen =^ LI 0));
+      if p.w_neg then begin
+        solver#add_assertion (pi =>^ (fw >=^ LI 0));
+        solver#add_assertion (pi =>^ (pen >=^ LI 0));
       end;
+
+      (* collapsing filter *)
+      solver#add_assertion (afl |^ smt_not (finfo#argfilt i) |^ pi);
+      solver#add_assertion (afl |^ smt_not pi |^ (coef =^ LI 1));
+      solver#add_assertion (afl |^ smt_not pi |^ (maxf &^ (pen =^ LI 0)));
     done;
     if n > 0 && p.dp && p.sc_mode <> W_none &&
       (p.w_neg || p.adm || p.maxcons || p.mincons || p.mcw_val > 0)
