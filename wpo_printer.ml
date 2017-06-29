@@ -294,14 +294,13 @@ class t p solver sigma mcw =
       in
       fun pr ->
         Xml.enter "orderingConstraintProof" pr;
+        Xml.enter "redPair" pr;
         if prec_is_used || status_is_used then begin
-          Xml.enter "redPair" pr;
           Xml.enter "weightedPathOrder" pr;
           Xml.enter "precedenceStatus" pr;
           Hashtbl.iter (pr_precstat pr) sigma;
           Xml.leave "precedenceStatus" pr;
         end;
-        Xml.enter "redPair" pr;
         Xml.enter "interpretation" pr;
         Xml.enclose "type" (
           if p.w_dim > 1 then
@@ -318,11 +317,10 @@ class t p solver sigma mcw =
         ) pr;
         Hashtbl.iter (pr_interpret pr) sigma;
         Xml.leave "interpretation" pr;
-        Xml.leave "redPair" pr;
         if prec_is_used || status_is_used then begin
           Xml.leave "weightedPathOrder" pr;
-          Xml.leave "redPair" pr;
         end;
+        Xml.leave "redPair" pr;
         Xml.leave "orderingConstraintProof" pr;
     method put_usables_cpf : 'pr. (int -> exp) -> (int * rule) list -> (#printer as 'pr) -> unit =
       fun usable usables pr ->
