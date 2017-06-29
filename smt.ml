@@ -21,6 +21,7 @@ class virtual ['e,'d] base =
   end;;
 
 type exp =
+  | Dummy
   | EOF
   | Nil
   | NegInf
@@ -115,16 +116,17 @@ class virtual sexp_printer =
         | e -> pr_e e;
       in
       match e with
-      | EOF     -> pr "<EOF>";
-      | Nil     -> pr "()";
-      | NegInf    -> pr "-INF";
-      | EV v      -> x#pr_v v;
-      | LI i      -> if i < 0 then (pr "(- "; pr_i (-i); pr ")";) else pr_i i;
-      | LR r      -> if r < 0.0 then (pr "(- "; pr_f (-. r); pr ")";) else pr_f r;
-      | LB b      -> pr (if b then "true" else "false");
-      | Add(e1,e2)  -> pr "(+ "; pr_add e1; pr " "; pr_add e2; pr ")";
-      | Sub(e1,e2)  -> pr "(- "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Neg e1    -> pr "(- "; pr_e e1; pr ")";
+      | Dummy -> pr "<Dummy>"
+      | EOF   -> pr "<EOF>";
+      | Nil   -> pr "()";
+      | NegInf -> pr "-INF";
+      | EV v  -> x#pr_v v;
+      | LI i  -> if i < 0 then (pr "(- "; pr_i (-i); pr ")";) else pr_i i;
+      | LR r  -> if r < 0.0 then (pr "(- "; pr_f (-. r); pr ")";) else pr_f r;
+      | LB b  -> pr (if b then "true" else "false");
+      | Add(e1,e2) -> pr "(+ "; pr_add e1; pr " "; pr_add e2; pr ")";
+      | Sub(e1,e2) -> pr "(- "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Neg e1     -> pr "(- "; pr_e e1; pr ")";
       | Mul(PB(e1),e2)-> pr_e (If(e1,e2,LI 0))
       | Mul(e1,PB(e2))-> pr_e (If(e2,e1,LI 0))
       | Mul(e1,e2)  -> pr "(* "; pr_mul e1; pr " "; pr_mul e2; pr ")";

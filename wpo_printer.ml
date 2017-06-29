@@ -101,13 +101,13 @@ class t p solver sigma mcw =
             end;
           done;
           if !init then begin
-            if finfo#maxpol then begin
+            if finfo#sum then begin
               pr_sum ();
             end else begin
               pr_exp mcw;
             end;
           end else begin
-            if finfo#maxpol then begin
+            if finfo#sum then begin
               pr#puts ", ";
               init := true;
               pr_sum ();
@@ -271,7 +271,7 @@ class t p solver sigma mcw =
               ) pr;
             end;
           done;
-          if finfo#maxpol then begin
+          if finfo#sum then begin
             put_sum pr;
           end else begin
             put_coef (solver#get_value mcw) pr;
