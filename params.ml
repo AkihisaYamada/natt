@@ -442,12 +442,12 @@ while !i < argc do
       params.proof <- false;
       params.cpf <- true;
       params.naive_C <- true;
-      params.edge_mode <- E_tcap;
       params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
     | "x", Some file ->
       params.cpf <- true;
       params.cpf_to <- open_out file;
       params.naive_C <- true;
+      params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
     | "-peek", _ ->
       begin
         p.peek_in <- true;

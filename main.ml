@@ -323,7 +323,6 @@ let dp_prove (trs : #trs) =
 let prove_termination (trs : #trs) =
 	problem (puts "Input TRS:" << endl << enter 4 << trs#output << leave 4);
 	cpf (
-		Xml.enclose "input" (Xml.enclose "acRewriteSystem" trs#output_xml) <<
 		Xml.enclose_inline "cpfVersion" (puts "2.2") <<
 		Xml.enter "proof" <<
 		Xml.enter "acTerminationProof"

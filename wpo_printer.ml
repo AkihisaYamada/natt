@@ -25,11 +25,10 @@ class t p solver sigma mcw =
         pr#puts "s: ";
         let punct = ref "" in
         let rbr =
-          if solver#get_bool finfo#argfilt_list then
-            if solver#get_bool finfo#mset_status then
-              (pr#puts "{"; "}")
-            else (pr#puts "["; "]")
-          else ""
+          if solver#get_bool finfo#collapse then ""
+          else if solver#get_bool finfo#mset_status then
+            (pr#puts "{"; "}")
+          else (pr#puts "["; "]")
         in
         let n = finfo#base#arity in
         for j = 1 to n do
@@ -82,7 +81,7 @@ class t p solver sigma mcw =
           end;
         in
         if finfo#max then begin
-          let usemax = solver#get_bool finfo#argfilt_list in
+          let usemax = not (solver#get_bool finfo#collapse) in
           for i = 1 to n do
             let pen = solver#get_value (finfo#subterm_penalty i) in
             if solver#get_bool (finfo#maxfilt i) then begin
@@ -141,7 +140,7 @@ class t p solver sigma mcw =
           pr#puts "\t";
           pr_perm finfo;
         end;
-        if solver#get_bool finfo#argfilt_list then begin
+        if not (solver#get_bool finfo#collapse) then begin
           if prec_is_used then begin
             pr#puts "\t";
             pr_prec finfo;
@@ -253,7 +252,7 @@ class t p solver sigma mcw =
           Xml.leave "polynomial" pr;
         in
         if finfo#max then begin
-          let usemax = solver#get_bool finfo#argfilt_list in
+          let usemax = not (solver#get_bool finfo#collapse) in
           if usemax then begin
             Xml.enter "polynomial" pr;
             Xml.enter "max" pr;

@@ -353,16 +353,14 @@ class processor =
   let po =
     let sub =
       if p.mincons then
-        function
-        | []  -> fun ginfo -> Cons(pmin =^ ginfo#prec, LB false)
-        | _   -> fun _ -> not_ordered
+        fun g ts -> Cons((if ts = [] then pmin =^ (lookup g)#prec else LB false), LB false)
       else
         fun _ _ -> not_ordered
     in
     fun (WT((f:#sym),_,_)) (WT((g:#sym),ts,_)) ->
       if f#is_var then
         if g#is_var then Cons(LB(f#equals g), LB false)
-        else sub ts (lookup g)
+        else sub g ts
       else if g#is_var then not_ordered
       else spo (lookup f) (lookup g)
   in
@@ -407,15 +405,15 @@ class processor =
         | _ -> ()
   in
   (* collapsing argument filters *)
-  let add_argfilt_list =
+  let add_collapse =
     if p.collapse then
       fun fname finfo to_n ->
-        let v = "afl_" ^ fname in
-        finfo#set_argfilt_list (EV(v));
+        let v = "col_" ^ fname in
         solver#add_variable v Bool;
-        solver#add_assertion (EV(v) |^ ES1(List.map finfo#argfilt to_n));
+        finfo#set_collapse (EV v);
+        solver#add_assertion (EV v =>^ ES1(List.map finfo#argfilt to_n));
     else
-      fun _ finfo _ -> finfo#set_argfilt_list (LB true)
+      fun _ finfo _ -> finfo#set_collapse (LB false)
   in
 
 (*** Usable rules ***)
@@ -423,7 +421,7 @@ class processor =
     if (if p.dp then dg#minimal && p.usable else not p.remove_all) then
       fun i -> EV(usable_v i)
     else
-      fun _ -> LB true
+      k_comb (LB true)
   in
   let usable_w =
     if p.dp && p.usable_w then
@@ -435,7 +433,7 @@ class processor =
     if (if p.dp then dg#minimal && p.usable else not p.remove_all) then
       fun i -> EV(usable_p_v i)
     else
-      fun _ -> LB true
+      k_comb (LB true)
   in
   let rec set_usable filt usable s =
     smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
@@ -607,7 +605,7 @@ class processor =
   let is_unary =
     if p.dp && p.sc_mode <> W_none then
       fun finfo to_n ->
-        finfo#argfilt_list &^ ES1(List.map finfo#argfilt to_n)
+        smt_not finfo#collapse &^ ES1(List.map finfo#argfilt to_n)
     else
       fun _ -> function [_] -> LB true | _ -> LB false
   in
@@ -623,7 +621,7 @@ class processor =
     add_subterm_penalty fname finfo;
 
     add_argfilt fname finfo;
-    add_argfilt_list fname finfo to_n;
+    add_collapse fname finfo to_n;
 
     add_prec fname finfo;
 
@@ -632,12 +630,12 @@ class processor =
     (* for status *)
     add_mset_status fname finfo;
 
-    let afl = finfo#argfilt_list in
+    let col = finfo#collapse in
     let fw = finfo#weight in
     let fp = finfo#prec in
 
     (* if $\pi(f)$ is collapsing, then $w(f) = 0$ *)
-    solver#add_assertion (afl |^ (fw =^ LI 0));
+    solver#add_assertion (col =>^ (fw =^ LI 0));
 
     for i = 1 to n do
       let pi = finfo#permed i in
@@ -655,24 +653,24 @@ class processor =
       end;
 
       (* collapsing filter *)
-      solver#add_assertion (afl |^ smt_not (finfo#argfilt i) |^ pi);
-      solver#add_assertion (afl |^ smt_not pi |^ (coef =^ LI 1));
-      solver#add_assertion (afl |^ smt_not pi |^ (maxf &^ (pen =^ LI 0)));
+      solver#add_assertion (col &^ finfo#argfilt i =>^ pi);
+      solver#add_assertion (col &^ pi =>^ (coef =^ LI 1));
+      solver#add_assertion (col &^ pi =>^ (maxf &^ (pen =^ LI 0)));
     done;
     if n > 0 && p.dp && p.sc_mode <> W_none &&
       (p.w_neg || p.adm || p.maxcons || p.mincons || p.mcw_val > 0)
     then begin
       let v = "const_" ^ fname in
       solver#add_definition v Bool
-        (afl &^ smt_for_all (fun i -> smt_not (finfo#argfilt i)) to_n);
-      finfo#set_is_const (EV(v));
+        (smt_not col &^ smt_for_all (fun i -> smt_not (finfo#argfilt i)) to_n);
+      finfo#set_is_const (EV v);
       if finfo#status_mode = S_partial && (p.mincons || p.maxcons) then begin
         let v = "qconst_" ^ fname in
         solver#add_definition v Bool
-          (afl &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
-        finfo#set_is_quasi_const (EV(v));
+          (smt_not col &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
+        finfo#set_is_quasi_const (EV v);
       end else begin
-        finfo#set_is_quasi_const (EV(v));
+        finfo#set_is_quasi_const (EV v);
       end;
     end;
 
@@ -714,7 +712,7 @@ class processor =
           else
             fw >^ LI 0
         in
-        solver#add_assertion (smt_not maxcons |^ qc |^ smt_not afl |^ strictly_simple);
+        solver#add_assertion (smt_not maxcons |^ qc |^ col |^ strictly_simple);
       end;
     end;
   in
@@ -1002,7 +1000,7 @@ class processor =
         else
           let ginfo = lookup g in
           let p_g = ginfo#permed in
-          let afl_g = ginfo#argfilt_list in
+          let afl_g = smt_not ginfo#collapse in
           (* pop-out an argument *)
           let precond = solver#refer Bool precond in
           let ret = sub2 precond preargs ret afl_g p_g 1 ts in
@@ -1149,6 +1147,10 @@ class processor =
       sub 1 (LB false) (LB false)
   in
   let order_all_args =
+    (* returns:
+      all_ge <=> $s \gsim t_j$ for all $j \in \sigma(g)$
+      all_gt <=> $s \gt t_j$ for all $j \in \sigma(g)$
+    *)
     let rec sub j all_ge all_gt order s ginfo ts =
       match ts with
       | []  -> Cons(all_ge, all_gt)
@@ -1203,7 +1205,7 @@ class processor =
         | [] -> LB true
         | t::ts -> (ginfo#argfilt j =>^ var_eq xname t) &^ sub (j+1) ts
       in
-      is_mincons ginfo |^ (smt_not ginfo#argfilt_list &^ Delay(fun _ -> sub 1 ts))
+      is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
   in
   let rec wpo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
     if ac_eq s t then
@@ -1227,8 +1229,8 @@ class processor =
     (fun some_ge some_gt ->
       smt_let Bool some_ge
       (fun some_ge ->
-        let fl = finfo#argfilt_list in
-        let some_gt = (smt_not fl &^ some_gt) |^ (fl &^ some_ge) in
+        let col_f = finfo#collapse in
+        let some_gt = smt_if col_f some_gt some_ge in
         if some_gt = LB true then
           strictly_ordered
         else if g#is_var then
@@ -1237,18 +1239,17 @@ class processor =
           let ginfo = lookup g in
           smt_split (order_all_args wpo s ginfo ts)
           (fun all_ge all_gt ->
-            let gl = ginfo#argfilt_list in
-            let ngl = smt_not gl in
+            let col_g = ginfo#collapse in
             if all_gt = LB false then
-              Cons(some_ge |^ (ngl &^ all_ge), some_gt)
+              Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
               smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts))
               (fun rest_ge rest_gt ->
                 smt_let Bool all_gt
                 (fun all_gt ->
-                  let cond = fl &^ gl &^ all_gt in 
-                  let ge = some_ge |^ (ngl &^ all_ge) |^ (cond &^ rest_ge) in
-                  let gt = some_gt |^ (ngl &^ all_gt) |^ (cond &^ rest_gt) in
+                  let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
+                  let ge = some_ge |^ (col_g &^ all_ge) |^ (cond &^ rest_ge) in
+                  let gt = some_gt |^ (col_g &^ all_gt) |^ (cond &^ rest_gt) in
                   Cons(ge,gt)
                 )
               )
