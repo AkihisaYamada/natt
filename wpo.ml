@@ -655,7 +655,7 @@ class processor =
       (* collapsing filter *)
       solver#add_assertion (col &^ finfo#argfilt i =>^ pi);
       solver#add_assertion (col &^ pi =>^ (coef =^ LI 1));
-      solver#add_assertion (col &^ pi =>^ (maxf &^ (pen =^ LI 0)));
+      solver#add_assertion (col &^ pi =>^ (pen =^ LI 0));
     done;
     if n > 0 && p.dp && p.sc_mode <> W_none &&
       (p.w_neg || p.adm || p.maxcons || p.mincons || p.mcw_val > 0)
@@ -772,14 +772,14 @@ class processor =
     [(vc,mcw)]
   in
   let weight_max =
-    let folder af sp ret (vc,e) =
-      if af = LB true then
+    let folder mf sp ret (vc,e) =
+      if mf = LB true then
         (vc, solver#refer_base (sp +^ e))::ret
       else
         let vc' = Hashtbl.copy vc in
-        vc_mul vc' (smt_pb af);
+        vc_mul vc' (smt_pb mf);
         vc_refer solver vc';
-        (vc', solver#refer_base (smt_pb af *^ (sp +^ e)))::ret
+        (vc', solver#refer_base (smt_pb mf *^ (sp +^ e)))::ret
     in
     let rec sub_fun finfo i ret =
       function
