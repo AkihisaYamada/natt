@@ -676,6 +676,7 @@ if !default then begin
   !pp.sc_mode <- W_bool;
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
+  params.naive_C <- params.cpf;
   apply_polo ();
   apply_polo ();
   !pp.max_mode <- MAX_all;
