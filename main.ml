@@ -138,8 +138,10 @@ let remove_unusable (trs : #trs) (estimator : #Estimator.t) (dg : #dg) sccs =
 		log (puts "Removing unusable rules: {");
 		let (_,unusables) = static_usable_rules trs estimator dg dps in
 		let rule_remover i =
-			log (puts " " << put_int i);
-			trs#remove_rule i;
+			if (trs#find_rule i)#is_strict then begin
+				log (puts " " << put_int i);
+				trs#remove_rule i;
+			end;
 		in
 		List.iter rule_remover unusables;
 		log (puts " }" << endl);
