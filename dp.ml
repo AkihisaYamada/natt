@@ -94,7 +94,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		(* Generate dependency pairs *)
 		method generate_dp =
 			let rec generate_dp_sub strength s (Node(g,ts) as t) =
-				if trs#strictly_defines g && not (strict_subterm t s) then begin
+				if trs#defines g && not (strict_subterm t s) then begin
 					x#add_dp (new rule strength s (mark_term t));
 				end;
 				List.iter (generate_dp_sub strength s) ts;
