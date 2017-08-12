@@ -1,4 +1,4 @@
-let version = "1.6";
+let version = "1.7";
 
 type base_ty =
 | TY_int
