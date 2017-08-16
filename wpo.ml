@@ -134,7 +134,7 @@ class processor =
   let add_subterm_coef =
     match p.sc_mode with
     | W_none -> fun fname finfo ->
-      finfo#set_subterm_coef (k_comb (LI 0))
+      finfo#set_subterm_coef (k_comb (LI (if not p.dp then 1 else 0)))
     | _ ->
       let coef_default v j k =
         let coef = add_number p.sc_mode (supply_matrix_index v j k) in
