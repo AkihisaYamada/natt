@@ -39,17 +39,17 @@ class virtual t (trs:#trs) = object (x)
 
 	method may_connect_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
 		fun n (Node(f,ss)) (Node(g,ts)) ->
-			f#equals g &&
 			match f#ty with
-			| Fun -> List.for_all2 (x#may_reach_n n) ss ts
-			| Th "C" ->
+			| Var -> true
+			| Fun -> f#equals g && List.for_all2 (x#may_reach_n n) ss ts
+			| Th "C" -> f#equals g &&
 				(	match ss, ts with
 					| [s1;s2], [t1;t2] ->
 						(x#may_reach_n n s1 t1 && x#may_reach_n n s2 t2) ||
 						(x#may_reach_n n s1 t2 && x#may_reach_n n s2 t1)
 					| _ -> raise (No_support "nonbinary commutative symbol")
 				)
-			| _ -> true
+			| _ -> f#equals g
 
 	method may_reach_n : 'a 'b. int -> (#sym as 'a) term -> (#sym as 'b) term -> bool =
 		fun n (Node(f,ss) as s) t ->

@@ -146,8 +146,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 (* Estimated dependency graph *)
 
 		method private make_dg =
-			let edged : rule -> rule -> bool =
-			fun src tgt ->
+			let edged (src : rule) (tgt : rule) =
 				(root src#r)#equals (root tgt#l) && (edge_all <- edge_all + 1; true) &&
 				estimator#may_connect src#r tgt#l && (edge_real <- edge_real + 1; true)
 			in
