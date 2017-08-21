@@ -279,10 +279,10 @@ let dp_prove (trs : #trs) =
     let rt = root lr#l in
     if rt#is_var then
       if lr#is_strict then begin
-        comment (puts "variable left-hand side");
+        comment (puts "variable left-hand side" << endl);
         raise Nonterm
       end else begin
-        comment (puts "weak variable left-hand side");
+        comment (puts "weak variable left-hand side" << endl);
         raise Unknown
       end
     else ()
