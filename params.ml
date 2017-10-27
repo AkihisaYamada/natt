@@ -55,6 +55,7 @@ type mode =
 | MODE_dup
 | MODE_through
 | MODE_higher_xml
+| MODE_xml
 type mat_mode =
 | MAT_full
 | MAT_upper
@@ -605,6 +606,7 @@ while !i < argc do
       begin
         match mode with
         | Some "ho" -> params.mode <- MODE_higher_xml;
+        | Some "x" -> params.mode <- MODE_xml;
         | Some str -> err ("Unknown transformation mode: " ^ str ^ "!");
         | _ -> params.mode <- MODE_through;
       end

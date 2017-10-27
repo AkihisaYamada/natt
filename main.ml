@@ -402,9 +402,8 @@ object (x)
 		| MODE_higher_xml ->
 			trs#output_xml_ho cout;
 		| MODE_through ->
-		  let prod = Matrix.prod (fun x y -> x ^ "+" ^ y) (^) "" [["11";"12"];["21";"22"]] [["aa";"ab"];["ba";"bb"]] in
-		  List.iter (fun is -> List.iter (fun i -> prerr_string i; prerr_string " ") is; prerr_string "; ") prod;
-			trs#output cout;
+		  	trs#output cout;
+                | MODE_xml -> trs#output_xml cout;
 		| MODE_flat ->
 			trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
 			trs#output cout;
