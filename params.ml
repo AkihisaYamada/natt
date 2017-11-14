@@ -352,6 +352,8 @@ let apply_polo () =
     collapse = false;
     usable_w = false;
     refer_w = false;
+    base_ty = TY_real;
+    sc_mode = W_bool;
   };
 in
 let apply_lpo () =
@@ -558,7 +560,8 @@ while !i < argc do
         | _ -> erro arg;
       end;
 
-    | "-real", None -> p.base_ty <- TY_real;
+    | "-ty", Some "real" -> p.base_ty <- TY_real;
+    | "-ty", Some "int" -> p.base_ty <- TY_int;
 
     | "Sp", None -> p.sp_mode <- W_none;
 
@@ -675,7 +678,6 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
-  !pp.sc_mode <- W_bool;
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;

@@ -274,6 +274,10 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 
 
 let dp_prove (trs : #trs) =
+  if trs#is_probabilistic then begin
+    comment (puts "DP for a probabilistic system" << endl);
+    raise Unknown;
+  end;
   (* Test for variable left-hand sides *)
   let iterer _ lr =
     let rt = root lr#l in
