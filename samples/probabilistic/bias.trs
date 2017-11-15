@@ -1,4 +1,4 @@
 (VAR x)
 (RULES
-	f(s(x)) -> f(s(s(x))) || 2 : f(x)
+	s(x) -> 2 : x || s(s(x))
 )
