@@ -1,13 +1,16 @@
-(VAR x)
+(VAR x y)
 (RULES
-	h(x)       -> h(s(x)) || count(g(x))
-	h(x)       -> count(f(x))
-	count(0)   -> 0
-	count(s(x)) -> s(count(x))
-	f(0)       -> 0
-	f(s(x))    -> s(s(f(x)))
-	g(0)       -> 0
-	g(s(0))    -> 0
-	g(s(s(x))) -> s(g(x))
+	h(x)        -> h(s(x)) || count(g(x))
+	h(x)        -> count(f(x))
+	count(0)    -> 0
+	count(s(x)) -> count(x)
+	add(0,y)    -> y
+	add(s(x),y) -> s(add(x,y))
+	mul(0,y)    -> 0
+	mul(s(x),y) -> add(s(x),mul(x,y))
+	pow3(0)     -> s(0)
+	pow3(s(x))  -> mul(s(s(s(0))),pow3(x))
+	f(x)        -> pow3(x)
+	g(x)        -> x
 )
 (COMMENT from Fioriti & Hermmans POPL 2015)
