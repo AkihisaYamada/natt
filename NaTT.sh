@@ -5,6 +5,7 @@ options=
 proof=
 ext=xml
 timefile="$dir/tmp.time"
+outfile="$dir/tmp.out"
 
 info()
 {
@@ -64,8 +65,6 @@ then
 	shift
 fi
 
-pre="/usr/bin/time -p -o $timefile timeout $t $dir/NaTT.exe"
-
 l=$1
 shift
 
@@ -102,7 +101,7 @@ fi
 		then
 			echo "$l"
 		else
-			(cd "$d"; find -type f -name "*.$ext") |
+			(cd "$d"; find . -type f -name "*.$ext") |
 			sed -e "s/^\.\///g"
 		fi
 	fi
@@ -113,7 +112,7 @@ do
 #	read dummy < /dev/tty
 	if [ "$proof" = "" ]
 	then
-		log=/dev/stderr
+		log="/dev/stdout"
 	else
 		log="${f%.*}.txt"
 		log="$proof/${log//\//-}"
@@ -128,12 +127,15 @@ do
 	fi
 	if [ "${f##*.}" = "xml" ]
 	then
-		out=`eval xsltproc "$dir/xtc2tpdb.xml" "$d$f" |
-		$pre $cpfopt "$@" $options 2> "$log"`
+		xsltproc "$dir/xtc2tpdb.xml" "$d$f"
 	else
-		out=`eval $pre $cpfopt "$@" "$d$f" $options 2> "$log"`
-	fi
-	out=`echo $out | sed -E "s/([A-Z]+)/\1/;q"`
+		echo "$d$f"
+	fi | {
+		time -p {
+			timeout $t "$dir/NaTT.exe" $cpfopt $@ $options 1> "$outfile"
+		} 2> "$log"
+	} 2> "$timefile"
+	out=`sed -E "s/([A-Z]+)/\1/;q" "$outfile"`
 	if [ "$out" = "" -o "$out" = "Killed" ]
 	then
 		echo -n "TIMEOUT	"
