@@ -486,6 +486,8 @@ let smt_for_all2 f = List.fold_left2 (fun ret e1 e2 -> ret &^ f e1 e2) (LB true)
 
 let smt_exists f = List.fold_left (fun ret e -> ret |^ f e) (LB false)
 
+let smt_exists2 f = List.fold_left2 (fun ret e1 e2 -> ret |^ f e1 e2) (LB false)
+
 let vector_scalar comp es1 e2 context =
   let e2 = context#refer Int e2 in
   List.fold_left (fun ret e1 -> ret &^ comp e1 e2) (LB true) es1
@@ -541,9 +543,13 @@ let rec (>^) e1 e2 =
   | LR r1, LR r2 -> LB(r1 > r2)
   | PB e1, PB e2  -> e1 &^ smt_not e2
   | PB e1, LI i -> if i = 0 then e1 else LB false
-  | Vec(e1::v1), Vec(e2::v2) -> (e1 >^ e2) &^ smt_for_all2 (>=^) v1 v2
-  | Vec(e1::v1), LI 0
-  | Vec(e1::v1), LR 0.0 -> (e1 >^ e2) &^ smt_for_all (fun e1 -> e1 >=^ e2) v1
+  | Vec v1, Vec v2 ->
+      smt_exists2 (fun e1 e2 -> e1 >^ e2) v1 v2 &^
+      smt_for_all2 (>=^) v1 v2
+  | Vec v1, LI 0
+  | Vec v1, LR 0.0 ->
+      smt_exists (fun e1 -> e1 >^ e2) v1 &^
+      smt_for_all (fun e1 -> e1 >=^ e2) v1
   | Vec(_), _ -> raise (Internal "Vec > ?")
   | _, Vec(_)   -> raise (Internal "? > Vec")
   | _       -> if simple_eq e1 e2 then LB false else Gt(e1,e2)

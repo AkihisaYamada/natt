@@ -1,6 +1,6 @@
 TOOL=$(shell pwd)/../NaTT.sh	# this is ugly!
 
-test: NaTT
+test: NaTT.exe
 	TOOL=$(PWD)/NaTT.sh; \
 	cd ~/tpdb/TRS_Standard; \
 	if [ -e tmp_result ]; then rm tmp_result; fi; \
