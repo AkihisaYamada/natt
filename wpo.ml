@@ -658,7 +658,7 @@ class processor =
       solver#add_assertion (col &^ pi =>^ (pen =^ LI 0));
     done;
     if n > 0 && p.dp && p.sc_mode <> W_none &&
-      (p.w_neg || p.adm || p.maxcons || p.mincons || p.mcw_val > 0)
+      (p.w_neg || p.maxcons || p.mincons || p.mcw_val > 0)
     then begin
       let v = "const_" ^ fname in
       solver#add_definition v Bool
@@ -681,20 +681,7 @@ class processor =
       else
         solver#add_assertion (finfo#is_const =>^ (fw >=^ mcw));
 
-    if p.adm then begin
-      if finfo#max then
-        for i = 1 to n do
-          solver#add_assertion (finfo#argfilt i =>^ (finfo#subterm_penalty i >^ LI 0));
-        done
-      else if p.mcw_val = 0 then
-        solver#add_assertion (finfo#is_const |^ (fw >^ LI 0))
-      else begin
-        solver#add_assertion (fp <=^ !pmax);
-        (* asserting admissibility of weight and precedence. *)
-        solver#add_assertion
-          (smt_if (is_unary finfo to_n &^ (fw =^ LI 0)) (fp =^ !pmax) (fp <^ !pmax));
-      end;
-    end else if p.maxcons then begin
+    if p.maxcons then begin
       solver#add_assertion (fp <=^ !pmax);
     end;
 
@@ -705,15 +692,13 @@ class processor =
     if p.maxcons then begin
       (* if maxcons is true, then only quasi-constant can have the maximum precedence *)
       solver#add_assertion (smt_not maxcons |^ qc |^ (fp <^ !pmax));
-      if not p.adm then begin
-        let strictly_simple =
-          if finfo#max then
-            smt_for_all (fun i -> finfo#subterm_penalty i >^ LI 0) to_n
-          else
-            fw >^ LI 0
-        in
-        solver#add_assertion (smt_not maxcons |^ qc |^ col |^ strictly_simple);
-      end;
+      let strictly_simple =
+        if finfo#max then
+          smt_for_all (fun i -> finfo#subterm_penalty i >^ LI 0) to_n
+        else
+          fw >^ LI 0
+      in
+      solver#add_assertion (smt_not maxcons |^ qc |^ col |^ strictly_simple);
     end;
   in
 
@@ -1079,19 +1064,12 @@ class processor =
     if marked_name name then unmark_name name else name
   in
   let flat_compargs =
-    if not p.dp && p.adm then
-      fun fname gname finfo order ss ts ->
-        if ac_unmark_name fname = ac_unmark_name gname then
-          comparg_ac finfo order ss ts
-        else
-          not_ordered
-    else
-      fun fname gname finfo order ss ts ->
-        let fname = ac_unmark_name fname in
-        let gname = ac_unmark_name gname in
-        if fname = gname then
-          ac_rpo_compargs fname finfo ss ts order
-        else not_ordered
+    fun fname gname finfo order ss ts ->
+      let fname = ac_unmark_name fname in
+      let gname = ac_unmark_name gname in
+      if fname = gname then
+        ac_rpo_compargs fname finfo ss ts order
+      else not_ordered
   in
   (* compargs for f and g *)
   let compargs fname gname finfo ginfo =
@@ -1132,8 +1110,6 @@ class processor =
     in
     if p.Params.status_mode = S_empty then
       fun _ _ _ _ -> Cons(LB false, LB false)
-    else if not p.collapse && p.adm then
-      fun _ _ _ (WT(g,_,_)) -> let b = g#is_var in Cons(LB b, LB b)
     else if not p.collapse && p.mcw_val > 0 then
       fun order finfo ss t ->
         match ss with
@@ -1166,8 +1142,6 @@ class processor =
         )
     in
     if p.Params.status_mode = S_empty then
-      fun _ _ _ _ -> Cons(LB true, LB true)
-    else if not p.collapse && p.adm then
       fun _ _ _ _ -> Cons(LB true, LB true)
     else if not p.collapse && p.mcw_val > 0 then
       fun order s ginfo ts ->
@@ -1449,8 +1423,12 @@ object (x)
         in
         let rw = prule#fold_rs folder (Hashtbl.create 4, LI 0) in
         let (ge,gt) = split (polo lw rw) solver in
-        solver#add_assertion (usable_p i =>^ ge);
-        solver#add_definition (gt_p_v i) Bool gt;
+        if p.remove_all then begin
+          solver#add_assertion gt;
+        end else begin
+          solver#add_assertion (usable_p i =>^ ge);
+          solver#add_definition (gt_p_v i) Bool gt;
+        end;
       | _ -> raise (Internal "unsupported weight for probabilistic rule")
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);

@@ -1,4 +1,4 @@
-let version = "1.7";
+let version = "1.8";
 
 type base_ty =
 | TY_int
@@ -87,7 +87,6 @@ type order_params =
   mutable mcw_val : int;
   mutable mincons : bool;
   mutable maxcons : bool;
-  mutable adm : bool;
   mutable ac_w : bool;
   mutable strict_equal : bool;
   mutable base_ty : base_ty;
@@ -142,7 +141,6 @@ let order_default =
   mcw_val = 0;
   mincons = false;
   maxcons = false;
-  adm = false;
   ac_w = true;
   strict_equal = false;
   collapse = false;
@@ -206,18 +204,6 @@ let name_order p =
       algebra
     else
       "POLO(" ^ algebra ^ ")"
-  else if p.adm then
-    if p.mcw_val = 0 || p.max_mode <> MAX_none then
-      prec ^ "GKBO" ^ status ^ "(" ^ algebra ^ ")"
-    else if p.sc_mode = W_none || p.sc_mode = W_bool && p.dp then
-      prec ^ "KBO" ^ status
-    else
-      prec ^ "PKBO" ^ (
-        match p.sc_mode with
-        | W_quad -> "q"
-        | W_bool -> "b"
-        | _ -> ""
-      ) ^ status
   else
     prec ^ "WPO" ^ status ^ "(" ^ algebra ^ ")"
 
@@ -518,9 +504,6 @@ while !i < argc do
       end;
     | "P", None -> p.prec_mode <- PREC_none;
 
-    | "-adm", None -> p.adm <- true;
-    | "-Adm", None -> p.adm <- false;
-
     | "r", None -> p.refer_w <- true;
     | "R", None -> p.refer_w <- false;
 
@@ -653,17 +636,6 @@ while !i < argc do
         ext_mset = true;
         max_mode = MAX_all;
         sp_mode = W_none;
-        status_mode = S_total;
-      };
-    | "KBO" ->
-      default := false;
-      register_order
-      {
-        order_default with
-        ext_lex = true;
-        w_mode = W_num;
-        mcw_val = 1;
-        adm = true;
         status_mode = S_total;
       };
     | "POLO" ->

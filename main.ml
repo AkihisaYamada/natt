@@ -424,7 +424,7 @@ object (x)
     | _ ->
       Array.iter
         (fun p ->
-          if not p.remove_all && nonmonotone p then
+          if nonmonotone p then
             err "Rule removal processor must be monotone";
         ) params.orders_removal;
       let ans = prove_termination trs in
