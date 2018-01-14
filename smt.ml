@@ -16,6 +16,7 @@ class virtual ['e,'d] base =
     method virtual new_variable : name -> ty -> 'e
     method virtual temp_variable : ty -> 'e
     method virtual refer : ty -> 'e -> 'e
+    method add_variable_base v = x#add_variable v base_ty
     method refer_base e = x#refer base_ty e
     method virtual expand : 'e -> 'e
   end;;
@@ -879,7 +880,7 @@ and subcontext =
       ForAll(declarations,assertion =>^ e)
   end
 
-class virtual solver_frame =
+class virtual solver =
   object
     inherit context
     method virtual init : unit
@@ -1006,7 +1007,7 @@ let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 class virtual smt_lib_2_0 =
   object (x)
     inherit Io.t
-    inherit solver_frame
+    inherit solver
     inherit sexp_printer
     inherit parser
     inherit Proc.finalized (fun y -> y#exit)

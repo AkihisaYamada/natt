@@ -48,7 +48,7 @@ class processor =
     | TY_real -> Real
   in
   (* Matrix interpretations *)
-  let to_dim = intlist 1 p.w_dim in
+  let to_dim = int_list 1 p.w_dim in
   let makemat =
     if p.w_dim > 1 then
       fun f -> Mat(List.map (fun j -> List.map (fun k -> f j k) to_dim) to_dim)
@@ -280,33 +280,12 @@ class processor =
   let polo (vc1,e1) (vc2,e2) =
     smt_if (vc_cond vc1 vc2) (smt_order e1 e2) not_ordered
   in
+  let interpreter = new Weight.pol_interpreter p in
   let wo =
     if p.w_mode = W_none then
       fun _ _ -> weakly_ordered
     else
-      let rec sub2 ge gt ws1 w2 =
-        if gt = LB true then (gt,gt)
-        else
-          match ws1 with
-          | [] -> (ge,gt)
-          | w1::ws1 ->
-            let (curr_ge,curr_gt) = split (polo w1 w2) solver in
-            sub2 (ge |^ curr_ge) (gt |^ curr_gt) ws1 w2
-      in
-      let rec sub ge gt ws1 ws2 =
-        if ge = LB false then not_ordered
-        else
-          match ws2 with
-          | [] ->
-            Cons(ge,gt)
-          | w2::ws2 ->
-            let (curr_ge,curr_gt) = sub2 (LB false) (LB false) ws1 w2 in
-            sub (ge &^ curr_ge) (gt &^ curr_gt) ws1 ws2
-      in
-      fun ws1 ws2 ->
-      match ws1, ws2 with
-      | [w1], [w2] -> polo w1 w2
-      | _ -> sub (LB true) (LB true) ws1 ws2
+      Weight.order solver p.w_dim
   in
 
 (*** Maximum constant ***)
@@ -613,11 +592,8 @@ class processor =
 (*** preparing for function symbols ***)
   let add_symbol fname (finfo:wpo_sym) =
     let n = finfo#base#arity in
-    let to_n = intlist 1 n in
+    let to_n = int_list 1 n in
 
-    add_weight fname finfo;
-
-    add_subterm_coef fname finfo;
     add_subterm_penalty fname finfo;
 
     add_argfilt fname finfo;
@@ -1239,7 +1215,7 @@ class processor =
 
 object (x)
 
-  inherit Wpo_printer.t p solver sigma mcw
+  inherit Wpo_printer.t p solver sigma interpreter mcw
 
   val mutable initialized = false
   val mutable use_scope = p.use_scope
@@ -1253,6 +1229,14 @@ object (x)
   method init current_usables dps =
     initialized <- true;
     debug (puts " Initializing.");
+    solver#set_logic
+    ( "QF_" ^
+      (if p.sc_mode = W_num then "N" else "L") ^
+      (if weight_ty = Real then "R" else "I") ^
+      "A"
+    );
+
+    interpreter#init solver trs;
 
     if p.use_scope_ratio > 0 then begin
       let rules_size = List.length current_usables in
@@ -1352,13 +1336,6 @@ object (x)
     set_max p.max_mode !dplist;
     debug2 (puts " }" << endl);
 
-    solver#set_logic
-    ( "QF_" ^
-      (if p.sc_mode = W_num then "N" else "L") ^
-      (if weight_ty = Real then "R" else "I") ^
-      "A"
-    );
-
     begin
       match p.mcw_mode with
       | MCW_num  -> solver#add_variable mcw_v weight_ty;
@@ -1439,8 +1416,8 @@ object (x)
       Hashtbl.add rule_flag_table i ();
       let rule = trs#find_rule i in
       debug2 (puts "  Initializing rule " << put_int i << endl);
-      let (WT(_,_,lw) as la) = annote rule#l in
-      let (WT(_,_,rw) as ra) = annote rule#r in
+      let (WT(_,_,lw) as la) = interpreter#annotate solver rule#l in
+      let (WT(_,_,rw) as ra) = interpreter#annotate solver rule#r in
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion
@@ -1482,7 +1459,7 @@ object (x)
       Hashtbl.add dp_flag_table i ();
       debug2 (puts "    initializing DP #" << put_int i << endl);
       let dp = dg#find_dp i in
-      let (ge,gt) = split (frame (annote dp#l) (annote dp#r)) solver in
+      let (ge,gt) = split (frame (interpreter#annotate solver dp#l) (interpreter#annotate solver dp#r)) solver in
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)

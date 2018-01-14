@@ -9,7 +9,7 @@ open Wpo_info
 
 (*** Printing proofs ***)
 
-class t p solver sigma mcw =
+class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
   let status_is_used =
     p.ext_mset && p.ext_lex ||
     p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
@@ -42,92 +42,9 @@ class t p solver sigma mcw =
         done;
         pr#puts rbr;
       in
-      let pr_exp_append =
-        function
-        | Neg exp -> pr#puts " - "; pr_exp exp;
-        | exp -> pr#puts " + "; pr_exp exp;
-      in
       let pr_interpret finfo =
         pr#puts "w: ";
-        let n = finfo#base#arity in
-        let sc =
-          if finfo#base#ty = Fun then finfo#subterm_coef
-          else (fun v _ -> v) (finfo#subterm_coef 1)
-        in
-        let init = ref true in
-        let pr_sum () =
-          for i = 1 to n do
-            let coef = solver#get_value (sc i) in
-            if not (is_zero coef) then begin
-              let coef =
-                match coef with
-                | Neg coef -> pr#puts (if !init then "-" else " - "); coef
-                | _ -> if not !init then pr#puts " + "; coef
-              in
-              if not (is_one coef) then begin
-                pr_exp coef;
-                pr#puts " * ";
-              end;
-              pr#puts "x";
-              pr#put_int i;
-              init := false;
-            end;
-          done;
-          let w = solver#get_value finfo#weight in
-          if !init then begin
-            pr_exp w;
-          end else if not (is_zero w) then begin
-            pr_exp_append w;
-          end;
-        in
-        if finfo#max then begin
-          let usemax = not (solver#get_bool finfo#collapse) in
-          for i = 1 to n do
-            let pen = solver#get_value (finfo#subterm_penalty i) in
-            if solver#get_bool (finfo#maxfilt i) then begin
-              if !init then begin
-                if usemax then pr#puts "max(";
-              end else begin
-                pr#puts ", ";
-              end;
-              pr#puts "x"; pr#put_int i;
-              if not (is_zero pen) then begin
-                match pen with
-                | Neg pen -> pr#puts " - "; pr_exp pen;
-                | _ -> pr#puts " + "; pr_exp pen;
-              end;
-              init := false;
-            end;
-          done;
-          if !init then begin
-            if finfo#sum then begin
-              pr_sum ();
-            end else begin
-              pr_exp mcw;
-            end;
-          end else begin
-            if finfo#sum then begin
-              pr#puts ", ";
-              init := true;
-              pr_sum ();
-            end;
-            if p.w_neg then begin
-              pr#puts ", ";
-              pr_exp mcw;
-            end;
-            if usemax then begin
-              pr#puts ")";
-            end;
-          end;
-        end else if p.w_neg && not (solver#get_bool finfo#is_const) then begin
-          pr#puts "max(";
-          pr_sum ();
-          pr#puts ", ";
-          pr_exp mcw;
-          pr#puts ")";
-        end else begin
-          pr_sum ();
-        end
+        interpreter#output_sym solver (pr:>#Io.printer) finfo#base finfo#base#arity;
       in
       let pr_prec finfo =
         pr#puts "p: ";
@@ -135,7 +52,7 @@ class t p solver sigma mcw =
       in
       let pr_symbol fname (finfo:wpo_sym) =
         pr#puts "      ";
-        finfo#base#output_pad 2 (pr:>Io.outputter);
+        finfo#base#output (pr:>Io.outputter);
         if status_is_used then begin
           pr#puts "\t";
           pr_perm finfo;

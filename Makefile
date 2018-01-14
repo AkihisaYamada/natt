@@ -38,6 +38,7 @@ OCAML_SRCS=\
 	estimator.ml \
 	dp.ml \
 	app.ml \
+	weight.ml \
 	wpo_info.ml \
 	wpo_printer.ml \
 	wpo.ml \
@@ -57,6 +58,7 @@ OCAML_CMXAS=$(OCAML_CMAS:%.cma=%.cmxa)
 
 ## If you need a statically linked binary
 #OCAMLFLAGS= -cclib '-static'
+OCAMLFLAGS+= -g
 
 all: $(TARG_OPT)
 

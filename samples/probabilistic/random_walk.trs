@@ -1,0 +1,4 @@
+(VAR x)
+(RULES
+	s(x) -> s(s(x)) || x
+)

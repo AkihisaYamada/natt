@@ -1,6 +1,6 @@
 #!/bin/sh
 
-if which gmake
+if which gmake 2> /dev/null
 then
 	make=gmake
 else
