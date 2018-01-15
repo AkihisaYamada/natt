@@ -76,8 +76,6 @@ class processor =
     try Hashtbl.find sigma name with  _ -> raise (Internal name)
   in
   let lookup f = lookup_name f#name in
-  let nest_map = ref Mset.empty in
-  let nest fname = Mset.count fname !nest_map in
 
 (*** Weights ***)
   let add_number w_mode =
@@ -211,7 +209,7 @@ class processor =
       match finfo#base#ty with
       | Th "C" ->
         if p.Params.max_poly &&
-          (p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
+          (p.max_poly_nest = 0 || trs#nest_of fname <= p.max_poly_nest)
         then begin
           finfo#set_subterm_penalty (k_comb (makemat (sub ("sp_" ^ fname))));
           finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
@@ -222,7 +220,7 @@ class processor =
         end;
       | Th "A" | Th "AC" ->
         if p.Params.max_poly &&
-          (p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
+          (p.max_poly_nest = 0 || trs#nest_of fname <= p.max_poly_nest)
         then begin
           finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
           use_maxpol ();
@@ -239,7 +237,7 @@ class processor =
         done;
         finfo#set_subterm_penalty (fun i -> array.(i-1));
         if p.Params.max_poly &&
-          (p.max_poly_nest = 0 || nest fname <= p.max_poly_nest)
+          (p.max_poly_nest = 0 || trs#nest_of fname <= p.max_poly_nest)
         then begin
           let vmf = (if n > 1 then supply_index else k_comb) ("maxfilt_" ^ fname) in
           let emf i = EV(vmf i) in
@@ -545,7 +543,7 @@ class processor =
     in
     fun fname finfo to_n ->
       finfo#set_status_mode
-        (if p.status_nest > 0 && nest fname > p.status_nest then S_empty
+        (if p.status_nest > 0 && trs#nest_of fname > p.status_nest then S_empty
          else p.Params.status_mode);
       match finfo#base#ty with
       | Th th ->
@@ -1262,20 +1260,7 @@ object (x)
 
     (* count nesting *)
     if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
-      let rec nest_term (Node(f,ss)) =
-        if f#is_var then
-          Mset.empty
-        else
-          Mset.union (Mset.singleton f#name)
-            (List.fold_left Mset.join Mset.empty (List.map nest_term ss))
-      in
-      let nest_rule rule = Mset.join (nest_term rule#l) (nest_term rule#r) in
-      let nest_rules =
-        fun rules ->
-          List.fold_left Mset.join Mset.empty
-            (List.map (fun (_,rule) -> nest_rule rule) rules)
-      in
-      nest_map := Mset.join (nest_rules !usables) (nest_rules !dplist)
+      trs#count_nest;
     end;
 
     if p.prec_mode <> PREC_none then
@@ -1287,7 +1272,7 @@ object (x)
       let set_max_finfo fname finfo =
         not finfo#max &&
         finfo#base#arity > 1 &&
-        (p.max_nest = 0 || nest fname <= p.max_nest) &&
+        (p.max_nest = 0 || trs#nest_of fname <= p.max_nest) &&
         (
           debug2 (putc ' ' << put_name fname);
           finfo#set_max true;

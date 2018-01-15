@@ -129,7 +129,7 @@ class virtual interpreter p =
   in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> unit
-    method virtual private encode_sym : 'b. (#sym as 'b) -> int -> (int * int) wsym term array
+    method virtual private encode_sym : 'b. (#sym as 'b) -> (int * int) wsym term array
     method interpret : 'b. (#sym as 'b) -> w_t list -> w_t =
       fun f wtsas ->
       let subst = Array.of_list wtsas in
@@ -144,7 +144,7 @@ class virtual interpreter p =
       in
       if f#is_var then
         Array.map (fun i -> [wt_bvar (f#name ^ coord i)]) (int_array 0 (p.w_dim - 1))
-      else Array.map sub (x#encode_sym f (List.length wtsas))
+      else Array.map sub (x#encode_sym f)
 
     method annotate : 't 'b. (#context as 't) -> (#sym as 'b) term -> ('b,w_t) wterm =
       fun solver (Node(f,ss)) ->
@@ -162,7 +162,7 @@ class virtual interpreter p =
           pr#put_int (i+1);
           pr#puts ": ";
           output_wexp solver pr wexp;
-        ) (x#encode_sym f n);
+        ) (x#encode_sym f);
   end
 
 let inner_prod xs ys = sum (List.map2 (fun x y -> prod [x;y]) xs ys)
@@ -183,36 +183,43 @@ class pol_interpreter p =
   in
   object (x)
     inherit interpreter p
+    val table = Hashtbl.create 64
     method init : 't. (#context as 't) -> trs -> unit =
       fun solver trs ->
         trs#iter_syms (fun f ->
-          if f#is_fun then
-            for i = 1 to p.w_dim do
-              let w = ("w_" ^ f#name ^ coord i) in
+          if f#is_fun then begin
+          let w = "w_" ^ f#name in
+          let c = "c_" ^ f#name in
+          for i = 1 to p.w_dim do
+              let w_i = w ^ coord i in
               add_number p.w_mode solver w;
               solver#add_assertion (ref_weight w >=^ LI 0);
               for k = 1 to f#arity do
+                let c_ki = c ^ mk_index k ^ coord i in
                 for j = 1 to p.w_dim do
-                  let c = "c_" ^ f#name ^ mk_index k ^ coord i ^ coord j in
-                  add_number p.sc_mode solver c;
-                  bind_upper solver (ref_coeff c);
+                  let c_kij = c_ki ^ coord j in
+                  add_number p.sc_mode solver c_kij;
+                  bind_upper solver (ref_coeff c_kij);
                   if not p.dp && i = 1 then begin
-                    solver#add_assertion (ref_coeff c >=^ LI 1);
+                    solver#add_assertion (ref_coeff c_kij >=^ LI 1);
                   end
                 done
               done
-            done
+            done;
+            Hashtbl.add table f#name (
+              Array.map (fun i ->
+                sum (
+                  smt (ref_weight (w ^ coord i)) ::
+                  List.map (fun k ->
+                    inner_prod (coeff_row (c ^ mk_index k ^ coord i)) (bvar_vec (k-1))
+                  ) (int_list 1 f#arity)
+                )
+              ) (int_array 1 p.w_dim)
+            )
+          end
         )
     method private encode_sym : 'b. (#sym as 'b) -> _ =
-      fun f n ->
-        Array.map (fun i ->
-          sum (
-            smt (ref_weight ("w_" ^ f#name ^ coord i)) ::
-            List.map (fun k ->
-              inner_prod (coeff_row ("c_" ^ f#name ^ mk_index k ^ coord i)) (bvar_vec (k-1))
-            ) (int_list 1 n)
-          )
-        ) (int_array 1 p.w_dim)
-  end
+      fun f -> Hashtbl.find table f#name
+ end
 
 

@@ -271,6 +271,25 @@ class trs =
       close_in c
     method read_stdin =
       List.iter x#add_decl (Read.check_trs "stdin" stdin);
+
+(* counting nests *)
+    val mutable nest_map = Mset.empty
+    method count_nest = 
+      let rec nest_term (Node(f,ss)) =
+        if f#is_var then
+          Mset.empty
+        else
+          Mset.union (Mset.singleton f#name)
+            (List.fold_left Mset.join Mset.empty (List.map nest_term ss))
+      in
+      let nest_rule rule = Mset.join (nest_term rule#l) (nest_term rule#r) in
+      nest_map <-
+        x#fold_rules
+          (fun i rule acc -> Mset.join (nest_rule rule) acc)
+          Mset.empty
+    method nest_of : string -> int
+    = fun fname -> Mset.count fname nest_map
+
 (* outputs *)
     method output_ths : 'a. (#Io.printer as 'a) -> unit = fun pr ->
       let iterer_th th =
