@@ -25,11 +25,9 @@ let delete_common =
 
 class processor =
   (* SMT variables *)
-  let mcw_v = "w" in
   let usable_v i = "u" ^ string_of_int i in
   let usable_w_v i = "uw" ^ string_of_int i in
   let usable_p_v i = "uP" ^ string_of_int i in
-  let maxcons_v = "maxcons" in
   let gt_v i = "gt#" ^ string_of_int i in
   let ge_v i = "ge#" ^ string_of_int i in
   let gt_r_v i = "gt" ^ string_of_int i in
@@ -90,204 +88,15 @@ class processor =
       makebin (solver#new_variable (v ^ "a") Bool) (solver#new_variable (v ^ "b") Bool)
     | W_none -> fun _ -> LI 0
   in
-  (* Minimum weight *)
-  let mcw_val = LI p.mcw_val in
-  let mcw =
-    match p.mcw_mode with
-    | MCW_num -> EV mcw_v
-    | MCW_bool  -> PB(EV mcw_v)
-    | MCW_const -> mcw_val
-  in
-  (* constant part *)
-  let add_weight =
-    let bind_lower =
-      if p.w_neg then
-        if p.w_max = 0 then fun _ _ -> ()
-        else fun _ fw -> solver#add_assertion (fw >=^ LI (- p.w_max))
-      else fun finfo fw -> solver#add_assertion (fw >=^ if finfo#base#arity = 0 then mcw else LI 0)
-    in
-    let bind_upper =
-      if p.w_max = 0 then fun _ _ -> ()
-      else fun _ fw -> solver#add_assertion (fw <=^ LI p.w_max)
-    in
-    let sub finfo v i =
-      let fw = add_number p.w_mode (v i) in
-      bind_lower finfo fw;
-      bind_upper finfo fw;
-      fw
-    in
-    fun fname finfo ->
-      if not p.ac_w && finfo#base#is_associative then begin
-        finfo#set_weight (LI 0)
-      end else begin
-        let v =
-          if p.w_dim > 1 then supply_index ("w_" ^ fname)
-          else k_comb ("w_" ^ fname)
-        in
-        finfo#set_weight (makevec (sub finfo v));
-      end;
-  in
-
-  (* Coefficients *)
-  let add_subterm_coef =
-    match p.sc_mode with
-    | W_none -> fun fname finfo ->
-      finfo#set_subterm_coef (k_comb (LI (if not p.dp then 1 else 0)))
-    | _ ->
-      let coef_default v j k =
-        let coef = add_number p.sc_mode (supply_matrix_index v j k) in
-        (* Additional constraints *)
-        if not p.dp && j = 1 && k = 1 then
-          (* if not in DP mode, assert top left element >= 1 *)
-          if p.sc_mode = W_num then (
-            solver#add_assertion (coef >=^ LI 1);
-            if p.sc_max > 0 then
-              solver#add_assertion (coef <=^ LI (p.sc_max + 1));
-            coef
-          ) else (* Just add 1 *)
-            coef +^ LI 1
-        else (
-          solver#add_assertion (coef >=^ LI 0);
-          if p.sc_max > 0 then
-            solver#add_assertion (coef <=^ LI p.sc_max);
-          coef
-        )
-      in
-      let coef =
-        match p.mat_mode with
-        | MAT_full  -> fun _ -> coef_default
-        | MAT_upper -> fun finfo v j k ->
-          if finfo#base#is_defined || j < k then
-            coef_default v j k
-          else if j = k then
-            if j = 1 then LI 1
-            else add_number W_bool (supply_matrix_index v j k)
-          else LI 0
-        | MAT_lower -> fun finfo v j k ->
-          if finfo#base#is_defined || j > k then
-            coef_default v j k
-          else if j = k then
-            if j = 1 then LI 1
-            else add_number W_bool (supply_matrix_index v j k)
-          else LI 0
-      in
-      fun fname finfo ->
-        match finfo#base#ty with
-        | Th "C" ->
-          finfo#set_subterm_coef (k_comb (makemat (coef finfo ("sc_" ^ fname))));
-        | Th "A" | Th "AC" ->
-          let coef =
-            if not p.dp || p.sc_mode = W_none then
-              LI 1
-            else
-              PB(solver#new_variable ("sc_" ^ fname) Bool)
-          in
-          finfo#set_subterm_coef (k_comb coef)
-        | _ ->
-          let n = finfo#base#arity in
-          let v = (if n > 1 then supply_index else k_comb) ("sc_" ^ fname) in
-          let array = Array.make n (LI 0) in
-          for i = 1 to n do
-            array.(i-1) <- makemat (coef finfo (v i));
-          done;
-          finfo#set_subterm_coef (fun i -> array.(i-1));
-    in
-
-  (* Max-polynomial *)
-  let add_subterm_penalty fname finfo =
-    if finfo#max then begin
-      let sub v j k =
-        let pen = add_number p.sp_mode (supply_matrix_index v j k) in
-        if not p.w_neg then solver#add_assertion (pen >=^ LI 0);
-        if p.w_max > 0 then solver#add_assertion (pen <=^ LI p.w_max);
-        pen
-      in
-      let use_maxpol () =
-        finfo#set_sum true;
-        debug2 (puts "    using maxpol for " << puts fname << endl);
-      in
-      match finfo#base#ty with
-      | Th "C" ->
-        if p.Params.max_poly &&
-          (p.max_poly_nest = 0 || trs#nest_of fname <= p.max_poly_nest)
-        then begin
-          finfo#set_subterm_penalty (k_comb (makemat (sub ("sp_" ^ fname))));
-          finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
-          use_maxpol ();
-        end else begin
-          finfo#set_sum false;
-          finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
-        end;
-      | Th "A" | Th "AC" ->
-        if p.Params.max_poly &&
-          (p.max_poly_nest = 0 || trs#nest_of fname <= p.max_poly_nest)
-        then begin
-          finfo#set_maxfilt (k_comb (solver#new_variable ("maxfilt_" ^ fname) Bool));
-          use_maxpol ();
-        end else begin
-          finfo#set_sum false;
-          finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
-        end;
-      | _ ->
-        let n = finfo#base#arity in
-        let vsp = (if n > 1 then supply_index else k_comb) ("sp_" ^ fname) in
-        let array = Array.make n (LI 0) in
-        for i = 1 to n do
-          array.(i-1) <- makemat (sub (vsp i));
-        done;
-        finfo#set_subterm_penalty (fun i -> array.(i-1));
-        if p.Params.max_poly &&
-          (p.max_poly_nest = 0 || trs#nest_of fname <= p.max_poly_nest)
-        then begin
-          let vmf = (if n > 1 then supply_index else k_comb) ("maxfilt_" ^ fname) in
-          let emf i = EV(vmf i) in
-          for i = 1 to n do
-            solver#add_variable (vmf i) Bool;
-          done;
-          use_maxpol ();
-          finfo#set_maxfilt emf;
-        end else begin
-          finfo#set_sum false;
-          finfo#set_maxfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
-        end;
-    end;
-  in
-
-  (* accumulation of coeficient for term variables *)
-  let vc_lookup vc vname =
-    try Hashtbl.find vc vname with Not_found -> LI 0
-  in
-  let vc_cond vc1 vc2 =
-    let comp vname value e = (vc_lookup vc1 vname >=^ value) &^ e in
-    Hashtbl.fold comp vc2 (LB true)
-  in
-  let vc_merge_one vc coef vname value =
-    Hashtbl.replace vc vname (vc_lookup vc vname +^ (coef *^ value))
-  in
-  let vc_mul_add vc1 coef vc2 =
-    Hashtbl.iter (vc_merge_one vc1 coef) vc2
-  in
-  let vc_mul vc coef =
-    Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (coef *^ value)) vc
-  in
-  let vc_refer context vc =
-    Hashtbl.iter (fun vname value -> Hashtbl.replace vc vname (context#refer_base value)) vc
-  in
 
   (* weight order *)
-  let polo (vc1,e1) (vc2,e2) =
-    smt_if (vc_cond vc1 vc2) (smt_order e1 e2) not_ordered
-  in
   let interpreter = new Weight.pol_interpreter p in
   let wo =
     if p.w_mode = W_none then
       fun _ _ -> weakly_ordered
     else
-      Weight.order solver p.w_dim
+      Weight.order p.w_dim
   in
-
-(*** Maximum constant ***)
-  let maxcons = if p.maxcons then EV(maxcons_v) else LB false in
 
 (*** Precedence ***)
   let pmin = LI 0 in
@@ -503,18 +312,16 @@ class processor =
          else p.Params.status_mode);
       match finfo#base#ty with
       | Th th ->
-        if (p.max_mode <> MAX_all || p.sp_mode <> W_none) &&
-          (th = "A" || th = "AC") &&
-          finfo#max
-        then begin
-          (* in this case, we cannot ensure monotonicity... *)
-          finfo#set_status_mode S_empty;
-        end;
         if th = "C" || th = "AC" then begin
-          sub_c fname finfo;
+          if p.max_mode <> MAX_all || p.sp_mode <> W_none then begin
+            (* in this case, we cannot ensure monotonicity... *)
+            finfo#set_status_mode S_empty;
+          end else begin
+            sub_c fname finfo;
+          end
         end else begin
           sub_lex fname finfo finfo#base#arity to_n;
-        end;
+        end
       | _ -> sub_lex fname finfo finfo#base#arity to_n;
   in
 
@@ -549,8 +356,6 @@ class processor =
     let n = finfo#base#arity in
     let to_n = int_list 1 n in
 
-    add_subterm_penalty fname finfo;
-
     add_collapse finfo to_n;
 
     add_prec fname finfo;
@@ -561,36 +366,22 @@ class processor =
     add_mset_status fname finfo;
 
     let col = finfo#collapse in
-    let fw = finfo#weight in
     let fp = finfo#prec in
-
-    (* if $\pi(f)$ is collapsing, then $w(f) = 0$ *)
-    solver#add_assertion (col =>^ (fw =^ LI 0));
 
     for i = 1 to n do
       let pi = finfo#permed i in
-      let coef = finfo#subterm_coef i in
-      let maxf = finfo#maxfilt i in
-      let pen = finfo#subterm_penalty i in
-
-      (* permed position must be weakly monotone *)
-      solver#add_assertion (smt_not pi |^ (coef >=^ LI 1) |^ maxf);
-
-      (* permed position must be a simple position *)
-      if p.w_neg then begin
-        solver#add_assertion (pi =>^ (fw >=^ LI 0));
-        solver#add_assertion (pi =>^ (pen >=^ LI 0));
-      end;
-
+      (* permed position must be weakly simple *)
+      solver#add_assertion (smt_not pi |^ interpreter#weak_simple_at finfo#base i);
     done;
+
     if n > 0 && p.dp && p.sc_mode <> W_none &&
-      (p.w_neg || p.maxcons || p.mincons || p.mcw_val > 0)
+      (p.w_neg || p.mincons)
     then begin
       let v = "const_" ^ fname in
       solver#add_definition v Bool
         (smt_for_all (interpreter#const_at finfo#base) to_n);
       finfo#set_is_const (EV v);
-      if finfo#status_mode = S_partial && (p.mincons || p.maxcons) then begin
+      if finfo#status_mode = S_partial && p.mincons then begin
         let v = "qconst_" ^ fname in
         solver#add_definition v Bool
           (smt_not col &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
@@ -600,167 +391,10 @@ class processor =
       end;
     end;
 
-    if p.maxcons then begin
-      solver#add_assertion (fp <=^ !pmax);
-    end;
-
     let qc = finfo#is_quasi_const in
     if p.mincons then begin
       solver#add_assertion (qc =>^ (fp >=^ pmin));
     end;
-    if p.maxcons then begin
-      (* if maxcons is true, then only quasi-constant can have the maximum precedence *)
-      solver#add_assertion (smt_not maxcons |^ qc |^ (fp <^ !pmax));
-      let strictly_simple =
-        if finfo#max then
-          smt_for_all (fun i -> finfo#subterm_penalty i >^ LI 0) to_n
-        else
-          fw >^ LI 0
-      in
-      solver#add_assertion (smt_not maxcons |^ qc |^ col |^ strictly_simple);
-    end;
-  in
-
-(* for weight computation *)
-  let refer_w =
-    if p.refer_w then
-      solver#refer_base
-    else
-      fun x -> x
-  in
-  let emptytbl = Hashtbl.create 0 in
-  let weight_summand fty finfo =
-    let rec sub_ac coef vc w i e =
-      function
-      | [] -> (vc, w +^ coef *^ (e +^ (LI i *^ w)))
-      | (vc',e')::vws ->
-        vc_mul_add vc coef vc';
-        sub_ac coef vc w (i + 1) (e +^ e') vws
-    in
-    let rec sub_c coef vc w e =
-      function
-      | [] -> (vc, w +^ (coef *^ e))
-      | (vc',e')::vws ->
-        vc_mul_add vc coef vc';
-        sub_c coef vc w (e +^ e') vws
-    in
-    let rec sub_lex coef i vc e =
-      function
-      | [] -> (vc,e)
-      | (vc',e')::vws ->
-        let c = coef i in
-        vc_mul_add vc c vc';
-        sub_lex coef (i + 1) vc (e +^ (c *^ e')) vws
-    in
-    let sub =
-      function
-      | []  -> (emptytbl, finfo#weight)
-      | vces  ->
-        let vc = Hashtbl.create 4 in
-        let (vc,e) =
-          match fty with
-          | Th "AC"
-          | Th "A"  -> sub_ac (finfo#subterm_coef 1) vc finfo#weight (-2) (LI 0) vces
-          | Th "C"  -> sub_c  (finfo#subterm_coef 1) vc finfo#weight (LI 0) vces
-          | _       -> sub_lex (finfo#subterm_coef) 1 vc finfo#weight vces
-        in
-        vc_refer solver vc;
-        (vc, refer_w e)
-    in
-    List.map sub
-  in
-  let weight_var f argws =
-    if argws <> [] then raise (Internal "higher order variable");
-    let vc = Hashtbl.create 1 in
-    vc_merge_one vc (LI 1) f#name (LI 1);
-    [(vc,mcw)]
-  in
-  let weight_max =
-    let folder mf sp ret (vc,e) =
-      if mf = LB true then
-        (vc, solver#refer_base (sp +^ e))::ret
-      else
-        let vc' = Hashtbl.copy vc in
-        vc_mul vc' (smt_pb mf);
-        vc_refer solver vc';
-        (vc', solver#refer_base (smt_pb mf *^ (sp +^ e)))::ret
-    in
-    let rec sub_fun finfo i ret =
-      function
-      | []      -> ret
-      | ws::wss ->
-        let mf = finfo#maxfilt i in
-        let sp = finfo#subterm_penalty i in
-        sub_fun finfo (i + 1) (List.fold_left (folder mf sp) ret ws) wss
-    in
-    let sub_c finfo =
-      let mf = finfo#maxfilt 1 in
-      let sp = finfo#subterm_penalty 1 in
-      let rec sub ret =
-        function
-        | []      -> ret
-        | ws::wss -> sub (List.fold_left (folder mf sp) ret ws) wss
-      in
-      sub
-    in
-    let sub_ac finfo =
-      let mf = finfo#maxfilt 1 in
-      let rec sub ret =
-        function
-        | []      -> ret
-        | ws::wss -> sub (List.fold_left (folder mf (LI 0)) ret ws) wss
-      in
-      sub
-    in
-    match p.max_mode with
-    | MAX_none ->
-      if p.w_neg then
-        fun f argws ->
-          if f#is_var then weight_var f argws
-          else
-            (* make it lower bounded by mcw *)
-            let sum = weight_summand f#ty (lookup f) (list_product argws) in
-            if argws = [] then sum else (emptytbl,mcw)::sum
-      else
-        fun f argws ->
-          if f#is_var then weight_var f argws
-          else weight_summand f#ty (lookup f) (list_product argws)
-    | _ ->
-      fun f argws ->
-        if f#is_var then weight_var f argws
-        else
-          let finfo = lookup f in
-          if finfo#max then
-            let init =
-              if finfo#sum then
-                weight_summand f#ty finfo (list_product argws)
-              else if p.w_neg then
-                (* make it lower bounded by mcw *)
-                [emptytbl,mcw]
-              else []
-            in
-            match f#ty with
-            | Th "C" -> sub_c finfo init argws
-            | Th "AC" -> sub_ac finfo init argws
-            | _ -> sub_fun finfo 1 init argws
-          else
-            let sum = weight_summand f#ty finfo (list_product argws) in
-            if p.w_neg && argws <> [] then
-              (* make it lower bounded by mcw *)
-              (emptytbl,mcw)::sum
-            else sum
-  in
-  (* annote terms with weights *)
-  let rec annote (Node(f,ss)) =
-    let ss =
-      match f#ty with
-      | Th "AC" -> local_flat f ss
-      | _ -> ss
-    in
-    let args = List.map annote ss in
-    let argws = List.map get_weight args in
-    let ws = weight_max f argws in
-    WT(f, args, ws)
   in
 
 (*** argument comparison ***)
@@ -768,18 +402,6 @@ class processor =
     match p.Params.status_mode with
     | S_empty ->
       fun _ _ _ _ _ -> weakly_ordered
-    | S_none ->
-      if p.dp && p.sc_mode <> W_none then
-        if p.prec_mode = PREC_quasi then
-          raise (No_support "quasi-precedence + 0-coefficient + no status")
-        else
-          fun finfo ginfo order ss ts ->
-            if finfo == ginfo then
-              filtered_lex_extension finfo#permed order ss ts
-            else not_ordered
-      else
-        (* simple lexicographic extension is used. *)
-        fun _ _ -> lex_extension
     | _ ->
       if p.prec_mode = PREC_quasi then
         fun finfo ginfo ->
@@ -1029,15 +651,6 @@ class processor =
     in
     if p.Params.status_mode = S_empty then
       fun _ _ _ _ -> Cons(LB false, LB false)
-    else if not p.collapse && p.mcw_val > 0 then
-      fun order finfo ss t ->
-        match ss with
-        | [s] -> order s t
-        | _ ->
-          if finfo#max then
-            sub 1 (LB false) (LB false) order finfo ss t
-          else
-            Cons(LB false, LB false)
     else
       sub 1 (LB false) (LB false)
   in
@@ -1062,15 +675,6 @@ class processor =
     in
     if p.Params.status_mode = S_empty then
       fun _ _ _ _ -> Cons(LB true, LB true)
-    else if not p.collapse && p.mcw_val > 0 then
-      fun order s ginfo ts ->
-        match ts with
-        | [t] -> order s t
-        | _ ->
-          if ginfo#max then
-            sub 1 (LB true) (LB true) order s ginfo ts
-          else
-            Cons(LB true, LB true)
     else
       sub 1 (LB true) (LB true)
   in
@@ -1079,12 +683,6 @@ class processor =
   let is_mincons =
     if p.mincons then
       fun finfo -> finfo#is_quasi_const &^ (finfo#prec =^ pmin)
-    else
-      fun _ -> LB false
-  in
-  let is_maxcons =
-    if p.maxcons then
-      fun finfo -> maxcons &^ finfo#is_quasi_const &^ (finfo#prec =^ !pmax)
     else
       fun _ -> LB false
   in
@@ -1127,7 +725,7 @@ class processor =
         if some_gt = LB true then
           strictly_ordered
         else if g#is_var then
-          Cons(some_ge |^ is_maxcons finfo, some_gt)
+          Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
           smt_split (order_all_args wpo s ginfo ts)
@@ -1158,7 +756,7 @@ class processor =
 
 object (x)
 
-  inherit Wpo_printer.t p solver sigma interpreter mcw
+  inherit Wpo_printer.t p solver sigma interpreter
 
   val mutable initialized = false
   val mutable use_scope = p.use_scope
@@ -1212,71 +810,6 @@ object (x)
       (* set max precedence *)
       pmax := LI (Hashtbl.length sigma);
 
-    (* choice of max_status *)
-    let set_max =
-      let set_max_finfo fname finfo =
-        not finfo#max &&
-        finfo#base#arity > 1 &&
-        (p.max_nest = 0 || trs#nest_of fname <= p.max_nest) &&
-        (
-          debug2 (putc ' ' << put_name fname);
-          finfo#set_max true;
-          true
-        )
-      in
-      function
-      | MAX_dup ->
-        let rec annote_vs (Node(f,ss)) =
-          let args = List.map annote_vs ss in
-          let argvss = List.map get_weight args in
-          let vs =
-            if f#is_var then [Mset.singleton f#name]
-            else if (lookup f)#max then
-              List.concat argvss
-            else
-              List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
-          in
-          WT(f,args,vs)
-        in
-        let vcond svss tvss =
-          List.for_all (fun tvs -> List.exists (Mset.subseteq tvs) svss) tvss
-        in
-        let rec sub (WT(f,ss,svss) as s) (WT(g,ts,tvss)) =
-          List.iter (sub s) ts;
-          if  not (vcond svss tvss) &&
-            set_max_finfo g#name (lookup g)
-          then raise Continue;
-        in
-        let annote_sub (_,lr) =
-          sub (annote_vs lr#l) (annote_vs lr#r);
-        in
-        let rec loop rulelist =
-          try List.iter annote_sub rulelist with Continue -> loop rulelist
-        in
-        loop
-      | MAX_all ->
-        fun _ ->
-          Hashtbl.iter (fun fname finfo -> ignore (set_max_finfo fname finfo)) sigma;
-      | _ ->
-        fun _ -> ();
-    in
-
-    debug2 (endl << puts "Max symbols: {");
-    set_max p.max_mode !usables;
-    set_max p.max_mode !dplist;
-    debug2 (puts " }" << endl);
-
-    begin
-      match p.mcw_mode with
-      | MCW_num  -> solver#add_variable mcw_v weight_ty;
-      | MCW_bool -> solver#add_variable mcw_v Bool;
-      | _ -> ();
-    end;
-    solver#add_assertion (mcw >=^ mcw_val);
-
-    if p.maxcons then
-      solver#add_variable maxcons_v Bool;
-
     Hashtbl.iter add_symbol sigma;
 
     if p.prec_mode = PREC_strict then begin
@@ -1317,26 +850,21 @@ object (x)
       Hashtbl.add prule_flag_table i ();
       let prule = trs#find_prule i in
       debug2 (puts "  Initializing probabilistic rule " << put_int i << endl);
-      match get_weight (annote prule#l) with
-      | [(vc,e)] ->
-        let coef = LI(prule#sum) in
-        let vc = Hashtbl.copy vc in
-        vc_mul vc coef;
-        let lw = (vc, coef *^ e) in
-        let folder (vc,e) coef r =
-          match get_weight (annote r) with
-          | [(vc',e')] -> vc_mul_add vc (LI coef) vc'; (vc, e +^ (LI coef *^ e'))
-          | _ -> raise (Internal "unsupported weight for probabilistic rule")
-        in
-        let rw = prule#fold_rs folder (Hashtbl.create 4, LI 0) in
-        let (ge,gt) = split (polo lw rw) solver in
-        if p.remove_all then begin
-          solver#add_assertion gt;
-        end else begin
-          solver#add_assertion (usable_p i =>^ ge);
-          solver#add_definition (gt_p_v i) Bool gt;
-        end;
-      | _ -> raise (Internal "unsupported weight for probabilistic rule")
+      let lw = get_weight (interpreter#annotate solver prule#l) in
+      let lw = Weight.smult (LI(prule#sum)) lw in
+      let folder acc coeff r =
+        let w = get_weight (interpreter#annotate solver r) in
+        let w = Weight.smult (LI coeff) w in
+        Weight.add acc w
+      in
+      let rw = prule#fold_rs folder (Array.create p.w_dim (Weight.ets_smt (LI 0))) in
+      let (ge,gt) = split (Weight.order p.w_dim lw rw) solver in
+      if p.remove_all then begin
+        solver#add_assertion gt;
+      end else begin
+        solver#add_assertion (usable_p i =>^ ge);
+        solver#add_definition (gt_p_v i) Bool gt;
+      end;
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);
 
@@ -1347,7 +875,9 @@ object (x)
       let rule = trs#find_rule i in
       debug2 (puts "  Initializing rule " << put_int i << endl);
       let (WT(_,_,lw) as la) = interpreter#annotate solver rule#l in
+debug2 (puts "." << flush);
       let (WT(_,_,rw) as ra) = interpreter#annotate solver rule#r in
+debug2 (puts "." << flush);
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion
@@ -1382,6 +912,7 @@ object (x)
         solver#add_assertion (usable i =>^ ge);
         solver#add_definition (gt_r_v i) Bool gt;
       end;
+      debug2 (puts "  ... initialized rule " << put_int i << endl);
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);
 

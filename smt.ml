@@ -222,9 +222,9 @@ class sexp_printer_wrap (base : #Io.printer) = object
   method pr_ds = raise (No_support "SMT")
 end;;
 
-let output_exp (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e
+let put_exp e (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e e
 
-let prerr_exp = output_exp Io.cerr
+let prerr_exp e = put_exp e Io.cerr
 
 
 let is_zero =

@@ -17,83 +17,117 @@ let sum ss = Node(Add,ss)
 let prod ss = Node(Mul,ss)
 let max ss = Node(Max,ss)
 
-let rec output_wexp (solver : #solver) (os : #printer) e =
-  match e with
-  | Node(Smt exp,[]) -> output_exp os (solver#get_value exp)
-  | Node(Add, e::es) ->
-    output_wexp solver os e;
-    List.iter (fun e -> os#puts " + "; output_wexp solver os e) es
-  | Node(Mul, e::es) ->
-    output_wexp solver os e;
-    List.iter (fun e -> os#puts " * "; output_wexp solver os e) es
-  | Node(Max, e::es) ->
-    os#puts "max {";
-    output_wexp solver os e;
-    List.iter (fun e -> os#puts ", "; output_wexp solver os e) es;
-    os#puts "}";
-  | Node(BVar (k,i), []) ->
-    os#puts "x";
-    os#put_int (k+1);
-    os#puts "_";
-    os#put_int (i+1)
-;;
+let punct_list elem punc (os : #printer) =
+  let rec sub = function
+    | [] -> ()
+    | x::xs -> punc os; elem x; sub xs
+  in
+  function
+  | [] -> ()
+  | x::xs -> elem x; sub xs
+
+let put_wexp_inner smt e (os : #printer) =
+  let rec sub =
+    function
+    | Node(Smt exp,[]) -> smt exp os
+    | Node(Add, es) -> punct_list sub (puts " + ") os es
+    | Node(Mul, es) -> punct_list sub (puts " * ") os es
+    | Node(Max, es) -> os#puts "max {"; punct_list sub (puts ", ") os es; os#puts "}";
+    | Node(BVar (k,i), []) ->
+      os#puts "x";
+      os#put_int (k+1);
+      os#puts "_";
+      os#put_int (i+1)
+  in
+  sub e
+
+let put_wexp e os = put_wexp_inner put_exp e os
+
+let eval_wexp solver = put_wexp_inner (fun exp -> put_exp (solver#get_value exp))
 
 (* Weight as a map from var list to exp *)
 
-let wt_find vs wt =
-  try StrListMap.find vs wt with Not_found -> LI 0
+let et_smt exp = StrListMap.singleton [] exp
 
-let wt_add = StrListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
+let et_bvar name = StrListMap.singleton [name] (LI 1)
 
-let wt_sum = List.fold_left wt_add StrListMap.empty
+let et_find vs et =
+  try StrListMap.find vs et with Not_found -> LI 0
 
-let wt_mul_one vs1 e1 wt2 =
+let et_add = StrListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
+
+let et_sum = List.fold_left et_add StrListMap.empty
+
+let et_mul_one vs1 e1 et2 =
   StrListMap.fold
     (fun vs2 e2 acc -> StrListMap.add (List.merge compare vs1 vs2) (e1 *^ e2) acc)
-    wt2
+    et2
     StrListMap.empty
 
-let wt_mul wt1 wt2 =
-   StrListMap.fold wt_mul_one wt1 wt2
+let et_mul wt1 wt2 =
+   StrListMap.fold et_mul_one wt1 wt2
 
-let wt_prod = List.fold_left wt_mul StrListMap.empty
+let et_prod = List.fold_left et_mul StrListMap.empty
 
-let order =
-  let ge_wt wt1 wt2 =
-    smt_for_all (fun (vs,e) -> wt_find vs wt1 >=^ e) (StrListMap.bindings wt2)
-  in
-  let order_wt solver wt1 wt2 =
-    let ge = solver#refer Bool (ge_wt wt1 wt2) in
-    (ge, ge &^ (wt_find [] wt1 >^ wt_find [] wt2))
-  in
-  let ge_wts wts1 wts2 =
-    smt_for_all (fun wt2 -> smt_exists (fun wt1 -> ge_wt wt1 wt2) wts1) wts2
-  in
-  let order_wts solver wts1 wts2 =
-    List.fold_left (fun (all_ge,all_gt) wt2 ->
-      let (ge,gt) =
-        List.fold_left (fun (ex_ge,ex_gt) wt1 ->
-          let (ge,gt) = order_wt solver wt1 wt2 in
-          (ex_ge |^ ge, ex_gt |^ gt)
-        )
-        (LB false, LB false)
-        wts1
-      in
-      (all_ge &^ ge, all_gt &^ gt)
-    )
-    (LB true, LB true)
-    wts2
-  in
-  fun solver dim wtsa1 wtsa2 ->
-    let (ge,gt) = order_wts solver wtsa1.(0) wtsa2.(0) in
+let et_ge et1 et2 =
+  smt_for_all (fun (vs,e) -> et_find vs et1 >=^ e) (StrListMap.bindings et2)
+
+let et_order solver et1 et2 =
+  let ge = solver#refer Bool (et_ge et1 et2) in
+  (ge, ge &^ (et_find [] et1 >^ et_find [] et2))
+
+(* Max are expanded as lists *)
+
+let ets_smt exp = [et_smt exp]
+
+let ets_bvar name = [et_bvar name]
+
+let ets_sum etss =
+debug2 (puts "entering ets_sum: " << flush);
+debug2 (put_int (List.length (list_product etss)) << endl);
+let ret =  List.map et_sum (list_product etss)
+in
+debug2 (puts "leaving" << endl);
+ret
+
+let ets_prod etss = List.map et_prod (list_product etss)
+
+let ets_max = List.concat
+
+let ets_ge ets1 ets2 =
+  smt_for_all (fun et2 -> smt_exists (fun et1 -> et_ge et1 et2) ets1) ets2
+
+let ets_order solver ets1 ets2 =
+  List.fold_left (fun (all_ge,all_gt) et2 ->
+    let (ge,gt) =
+      List.fold_left (fun (ex_ge,ex_gt) et1 ->
+        let (ge,gt) = et_order solver et1 et2 in
+        (ex_ge |^ ge, ex_gt |^ gt)
+      )
+      (LB false, LB false)
+      ets1
+    in
+    (all_ge &^ ge, all_gt &^ gt)
+  )
+  (LB true, LB true)
+  ets2
+
+(* weight is array (vector) of such *)
+
+let add = Array.map2 (fun ets1 ets2 -> ets_sum [ets1;ets2])
+
+let smult exp = Array.map (List.map (et_mul_one [] exp))
+
+let order dim w1 w2 =
+  Delay (fun solver ->
+    let (ge,gt) = ets_order solver w1.(0) w2.(0) in
     let ge_rest = solver#refer Bool
-      (smt_for_all (fun i -> ge_wts wtsa1.(i) wtsa2.(i)) (int_list 1 (dim-1)))
+      (smt_for_all (fun i -> ets_ge w1.(i) w2.(i)) (int_list 1 (dim-1)))
     in
     Cons(ge &^ ge_rest, gt &^ ge_rest)
+  )
 
 let index i = "_" ^ string_of_int i
-
-let wt_bvar name = StrListMap.singleton [name] (LI 1)
 
 type w_t = exp StrListMap.t list array
 
@@ -126,6 +160,7 @@ let add_number : _ -> #context -> _ =
 type pos_info = {
   const : exp;
   id : exp;
+  weak_simple : exp;
 }
 type sym_info = {
   encodings : (int * int) wsym term array;
@@ -154,23 +189,27 @@ class virtual interpreter p =
       (* <--> [f](..x_k..) = x_k *)
       fun f k -> (x#find f).pos_info.(k-1).id
 
+    method weak_simple_at : 'b. (#sym as 'b) -> int -> exp =
+      (* <--> [f](..x_k..) >= x_k *)
+      fun f k -> (x#find f).pos_info.(k-1).weak_simple
+
     method private encode_sym : 'b. (#sym as 'b) -> _ =
       fun f -> (x#find f).encodings
 
     method interpret : 'b. (#sym as 'b) -> w_t list -> w_t =
-      fun f wtsas ->
-      let subst = Array.of_list wtsas in
+      fun f ws ->
+      let subst = Array.of_list ws in
       let rec sub (Node(g,ts)) =
-        let wtss = List.map sub ts in
+        let ws = List.map sub ts in
         match g with
-        | Smt exp    -> [StrListMap.singleton [] exp]
+        | Smt exp    -> ets_smt exp
         | BVar (k,i) -> subst.(k).(i)
-        | Add        -> List.map wt_sum (list_product wtss)
-        | Mul        -> List.map wt_prod (list_product wtss)
-        | Max        -> List.concat wtss
+        | Add        -> ets_sum ws
+        | Mul        -> ets_prod ws
+        | Max        -> ets_max ws
       in
       if f#is_var then
-        Array.map (fun i -> [wt_bvar (f#name ^ coord i)]) (int_array 0 (p.w_dim - 1))
+        Array.map (fun i -> ets_bvar (f#name ^ coord i)) (int_array 0 (p.w_dim - 1))
       else Array.map sub (x#encode_sym f)
 
     method annotate : 't 'b. (#context as 't) -> (#sym as 'b) term -> ('b,w_t) wterm =
@@ -184,15 +223,9 @@ class virtual interpreter p =
       't 'o 'f. (#solver as 't) -> (#printer as 'o) -> string -> (#sym as 'f) -> int -> unit =
       fun solver pr prefix f n ->
       Array.iteri (fun i wexp ->
-        pr#endl;
-        pr#puts prefix;
-        pr#puts (coord (i+1));
-        pr#puts ": ";
-        output_wexp solver pr wexp;
+        (endl << puts prefix << puts (coord (i+1)) << puts ": " << eval_wexp solver wexp) pr
       ) (x#encode_sym f);
   end
-
-let inner_prod xs ys = sum (List.map2 (fun x y -> prod [x;y]) xs ys)
 
 exception Continue
 
@@ -281,7 +314,7 @@ class pol_interpreter p =
           match p.max_mode with
           | MAX_dup ->
             let t = maxpoly_heuristic trs dg (not p.max_poly) in
-            fun f k -> puts f#name cerr; t#info f (k-1)
+            fun f k -> t#info f (k-1)
           | MAX_all ->
             fun f _ -> if f#arity = 0 then no_max else use_max
           | MAX_none ->
@@ -336,8 +369,8 @@ class pol_interpreter p =
             Hashtbl.add table f#name {
               encodings = Array.map (fun i ->
 		sum (
+                  smt (weight f i) ::
 		  max (
-                    smt (weight f i) ::
 		    List.map (fun k ->
 		      sum (
 			List.map (fun j ->
@@ -358,21 +391,35 @@ class pol_interpreter p =
               pos_info = Array.map (
                 fun k ->
 		let ck = c f k in
-		{
-                  const = solver#refer Bool (
+                let con = solver#refer Bool (
                     smt_for_all (fun i ->
 		      smt_for_all (fun j ->
-			(coeff_sum f k i j =^ LI 0) &^
-			(coeff_max f k i j =^ LI 0)
+		        (coeff_sum f k i j =^ LI 0) &^
+		        (coeff_max f k i j =^ LI 0)
 		      ) (int_list 1 p.w_dim)
                     ) (int_list 1 p.w_dim)
-		  );
-                  id = smt_for_all (fun i ->
+                  )
+                in
+                let ide =
+                  smt_for_all (fun i ->
                     smt_for_all (fun j ->
 		      coeff_sum f k i j =^ LI (if i = j then 1 else 0)
 		    ) (int_list 1 p.w_dim) &^
                     (weight f i =^ LI 0)
-                  ) (int_list 1 p.w_dim);
+                  ) (int_list 1 p.w_dim)
+                in
+		{
+		  const = con;
+                  id = ide;
+                  weak_simple =
+                    if p.w_neg then
+                      smt_not con &^ smt_for_all (fun i ->
+                        smt_for_all (fun j ->
+                          coeff_max f k i j >=^ LI 1
+                        ) (int_list 1 p.w_dim)
+                      ) (int_list 1 p.w_dim)
+                    else
+                      smt_not con;
                 }
               ) (int_array 1 f#arity);
             }

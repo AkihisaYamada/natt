@@ -9,7 +9,7 @@ open Wpo_info
 
 (*** Printing proofs ***)
 
-class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
+class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
   let status_is_used =
     p.ext_mset && p.ext_lex ||
     p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
@@ -20,7 +20,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
   let prec_is_used = p.prec_mode <> PREC_none in
   object
     method output_proof : 'pr. (#printer as 'pr) -> unit = fun pr ->
-      let pr_exp = output_exp pr in
+      let pr_exp e = put_exp e pr in
       let pr_perm finfo =
         pr#puts "s: ";
         let punct = ref "" in
@@ -68,11 +68,6 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
         pr#endl;
       in
       Hashtbl.iter pr_symbol sigma;
-      if p.mcw_mode = MCW_num then begin
-        pr#puts "    w0 = ";
-        pr_exp (solver#get_value mcw);
-        pr#endl;
-      end;
     method output_usables : 'pr 'a. (int -> exp) -> (int * 'a) list -> (#printer as 'pr) -> unit =
       fun usable usables ->
       if usable_is_used || params.debug then
@@ -129,6 +124,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
       in
       let pr_interpret pr _ (finfo:wpo_sym) =
         Xml.enter "interpret" pr;
+(*
         finfo#base#output_xml pr;
         let n = finfo#base#arity in
         Xml.enclose_inline "arity" (put_int n) pr;
@@ -187,8 +183,6 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
           done;
           if finfo#sum then begin
             put_sum pr;
-          end else begin
-            put_coef (solver#get_value mcw) pr;
           end;
           if usemax then begin
             Xml.leave "max" pr;
@@ -204,6 +198,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
         end else begin
           put_sum pr;
         end;
+*)
         Xml.leave "interpret" pr;
       in
       fun pr ->
