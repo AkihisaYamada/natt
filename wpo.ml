@@ -1179,7 +1179,7 @@ object (x)
       "A"
     );
 
-    interpreter#init solver trs;
+    interpreter#init solver trs dg;
 
     if p.use_scope_ratio > 0 then begin
       let rules_size = List.length current_usables in

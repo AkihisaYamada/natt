@@ -27,8 +27,8 @@ let rec output_wexp (solver : #solver) (os : #printer) e =
     output_wexp solver os e;
     List.iter (fun e -> os#puts " * "; output_wexp solver os e) es
   | Node(Max, e::es) ->
-    output_wexp solver os e;
     os#puts "max {";
+    output_wexp solver os e;
     List.iter (fun e -> os#puts ", "; output_wexp solver os e) es;
     os#puts "}";
   | Node(BVar (k,i), []) ->
@@ -136,7 +136,7 @@ class virtual interpreter p =
     if p.w_dim = 1 then fun _ -> "" else index
   in
   object (x)
-    method virtual init : 't. (#context as 't) -> trs -> unit
+    method virtual init : 't. (#context as 't) -> trs -> Dp.dg -> unit
 
     val table = Hashtbl.create 64
 
@@ -206,53 +206,60 @@ class enc_pos_info s m = object
 end
 
 
-let max_args (trs:trs) either =
-  let table = Hashtbl.create 64 in
-  let add f =
-    Hashtbl.add table f#name
-      (Array.init (trs#find_sym f)#arity (fun k -> new enc_pos_info true false))
-  in
-  let get f =
+let maxpoly_heuristic (trs:trs) (dg:Dp.dg) either =
+object (x)
+
+  val table = Hashtbl.create 64
+
+  method private get : 'f. (#sym as 'f) -> _ =
+  fun f ->
     try Hashtbl.find table f#name
-    with Not_found -> add f; Hashtbl.find table f#name
-  in
-  let summarize_term test =
-    let summarize_sym f =
-      let arr = get f in
-      let rec sub acc i = function
-	| [] -> acc
-	| vs::vss ->
-	  if arr.(i)#in_max then
-	    sub (Mset.join acc vs) (i+1) vss
-	  else
-	    let acc' = Mset.union acc vs in
-	    if test acc' then
-	      sub acc' (i+1) vss
-	    else (
-	      arr.(i)#set_max true;
-	      if either then arr.(i)#set_sum false;
-	      raise Continue
-	    )
+    with Not_found ->
+      let ret =
+        (Array.init (trs#find_sym f)#arity (fun k -> new enc_pos_info true false))
       in
-      sub Mset.empty 0
+      Hashtbl.add table f#name ret;
+      ret
+
+  method info f k = (x#get f).(k)
+
+  initializer
+    let summarize_term test =
+      let summarize_sym f =
+        let arr = x#get f in
+        let rec sub acc i = function
+	  | [] -> acc
+	  | vs::vss ->
+	    if arr.(i)#in_max then
+	      sub (Mset.join acc vs) (i+1) vss
+	    else
+	      let acc' = Mset.union acc vs in
+	      if test acc' then
+	        sub acc' (i+1) vss
+	      else (
+	        arr.(i)#set_max true;
+	        if either then arr.(i)#set_sum false;
+	        raise Continue
+	      )
+        in
+        sub Mset.empty 0
+      in
+      let rec sub (Node(f,ss)) =
+        if f#is_var then Mset.singleton f#name
+        else summarize_sym f (List.map sub ss)
+      in
+      sub
     in
-    let rec sub (Node(f,ss)) =
-      if f#is_var then Mset.singleton f#name
-      else summarize_sym f (List.map sub ss)
+    let rec loop () =
+      try
+        dg#iter_dps (fun i rule ->
+          let lvs = summarize_term (fun _ -> true) rule#l in
+          ignore (summarize_term (Mset.supseteq lvs) rule#r)
+        )
+      with Continue -> loop ()
     in
-    sub
-  in
-  let rec loop () =
-    try
-      trs#iter_rules (fun i rule ->
-        let lvs = summarize_term (fun _ -> true) rule#l in
-        ignore (summarize_term (Mset.supseteq lvs) rule#r)
-      )
-    with Continue -> loop ()
-  in
-  loop ();
-  table
-;;
+    loop ()
+end;;
 
 class pol_interpreter p =
   let coord = (* makes suffix for coordination *)
@@ -266,15 +273,15 @@ class pol_interpreter p =
   in
   object (x)
     inherit interpreter p
-    method init : 't. (#context as 't) -> trs -> unit =
-      fun solver trs ->
+    method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
+      fun solver trs dg ->
         let arg_mode =
 	  let use_max = new enc_pos_info p.max_poly true in
 	  let no_max = new enc_pos_info true false in
           match p.max_mode with
           | MAX_dup ->
-            let t = max_args trs (not p.max_poly) in
-            fun f k -> (Hashtbl.find t f#name).(k-1)
+            let t = maxpoly_heuristic trs dg (not p.max_poly) in
+            fun f k -> puts f#name cerr; t#info f (k-1)
           | MAX_all ->
             fun f _ -> if f#arity = 0 then no_max else use_max
           | MAX_none ->
