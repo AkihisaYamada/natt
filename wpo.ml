@@ -342,55 +342,21 @@ class processor =
       else spo (lookup f) (lookup g)
   in
 
-(*** Argument filters ***)
-  let add_argfilt =
-    (* argument is filtered iff coef = 0 *)
-    if not p.dp || p.sc_mode = W_none then
-      fun _ finfo ->
-        finfo#set_argfilt (k_comb (LB true));
-    else if p.sc_mode = W_bool && p.w_dim = 1 && not p.Params.max_poly then
-      fun _ finfo ->
-        finfo#set_argfilt (fun i -> finfo#subterm_coef i <>^ LI 0);
-    else
-      (* give an alias for coef <> 0 *)
-      let iterer =
-        if p.Params.max_poly then
-          fun finfo vf i ->
-            solver#add_definition (vf i) Bool
-            ( (finfo#subterm_coef i <>^ LI 0) |^ 
-              if finfo#max then finfo#maxfilt i else LB false
-            );
-        else
-          fun finfo vf i ->
-            solver#add_definition (vf i) Bool (finfo#subterm_coef i <>^ LI 0);
-      in
-      fun fname finfo ->
-        let v = "af_" ^ fname in
-        match finfo#base#ty with
-        | Fun | Th "A" ->
-          let vf i = supply_index v i in
-          let ef i = EV(vf i) in
-          for i = 1 to finfo#base#arity do
-            iterer finfo vf i;
-          done;
-          finfo#set_argfilt ef;
-        | Th "AC" | Th "C" ->
-          let vf _ = v in
-          let ef _ = EV(v) in
-          iterer finfo vf 1;
-          finfo#set_argfilt ef;
-        | _ -> ()
-  in
-  (* collapsing argument filters *)
+ (* collapsing argument filters *)
   let add_collapse =
     if p.collapse then
-      fun fname finfo to_n ->
-        let v = "col_" ^ fname in
+      fun finfo to_n ->
+        let f = finfo#base in
+        let v = "col_" ^ f#name in
         solver#add_variable v Bool;
         finfo#set_collapse (EV v);
-        solver#add_assertion (EV v =>^ ES1(List.map finfo#argfilt to_n));
+        solver#add_assertion (
+          EV v =>^ ES1(List.map
+            (fun i -> interpreter#depend_on f i &^ interpreter#id_at f i)
+            to_n)
+        );
     else
-      fun _ finfo _ -> finfo#set_collapse (LB false)
+      fun finfo _ -> finfo#set_collapse (LB false)
   in
 
 (*** Usable rules ***)
@@ -449,38 +415,31 @@ class processor =
       let sub_perm fname finfo n =
         match finfo#status_mode with
         | S_empty -> finfo#set_perm (fun _ _ -> LB false)
-        | S_none -> finfo#set_perm (fun i k -> LB(i = k) &^ finfo#argfilt i)
         | _ ->
-          if finfo#status_mode = S_total && n = 1 then begin
-            finfo#set_perm (k_comb finfo#argfilt);
-          end else begin
-            let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
-            let perm_e i k = EV(perm_v i k) in
-            for i = 1 to n do
-              for k = 1 to n do
-                solver#add_variable (perm_v i k) Bool;
-              done;
+          let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
+          let perm_e i k = EV(perm_v i k) in
+          for i = 1 to n do
+            for k = 1 to n do
+              solver#add_variable (perm_v i k) Bool;
             done;
-            finfo#set_perm perm_e;
-          end;
+          done;
+          finfo#set_perm perm_e;
       in
       let sub_permed fname finfo n =
         match finfo#status_mode with
         | S_empty ->
           finfo#set_permed (fun i -> LB false)
-        | S_partial ->
+        | _ ->
           let permed_v i = supply_index ("permed_" ^ fname) i in
           let permed_e i = EV(permed_v i) in
           for i = 1 to n do
             solver#add_variable (permed_v i) Bool;
           done;
           finfo#set_permed permed_e;
-        | _ -> finfo#set_permed finfo#argfilt;
       in
       let sub_mapped fname finfo n to_n =
         match finfo#status_mode with
         | S_empty -> finfo#set_mapped (k_comb (LB false));
-        | S_none -> finfo#set_mapped finfo#argfilt;
         | _ ->
           if p.dp && (p.sc_mode <> W_none || finfo#status_mode = S_partial) then
             let mapped_v k = supply_index ("mapped_" ^ fname) k in
@@ -521,20 +480,17 @@ class processor =
         finfo#set_perm (
         match finfo#status_mode with
         | S_empty -> k_comb (k_comb (LB false))
-        | S_partial -> fun i j -> if i = j then finfo#permed i else LB false
-        | _ -> fun i j -> if i = j then finfo#argfilt i else LB false
+        | _ -> fun i j -> if i = j then finfo#permed i else LB false
         )
       in
       let sub_permed fname finfo =
         match finfo#status_mode with
         | S_empty -> finfo#set_permed (k_comb (LB false));
-        | S_partial ->
+        | _ ->
           let permed_v = "permed_" ^ fname in
           let permed_e _ = EV(permed_v) in
           solver#add_variable permed_v Bool;
           finfo#set_permed permed_e;
-        | _ ->
-          finfo#set_permed finfo#argfilt;
       in
       fun fname finfo ->
         sub_perm finfo;
@@ -582,7 +538,8 @@ class processor =
   let is_unary =
     if p.dp && p.sc_mode <> W_none then
       fun finfo to_n ->
-        smt_not finfo#collapse &^ ES1(List.map finfo#argfilt to_n)
+        smt_not finfo#collapse &^
+        ES1(List.map (interpreter#depend_on finfo#base) to_n)
     else
       fun _ -> function [_] -> LB true | _ -> LB false
   in
@@ -594,8 +551,7 @@ class processor =
 
     add_subterm_penalty fname finfo;
 
-    add_argfilt fname finfo;
-    add_collapse fname finfo to_n;
+    add_collapse finfo to_n;
 
     add_prec fname finfo;
 
@@ -626,17 +582,13 @@ class processor =
         solver#add_assertion (pi =>^ (pen >=^ LI 0));
       end;
 
-      (* collapsing filter *)
-      solver#add_assertion (col &^ finfo#argfilt i =>^ pi);
-      solver#add_assertion (col &^ pi =>^ (coef =^ LI 1));
-      solver#add_assertion (col &^ pi =>^ (pen =^ LI 0));
     done;
     if n > 0 && p.dp && p.sc_mode <> W_none &&
       (p.w_neg || p.maxcons || p.mincons || p.mcw_val > 0)
     then begin
       let v = "const_" ^ fname in
       solver#add_definition v Bool
-        (smt_not col &^ smt_for_all (fun i -> smt_not (finfo#argfilt i)) to_n);
+        (smt_for_all (interpreter#const_at finfo#base) to_n);
       finfo#set_is_const (EV v);
       if finfo#status_mode = S_partial && (p.mincons || p.maxcons) then begin
         let v = "qconst_" ^ fname in
@@ -647,13 +599,6 @@ class processor =
         finfo#set_is_quasi_const (EV v);
       end;
     end;
-
-    if p.w_neg || p.mcw_val > 0 then
-      (* asserting $mcw$ be the minimal weight of constants. *)
-      if finfo#max then
-        solver#add_assertion (fw >=^ mcw)
-      else
-        solver#add_assertion (finfo#is_const =>^ (fw >=^ mcw));
 
     if p.maxcons then begin
       solver#add_assertion (fp <=^ !pmax);
@@ -1151,7 +1096,7 @@ class processor =
       let rec sub j =
         function
         | [] -> LB true
-        | t::ts -> (ginfo#argfilt j =>^ var_eq xname t) &^ sub (j+1) ts
+        | t::ts -> (interpreter#depend_on ginfo#base j =>^ var_eq xname t) &^ sub (j+1) ts
       in
       is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
   in
@@ -1406,7 +1351,8 @@ object (x)
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion
-            (usable_w i =>^ set_usable (fun finfo -> finfo#argfilt) usable_w rule#r);
+            (usable_w i =>^ set_usable
+ (fun finfo -> interpreter#depend_on finfo#base) usable_w rule#r);
           solver#add_assertion
             (usable i =>^ set_usable (fun finfo -> finfo#permed) usable rule#r);
           let wge, wgt = split (wo lw rw) solver in
@@ -1422,7 +1368,7 @@ object (x)
           end;
         end else if p.usable then begin
           solver#add_assertion
-            (usable i =>^ set_usable (fun finfo -> finfo#argfilt) usable rule#r);
+            (usable i =>^ set_usable (fun finfo -> interpreter#depend_on finfo#base) usable rule#r);
           solver#add_assertion 
             (usable i =>^ weakly (frame la ra));
         end else begin
@@ -1449,10 +1395,10 @@ object (x)
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
       if p.usable_w then begin
-        solver#add_assertion (set_usable (fun finfo -> finfo#argfilt) usable_w dp#r);
+        solver#add_assertion (set_usable (fun finfo -> interpreter#depend_on finfo#base) usable_w dp#r);
         solver#add_assertion (set_usable (fun finfo -> finfo#permed) usable dp#r);
       end else begin
-        solver#add_assertion (set_usable (fun finfo -> finfo#argfilt) usable dp#r);
+        solver#add_assertion (set_usable (fun finfo -> interpreter#depend_on finfo#base) usable dp#r);
       end;
     end;
 

@@ -457,6 +457,10 @@ begin
     prerr_newline ();
     prerr_string "SMT error: ";
     prerr_endline s;
+  | Smt.Invalid_formula(m,e) ->
+    (endl << puts "Invalid formula: " << puts m << puts ": ") cerr;
+    Smt.prerr_exp e;
+    cerr#endl;
   | Smt.Response(s,e) ->
     prerr_newline ();
     prerr_string "Unexpected SMT solver response to '";

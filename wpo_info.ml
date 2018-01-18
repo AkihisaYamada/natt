@@ -12,7 +12,6 @@ class wpo_sym (sym:#Trs.sym_detailed) = object
   val mutable subterm_coef : int -> exp = k_comb Dummy
   val mutable subterm_penalty : int -> exp = k_comb (LI 0)
   val mutable maxfilt : int -> exp = k_comb (LB false)
-  val mutable argfilt : int -> exp = k_comb Dummy
   val mutable collapse = LB false
   val mutable is_const = LB(sym#arity = 0)
   val mutable is_quasi_const = LB(sym#arity = 0)
@@ -28,7 +27,6 @@ class wpo_sym (sym:#Trs.sym_detailed) = object
   method subterm_coef = subterm_coef
   method subterm_penalty = subterm_penalty
   method maxfilt = maxfilt
-  method argfilt = argfilt
   method collapse = collapse
   method is_const = is_const
   method is_quasi_const = is_quasi_const
@@ -45,7 +43,6 @@ class wpo_sym (sym:#Trs.sym_detailed) = object
   method set_subterm_coef x = subterm_coef <- x
   method set_subterm_penalty x = subterm_penalty <- x
   method set_maxfilt x = maxfilt <- x
-  method set_argfilt x = argfilt <- x
   method set_collapse x = collapse <- x
   method set_is_const x = is_const <- x
   method set_is_quasi_const x = is_quasi_const <- x

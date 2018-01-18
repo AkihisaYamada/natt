@@ -8,7 +8,7 @@ let strictly_ordered = Cons(LB true, LB true)
 let split trit context =
 	match context#expand trit with
 	| Cons(ge,gt)	-> ge,gt
-	| _ -> raise (Invalid_formula "split")
+	| e -> raise (Invalid_formula ("split",e))
 
 
 let strictly = smt_cdr

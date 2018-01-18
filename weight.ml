@@ -123,13 +123,40 @@ let add_number : _ -> #context -> _ =
     solver#add_variable (v ^ "-b") Bool
   | W_none -> fun _ _ -> ()
 
+type pos_info = {
+  const : exp;
+  id : exp;
+}
+type sym_info = {
+  encodings : (int * int) wsym term array;
+  pos_info : pos_info array;
+}
 class virtual interpreter p =
   let coord = (* makes suffix for coordination *)
     if p.w_dim = 1 then fun _ -> "" else mk_index
   in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> unit
-    method virtual private encode_sym : 'b. (#sym as 'b) -> (int * int) wsym term array
+
+    val table = Hashtbl.create 64
+
+    method private find : 'b. (#sym as 'b) -> _ =
+      fun f -> Hashtbl.find table f#name
+
+    method const_at : 'b. (#sym as 'b) -> int -> exp =
+      (* <--> [f](..x_k..) is constant *)
+      fun f k -> (x#find f).pos_info.(k-1).const
+
+    method depend_on : 'b. (#sym as 'b) -> int -> exp =
+      fun f k -> smt_not (x#const_at f k)
+
+    method id_at : 'b. (#sym as 'b) -> int -> exp =
+      (* <--> [f](..x_k..) = x_k *)
+      fun f k -> (x#find f).pos_info.(k-1).id
+
+    method private encode_sym : 'b. (#sym as 'b) -> _ =
+      fun f -> (x#find f).encodings
+
     method interpret : 'b. (#sym as 'b) -> w_t list -> w_t =
       fun f wtsas ->
       let subst = Array.of_list wtsas in
@@ -148,24 +175,69 @@ class virtual interpreter p =
 
     method annotate : 't 'b. (#context as 't) -> (#sym as 'b) term -> ('b,w_t) wterm =
       fun solver (Node(f,ss)) ->
-        let ts = List.map (x#annotate solver) ss in
-        let w = x#interpret f (List.map get_weight ts) in
-        let w = Array.map (List.map (StrListMap.map solver#refer_base)) w in
-        WT(f,ts,w)
+      let ts = List.map (x#annotate solver) ss in
+      let w = x#interpret f (List.map get_weight ts) in
+      let w = Array.map (List.map (StrListMap.map solver#refer_base)) w in
+      WT(f,ts,w)
 
     method output_sym :
-      't 'o 'f. (#solver as 't) -> (#printer as 'o) -> (#sym as 'f) -> int -> unit
-    = fun solver pr f n ->
-        Array.iteri (fun i wexp ->
-          pr#endl;
-          pr#puts "\t";
-          pr#put_int (i+1);
-          pr#puts ": ";
-          output_wexp solver pr wexp;
-        ) (x#encode_sym f);
+      't 'o 'f. (#solver as 't) -> (#printer as 'o) -> string -> (#sym as 'f) -> int -> unit =
+      fun solver pr prefix f n ->
+      Array.iteri (fun i wexp ->
+        pr#endl;
+        pr#puts prefix;
+        pr#puts (coord (i+1));
+        pr#puts ": ";
+        output_wexp solver pr wexp;
+      ) (x#encode_sym f);
   end
 
 let inner_prod xs ys = sum (List.map2 (fun x y -> prod [x;y]) xs ys)
+
+exception Continue
+
+let max_args trs =
+  let table = Hashtbl.create 64 in
+  let get f =
+    try Hashtbl.find table f#name
+    with Not_found -> Hashtbl.add table f#name []; []
+  in
+  let summarize_term test =
+    let summarize_sym f =
+      let max_poss = get f in
+      let rec sub acc1 acc2 i = function
+	| [] -> Mset.union acc1 acc2
+	| vs::vss ->
+	  if List.mem i max_poss then
+	    sub acc1 (Mset.join acc2 vs) (i+1) vss
+	  else
+	    let acc1' = Mset.union acc1 vs in
+	    if test acc1' then
+	      sub acc1' acc2 (i+1) vss
+	    else (
+	      Hashtbl.replace table f#name (i :: max_poss);
+	      raise Continue
+	    )
+      in
+      sub Mset.empty Mset.empty 0
+    in
+    let rec sub (Node(f,ss)) =
+      if f#is_var then Mset.singleton f#name
+      else summarize_sym f (List.map sub ss)
+    in
+    sub
+  in
+  let rec loop () =
+    try
+      trs#iter_rules (fun i rule ->
+        let lvs = summarize_term (fun _ -> true) rule#l in
+        ignore (summarize_term (Mset.supseteq lvs) rule#r)
+      )
+    with Continue -> loop ()
+  in
+  loop ();
+  table
+;;
 
 class pol_interpreter p =
   let coord = (* makes suffix for coordination *)
@@ -183,11 +255,19 @@ class pol_interpreter p =
   in
   object (x)
     inherit interpreter p
-    val table = Hashtbl.create 64
     method init : 't. (#context as 't) -> trs -> unit =
       fun solver trs ->
-        trs#iter_syms (fun f ->
-          if f#is_fun then begin
+        let max_arg =
+          match p.max_mode with
+          | MAX_dup ->
+            let t = max_args trs in
+            fun f i -> IntSet.mem (Hashtbl.find f#name t) i
+          | MAX_all ->
+            fun _ _ -> true
+          | MAX_none ->
+            fun _ _ -> false
+        in
+        trs#iter_funs (fun f ->
           let w = "w_" ^ f#name in
           let c = "c_" ^ f#name in
           for i = 1 to p.w_dim do
@@ -206,20 +286,31 @@ class pol_interpreter p =
                 done
               done
             done;
-            Hashtbl.add table f#name (
-              Array.map (fun i ->
-                sum (
-                  smt (ref_weight (w ^ coord i)) ::
-                  List.map (fun k ->
-                    inner_prod (coeff_row (c ^ mk_index k ^ coord i)) (bvar_vec (k-1))
-                  ) (int_list 1 f#arity)
-                )
-              ) (int_array 1 p.w_dim)
-            )
-          end
-        )
-    method private encode_sym : 'b. (#sym as 'b) -> _ =
-      fun f -> Hashtbl.find table f#name
- end
+            Hashtbl.add table f#name {
+              encodings = Array.map (
+                fun i -> sum (
+                    smt (ref_weight (w ^ coord i)) ::
+                    List.map (fun k ->
+                      inner_prod (coeff_row (c ^ mk_index k ^ coord i)) (bvar_vec (k-1))
+                    ) (int_list 1 f#arity)
+                  )
+                ) (int_array 1 p.w_dim);
+              pos_info = Array.map (
+                fun k -> {
+                  const = solver#refer Bool (
+                    smt_for_all
+                      (fun i -> ref_coeff (c ^ mk_index k ^ coord i) =^ LI 0)
+                      (int_list 1 p.w_dim)
+                    );
+                  id = smt_for_all (
+                    fun i ->
+                      (ref_coeff (c ^ mk_index k ^ coord i) =^ LI 1) &^
+                      (ref_weight (w ^ coord i) =^ LI 0)
+                    ) (int_list 1 p.w_dim);
+                }
+              ) (int_array 1 f#arity);
+            }
+          )
+  end
 
 

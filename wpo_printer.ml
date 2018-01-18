@@ -43,8 +43,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
         pr#puts rbr;
       in
       let pr_interpret finfo =
-        pr#puts "w: ";
-        interpreter#output_sym solver (pr:>#Io.printer) finfo#base finfo#base#arity;
+        interpreter#output_sym solver (pr:>#Io.printer) "\tw" finfo#base finfo#base#arity;
       in
       let pr_prec finfo =
         pr#puts "p: ";
@@ -63,7 +62,6 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) mcw =
             pr_prec finfo;
           end;
           if weight_is_used then begin
-            pr#puts "\t";
             pr_interpret finfo;
           end;
         end;

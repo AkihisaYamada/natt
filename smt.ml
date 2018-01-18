@@ -70,9 +70,9 @@ and dec =
 
 exception Inconsistent
 exception Internal of string
-exception Invalid_formula of string
+exception Invalid_formula of string * exp
 exception Response of string * exp
-
+exception Parse_error of string
 
 
 class virtual sexp_printer =
@@ -584,7 +584,7 @@ let smt_cdr =
 let smt_split e f =
   match e with
   | Cons(e1,e2) -> f e1 e2
-  | _ -> smt_expand e (function Cons(e1,e2) -> f e1 e2 | _ -> raise (Invalid_formula "smt_split"))
+  | _ -> smt_expand e (function Cons(e1,e2) -> f e1 e2 | _ -> raise (Invalid_formula ("smt_split", e)))
 
 let arctic_add e1 e2 =
   match e1, e2 with
@@ -657,7 +657,7 @@ class virtual context =
         | Cons(e1,e2) ->
           (match ty with
            | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
-           | _ -> raise (Invalid_formula "refer")
+           | _ -> raise (Invalid_formula ("refer",e))
           )
         | PB e  -> PB((*x#refer_sub Bool *)e)
         | _   ->
@@ -779,7 +779,7 @@ class virtual context =
       in
       fun es ->
         match distribute [] es with
-        | []  -> raise (Invalid_formula "empty max")
+        | []  -> raise (Invalid_formula ("empty max",Nil))
         | [e] -> x#expand e
         | es  -> (* Max (List.map x#expand es)*)
           sub (LB false) (x#temp_variable base_ty) es
@@ -790,18 +790,18 @@ class virtual context =
       | Dup(_,e)  -> x#expand e
       | Delay(f)  -> x#expand_car (x#force f)
       | If(c,t,e) -> x#expand_if c (smt_car t) (smt_car e)
-      | e     -> raise (Invalid_formula "car")
+      | e         -> raise (Invalid_formula ("expand_car", e))
     method private expand_cdr =
       function
       | Cons(_,e) -> x#expand e
       | Dup(_,e)  -> x#expand e
       | Delay(f)  -> x#expand_cdr (x#force f)
       | If(c,t,e) -> x#expand_if c (smt_cdr t) (smt_cdr e)
-      | e     -> raise (Invalid_formula "cdr")
+      | e     -> raise (Invalid_formula ("expand_cdr", e))
     method private expand_pb e =
       match x#expand e with
-      | LB t  -> if t then LI 1 else LI 0
-      | e   -> PB e
+      | LB t -> if t then LI 1 else LI 0
+      | e    -> PB e
 
     method private expand_if e1 e2 e3 =
       match x#expand e1 with
@@ -857,7 +857,7 @@ class virtual context =
       | Vec es    -> Vec(List.map x#expand es)
       | Mat ess   -> Mat(List.map (List.map x#expand) ess)
       | Delay f   -> x#expand_delay f
-      | _       -> raise (Invalid_formula "expansion")
+      | e         -> raise (Invalid_formula ("expand",e))
   end
 and subcontext =
   object (x)
@@ -960,7 +960,7 @@ class virtual parser =
       let rec sub es =
         match x#peek_char with
         | ')' -> x#proceed; smt_apply es
-        | '\x00' -> raise (Invalid_formula "parse error")
+        | '\x00' -> raise (Parse_error "unexpected EOF")
         | _ -> sub (es @ [x#get_exp])
       in
       sub []
@@ -980,7 +980,7 @@ class virtual parser =
           else if Str.string_match (Str.regexp "\\.[0-9]+$") token next then
             LR(float_of_int int_part +. float_of_string (Str.matched_string token))
           else
-            raise (Invalid_formula "parse error")
+            raise (Parse_error token)
         else
           EV token
   end
@@ -991,15 +991,14 @@ let rec smt_eval_float =
   | LR r -> r
   | Neg e -> -.(smt_eval_float e)
   | Div(e1,e2) -> smt_eval_float e1 /. smt_eval_float e2
-  | _ -> raise (Invalid_formula "value")
+  | e -> raise (Invalid_formula ("eval_float",e))
 
-let rec smt_eval_int =
-  function
+let rec smt_eval_int e =
+  match e with
   | LI i -> i
-  | LR r -> raise (Invalid_formula "real as int")
+  | LR r -> raise (Invalid_formula ("real as int",e))
   | Neg e -> -(smt_eval_int e)
-  | Div(e1,e2) -> raise (Invalid_formula "rational as int")
-  | _ -> raise (Invalid_formula "value")
+  | e -> raise (Invalid_formula ("eval_int",e))
 
 let test_sat str = Str.string_match (Str.regexp "sat.*") str 0
 let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
