@@ -272,8 +272,8 @@ class pol_interpreter p =
           let c = "c_" ^ f#name in
           for i = 1 to p.w_dim do
               let w_i = w ^ coord i in
-              add_number p.w_mode solver w;
-              solver#add_assertion (ref_weight w >=^ LI 0);
+              add_number p.w_mode solver w_i;
+              solver#add_assertion (ref_weight w_i >=^ LI 0);
               for k = 1 to f#arity do
                 let c_ki = c ^ mk_index k ^ coord i in
                 for j = 1 to p.w_dim do
@@ -282,7 +282,9 @@ class pol_interpreter p =
                   bind_upper solver (ref_coeff c_kij);
                   if not p.dp && i = 1 then begin
                     solver#add_assertion (ref_coeff c_kij >=^ LI 1);
-                  end
+                  end else begin
+		    solver#add_assertion (ref_coeff c_kij >=^ LI 0);
+		  end
                 done
               done
             done;
@@ -296,17 +298,23 @@ class pol_interpreter p =
                   )
                 ) (int_array 1 p.w_dim);
               pos_info = Array.map (
-                fun k -> {
+                fun k ->
+		let ck = c ^ mk_index k in
+		{
                   const = solver#refer Bool (
-                    smt_for_all
-                      (fun i -> ref_coeff (c ^ mk_index k ^ coord i) =^ LI 0)
-                      (int_list 1 p.w_dim)
-                    );
-                  id = smt_for_all (
-                    fun i ->
-                      (ref_coeff (c ^ mk_index k ^ coord i) =^ LI 1) &^
-                      (ref_weight (w ^ coord i) =^ LI 0)
-                    ) (int_list 1 p.w_dim);
+                    smt_for_all (fun i ->
+		      smt_for_all (fun j ->
+			ref_coeff (ck ^ coord i ^ coord j) =^ LI 0
+		      ) (int_list 1 p.w_dim)
+                    ) (int_list 1 p.w_dim)
+		  );
+                  id = smt_for_all (fun i ->
+                    smt_for_all (fun j ->
+		      ref_coeff (ck ^ coord i ^ coord j) =^
+		      LI (if i = j then 1 else 0)
+		    ) (int_list 1 p.w_dim) &^
+                    (ref_weight (w ^ coord i) =^ LI 0)
+                  ) (int_list 1 p.w_dim);
                 }
               ) (int_array 1 f#arity);
             }
