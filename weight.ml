@@ -91,7 +91,7 @@ let order =
     in
     Cons(ge &^ ge_rest, gt &^ ge_rest)
 
-let mk_index i = "_" ^ string_of_int i
+let index i = "_" ^ string_of_int i
 
 let wt_bvar name = StrListMap.singleton [name] (LI 1)
 
@@ -133,7 +133,7 @@ type sym_info = {
 }
 class virtual interpreter p =
   let coord = (* makes suffix for coordination *)
-    if p.w_dim = 1 then fun _ -> "" else mk_index
+    if p.w_dim = 1 then fun _ -> "" else index
   in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> unit
@@ -196,30 +196,45 @@ let inner_prod xs ys = sum (List.map2 (fun x y -> prod [x;y]) xs ys)
 
 exception Continue
 
-let max_args trs =
+class enc_pos_info s m = object
+  val mutable in_sum : bool = s
+  val mutable in_max : bool = m
+  method set_sum b = in_sum <- b
+  method set_max b = in_max <- b
+  method in_sum = in_sum
+  method in_max = in_max
+end
+
+
+let max_args (trs:trs) either =
   let table = Hashtbl.create 64 in
+  let add f =
+    Hashtbl.add table f#name
+      (Array.init (trs#find_sym f)#arity (fun k -> new enc_pos_info true false))
+  in
   let get f =
     try Hashtbl.find table f#name
-    with Not_found -> Hashtbl.add table f#name []; []
+    with Not_found -> add f; Hashtbl.find table f#name
   in
   let summarize_term test =
     let summarize_sym f =
-      let max_poss = get f in
-      let rec sub acc1 acc2 i = function
-	| [] -> Mset.union acc1 acc2
+      let arr = get f in
+      let rec sub acc i = function
+	| [] -> acc
 	| vs::vss ->
-	  if List.mem i max_poss then
-	    sub acc1 (Mset.join acc2 vs) (i+1) vss
+	  if arr.(i)#in_max then
+	    sub (Mset.join acc vs) (i+1) vss
 	  else
-	    let acc1' = Mset.union acc1 vs in
-	    if test acc1' then
-	      sub acc1' acc2 (i+1) vss
+	    let acc' = Mset.union acc vs in
+	    if test acc' then
+	      sub acc' (i+1) vss
 	    else (
-	      Hashtbl.replace table f#name (i :: max_poss);
+	      arr.(i)#set_max true;
+	      if either then arr.(i)#set_sum false;
 	      raise Continue
 	    )
       in
-      sub Mset.empty Mset.empty 0
+      sub Mset.empty 0
     in
     let rec sub (Node(f,ss)) =
       if f#is_var then Mset.singleton f#name
@@ -241,14 +256,10 @@ let max_args trs =
 
 class pol_interpreter p =
   let coord = (* makes suffix for coordination *)
-    if p.w_dim = 1 then fun _ -> "" else mk_index
+    if p.w_dim = 1 then fun _ -> "" else index
   in
   let ref_weight = ref_number p.w_mode in
   let ref_coeff = ref_number p.sc_mode in
-  let coeff_row name =
-    List.map (fun j -> smt (ref_coeff (name ^ coord j))) (int_list 1 p.w_dim)
-  in
-  let bvar_vec k = List.map (fun i -> bvar (k,i)) (int_list 0 (p.w_dim - 1)) in
   let bind_upper =
     if p.w_max = 0 then fun _ _ -> ()
     else fun solver fw -> solver#add_assertion (fw <=^ LI p.w_max)
@@ -257,63 +268,103 @@ class pol_interpreter p =
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> unit =
       fun solver trs ->
-        let max_arg =
+        let arg_mode =
+	  let use_max = new enc_pos_info p.max_poly true in
+	  let no_max = new enc_pos_info true false in
           match p.max_mode with
           | MAX_dup ->
-            let t = max_args trs in
-            fun f i -> IntSet.mem (Hashtbl.find f#name t) i
+            let t = max_args trs (not p.max_poly) in
+            fun f k -> (Hashtbl.find t f#name).(k-1)
           | MAX_all ->
-            fun _ _ -> true
+            fun f _ -> if f#arity = 0 then no_max else use_max
           | MAX_none ->
-            fun _ _ -> false
+            fun _ _ -> no_max
         in
+	let c f k = "c_" ^ f#name ^ index k in
+	let d f k = "d_" ^ f#name ^ index k in
+	let w f = "w_" ^ f#name in
+	let weight f i =
+	  ref_weight (w f ^ coord i)
+	in
+	let coeff_sum f k i j =
+	  if (arg_mode f k)#in_sum then
+	    ref_coeff (c f k ^ coord i ^ coord j)
+	  else
+	    LI 0
+	in
+	let coeff_max f k i j =
+	  if (arg_mode f k)#in_max then
+	    ref_coeff (d f k ^ coord i ^ coord j)
+	  else
+	    LI 0
+	in
         trs#iter_funs (fun f ->
-          let w = "w_" ^ f#name in
-          let c = "c_" ^ f#name in
           for i = 1 to p.w_dim do
-              let w_i = w ^ coord i in
+              let w_i = w f ^ coord i in
               add_number p.w_mode solver w_i;
               solver#add_assertion (ref_weight w_i >=^ LI 0);
               for k = 1 to f#arity do
-                let c_ki = c ^ mk_index k ^ coord i in
-                for j = 1 to p.w_dim do
-                  let c_kij = c_ki ^ coord j in
-                  add_number p.sc_mode solver c_kij;
-                  bind_upper solver (ref_coeff c_kij);
-                  if not p.dp && i = 1 then begin
-                    solver#add_assertion (ref_coeff c_kij >=^ LI 1);
-                  end else begin
-		    solver#add_assertion (ref_coeff c_kij >=^ LI 0);
-		  end
-                done
+                let c_ki = c f k ^ coord i in
+		let d_ki = d f k ^ coord i in
+		if (arg_mode f k)#in_sum then
+		  for j = 1 to p.w_dim do
+		    let c_kij = c_ki ^ coord j in
+		    add_number p.sc_mode solver c_kij;
+		    bind_upper solver (ref_coeff c_kij);
+		    if not p.dp && i = 1 then begin
+		      solver#add_assertion (ref_coeff c_kij >=^ LI 1);
+		    end else begin
+		      solver#add_assertion (ref_coeff c_kij >=^ LI 0);
+		    end
+		  done;
+		if (arg_mode f k)#in_max then
+		  for j = 1 to p.w_dim do
+		    let d_kij = d_ki ^ coord j in
+		    add_number p.sc_mode solver d_kij;
+		    bind_upper solver (ref_coeff d_kij);
+		    solver#add_assertion (ref_coeff d_kij >=^ LI 0);
+		  done;
               done
             done;
             Hashtbl.add table f#name {
-              encodings = Array.map (
-                fun i -> sum (
-                    smt (ref_weight (w ^ coord i)) ::
-                    List.map (fun k ->
-                      inner_prod (coeff_row (c ^ mk_index k ^ coord i)) (bvar_vec (k-1))
+              encodings = Array.map (fun i ->
+		sum (
+		  max (
+                    smt (weight f i) ::
+		    List.map (fun k ->
+		      sum (
+			List.map (fun j ->
+			  prod [smt (coeff_max f k i j); bvar (k-1,j-1)]
+		        ) (int_list 1 p.w_dim)
+		      )
+		    ) (int_list 1 f#arity)
+		  ) ::
+                  List.concat (
+		    List.map (fun k ->
+                      List.map (fun j ->
+			prod [smt (coeff_sum f k i j); bvar (k-1,j-1)]
+		      ) (int_list 1 p.w_dim)
                     ) (int_list 1 f#arity)
-                  )
-                ) (int_array 1 p.w_dim);
+		  )
+		)
+	      ) (int_array 1 p.w_dim);
               pos_info = Array.map (
                 fun k ->
-		let ck = c ^ mk_index k in
+		let ck = c f k in
 		{
                   const = solver#refer Bool (
                     smt_for_all (fun i ->
 		      smt_for_all (fun j ->
-			ref_coeff (ck ^ coord i ^ coord j) =^ LI 0
+			(coeff_sum f k i j =^ LI 0) &^
+			(coeff_max f k i j =^ LI 0)
 		      ) (int_list 1 p.w_dim)
                     ) (int_list 1 p.w_dim)
 		  );
                   id = smt_for_all (fun i ->
                     smt_for_all (fun j ->
-		      ref_coeff (ck ^ coord i ^ coord j) =^
-		      LI (if i = j then 1 else 0)
+		      coeff_sum f k i j =^ LI (if i = j then 1 else 0)
 		    ) (int_list 1 p.w_dim) &^
-                    (ref_weight (w ^ coord i) =^ LI 0)
+                    (weight f i =^ LI 0)
                   ) (int_list 1 p.w_dim);
                 }
               ) (int_array 1 f#arity);
