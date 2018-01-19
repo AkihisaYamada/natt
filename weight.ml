@@ -16,21 +16,27 @@ let wexp_smt exp = Node(Smt exp, [])
 
 let wexp_sum ss =
   let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
-  if ss = [] then wexp_smt (LI 0)
-  else Node(Add, ss)
+  match ss with
+  | [] -> wexp_smt (LI 0)
+  | [s] -> s
+  | _ -> Node(Add, ss)
 
 let wexp_prod ss =
   if List.exists ((=) (wexp_smt (LI 0))) ss then
     wexp_smt (LI 0)
   else
     let ss = List.filter ((<>) (wexp_smt (LI 1))) ss in
-    if ss = [] then wexp_smt (LI 1)
-    else Node(Mul, ss)
+    match ss with
+    | [] -> wexp_smt (LI 1)
+    | [s] -> s
+    | _ -> Node(Mul, ss)
 
 let wexp_max ss =
-  let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
-  if ss = [] then wexp_smt (LI 0)
-  else Node(Max, ss)
+  let ss = remdups ss in
+  match ss with
+  | [] -> wexp_smt (LI 0)
+  | [s] -> s
+  | _ -> Node(Max, ss)
 
 let punct_list elem punc (os : #printer) =
   let rec sub = function
@@ -359,9 +365,10 @@ class pol_interpreter p =
           | MAX_none ->
             fun _ _ -> no_max
         in
+	let w f = "w_" ^ f#name in
 	let c f k = "c_" ^ f#name ^ index k in
 	let d f k = "d_" ^ f#name ^ index k in
-	let w f = "w_" ^ f#name in
+	let a f k = "a_" ^ f#name ^ index k in
 	let weight f i =
 	  ref_weight (w f ^ coord i)
 	in
@@ -379,14 +386,23 @@ class pol_interpreter p =
 	  else
 	    LI 0
 	in
+	let addend_max f k i j =
+	  if (arg_mode f k)#in_max then
+	    ref_weight (a f k ^ coord i ^ coord j)
+	  else
+	    LI 0
+	in
         trs#iter_funs (fun f ->
           for i = 1 to p.w_dim do
               let w_i = w f ^ coord i in
               add_number p.w_mode solver w_i;
-              solver#add_assertion (ref_weight w_i >=^ LI 0);
+              if not p.w_neg then begin
+		solver#add_assertion (ref_weight w_i >=^ LI 0);
+	      end;
               for k = 1 to f#arity do
                 let c_ki = c f k ^ coord i in
 		let d_ki = d f k ^ coord i in
+		let a_ki = a f k ^ coord i in
 		if (arg_mode f k)#in_sum then
 		  for j = 1 to p.w_dim do
 		    let c_kij = c_ki ^ coord j in
@@ -397,9 +413,14 @@ class pol_interpreter p =
 		if (arg_mode f k)#in_max then
 		  for j = 1 to p.w_dim do
 		    let d_kij = d_ki ^ coord j in
+		    let a_kij = a_ki ^ coord j in
 		    add_number p.sc_mode solver d_kij;
 		    bind_upper solver (ref_coeff d_kij);
 		    solver#add_assertion (ref_coeff d_kij >=^ LI 0);
+		    add_number p.w_mode solver a_kij;
+		    if not p.w_neg then begin
+		      solver#add_assertion (ref_weight a_kij >=^ LI 0);
+		    end;
 		  done;
               done
             done;
@@ -411,7 +432,13 @@ class pol_interpreter p =
 		    List.map (fun k ->
 		      wexp_sum (
 			List.map (fun j ->
-			  wexp_prod [wexp_smt (coeff_max f k i j); wexp_bvar (k-1,j-1)]
+			  wexp_prod [
+			    wexp_smt (coeff_max f k i j);
+			    wexp_sum [
+			      wexp_smt (addend_max f k i j);
+			      wexp_bvar (k-1,j-1)
+			    ]
+			  ]
 		        ) (int_list 1 p.w_dim)
 		      )
 		    ) (int_list 1 f#arity)

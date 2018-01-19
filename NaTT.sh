@@ -4,8 +4,6 @@ dir=${0%/*}
 options=
 proof=
 ext=xml
-timefile="$dir/tmp.time"
-outfile="$dir/tmp.out"
 
 info()
 {
@@ -125,6 +123,8 @@ do
 		cpffile="$cpfdir/${cpffile//\//-}"
 		cpfopt=-x:"$cpffile"
 	fi
+	timefile=`mktemp`
+	outfile=`mktemp`
 	if [ "${f##*.}" = "xml" ]
 	then
 		xsltproc "$dir/xtc2tpdb.xml" "$d$f"
@@ -143,7 +143,7 @@ do
 		echo -n "$out	"
 	fi
 	sed -E "s/real[ 	]*([0-9.]+).+$/\1/;q" $timefile
-	rm -f $timefile
+	rm -f $timefile $outfile
 	if [ "$ceta" != "" -a "$cpffile" != "" -a "$out" = "YES" ]
 	then
 		"$ceta" "$cpffile"

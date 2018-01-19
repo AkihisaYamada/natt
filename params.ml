@@ -113,7 +113,7 @@ let nonmonotone p =
   p.w_neg ||
   p.collapse ||
   p.status_mode = S_partial ||
-  p.status_mode = S_empty && (p.max_mode <> MAX_none || p.prec_mode <> PREC_none)
+  p.status_mode = S_empty && p.prec_mode <> PREC_none
 
 let order_default =
 {

@@ -84,8 +84,13 @@ let rec subsequences xs =
   | [] -> [[]]
   | x::xs -> let yss = subsequences xs in List.map (fun ys -> x::ys) yss @ yss
 
-(* association list *)
-
+let remdups =
+  let rec sub acc xs =
+  match xs with
+  | [] -> acc
+  | x::xs -> if List.mem x acc then sub acc xs else sub (x::acc) xs
+  in
+  fun xs -> sub [] xs
 
 class type output =
   object
