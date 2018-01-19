@@ -81,6 +81,7 @@ type order_params =
   mutable max_mode : max_mode;
   mutable max_poly_nest : int;
   mutable max_poly : bool;
+  mutable max_coord : int -> bool;
   mutable sp_mode : w_mode;
   mutable prec_mode : prec_mode;
   mutable mcw_mode : mcw_mode;
@@ -135,6 +136,7 @@ let order_default =
   max_mode = MAX_none;
   max_poly = false;
   max_poly_nest = 0;
+  max_coord = (fun _ -> false);
   sp_mode = W_num;
   prec_mode = PREC_quasi;
   mcw_mode = MCW_const;
@@ -529,7 +531,7 @@ while !i < argc do
     | "C", None -> p.sc_mode <- W_none;
 
     | "-min", None -> p.mincons <- true;
-    | "-max", None -> p.maxcons <- true;
+    | "-max", Some s -> p.max_coord <- ((=) (safe_atoi s arg));
 
     | "z", None -> p.mcw_val <- 0;
     | "Z", None -> p.mcw_val <- 1;

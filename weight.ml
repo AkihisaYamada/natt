@@ -359,11 +359,11 @@ class pol_interpreter p =
           match p.max_mode with
           | MAX_dup ->
             let t = maxpoly_heuristic trs dg (not p.max_poly) in
-            fun f k -> t#info f (k-1)
+            fun f k i -> if p.max_coord i then t#info f (k-1) else no_max
           | MAX_all ->
-            fun f _ -> if f#arity < 2 then no_max else use_max
+            fun f _ i -> if p.max_coord i || f#arity < 2 then no_max else use_max
           | MAX_none ->
-            fun _ _ -> no_max
+            fun _ _ _ -> no_max
         in
 	let w f = "w_" ^ f#name in
 	let c f k = "c_" ^ f#name ^ index k in
@@ -373,7 +373,7 @@ class pol_interpreter p =
 	  ref_weight (w f ^ coord i)
 	in
 	let coeff_sum f k i j =
-	  ( if (arg_mode f k)#in_sum then
+	  ( if (arg_mode f k i)#in_sum then
 	      ref_coeff (c f k ^ coord i ^ coord j)
 	    else
 	      LI 0
@@ -381,13 +381,13 @@ class pol_interpreter p =
 	  LI (if not p.dp && i = 1 then 1 else 0)
 	in
 	let coeff_max f k i j =
-	  if (arg_mode f k)#in_max then
+	  if (arg_mode f k i)#in_max then
 	    ref_coeff (d f k ^ coord i ^ coord j)
 	  else
 	    LI 0
 	in
 	let addend_max f k i j =
-	  if (arg_mode f k)#in_max then
+	  if (arg_mode f k i)#in_max then
 	    ref_weight (a f k ^ coord i ^ coord j)
 	  else
 	    LI 0
@@ -403,14 +403,14 @@ class pol_interpreter p =
                 let c_ki = c f k ^ coord i in
 		let d_ki = d f k ^ coord i in
 		let a_ki = a f k ^ coord i in
-		if (arg_mode f k)#in_sum then
+		if (arg_mode f k i)#in_sum then
 		  for j = 1 to p.w_dim do
 		    let c_kij = c_ki ^ coord j in
 		    add_number p.sc_mode solver c_kij;
 		    bind_upper solver (ref_coeff c_kij);
 		    solver#add_assertion (ref_coeff c_kij >=^ LI 0);
 		  done;
-		if (arg_mode f k)#in_max then
+		if (arg_mode f k i)#in_max then
 		  for j = 1 to p.w_dim do
 		    let d_kij = d_ki ^ coord j in
 		    let a_kij = a_ki ^ coord j in
