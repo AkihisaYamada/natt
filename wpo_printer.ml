@@ -43,14 +43,15 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
         pr#puts rbr;
       in
       let pr_interpret finfo =
-        interpreter#output_sym solver (pr:>#Io.printer) "\tw" finfo#base finfo#base#arity;
+        pr#puts "\tw: ";
+	interpreter#output_sym solver finfo#base pr;
       in
       let pr_prec finfo =
         pr#puts "p: ";
         pr_exp (solver#get_value finfo#prec);
       in
       let pr_symbol fname (finfo:wpo_sym) =
-        pr#puts "      ";
+        pr#puts "  ";
         finfo#base#output (pr:>Io.outputter);
         if status_is_used then begin
           pr#puts "\t";
@@ -61,9 +62,9 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
             pr#puts "\t";
             pr_prec finfo;
           end;
-          if weight_is_used then begin
-            pr_interpret finfo;
-          end;
+        end;
+	if weight_is_used then begin
+          pr_interpret finfo;
         end;
         pr#endl;
       in

@@ -11,11 +11,26 @@ module StrListMap = Map.Make(LexList(StrHashed));;
 
 type 'a wsym = Smt of exp | Add | Mul | Max | BVar of 'a
 
-let bvar name = Node(BVar name, [])
-let smt exp = Node(Smt exp, [])
-let sum ss = Node(Add,ss)
-let prod ss = Node(Mul,ss)
-let max ss = Node(Max,ss)
+let wexp_bvar name = Node(BVar name, [])
+let wexp_smt exp = Node(Smt exp, [])
+
+let wexp_sum ss =
+  let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
+  if ss = [] then wexp_smt (LI 0)
+  else Node(Add, ss)
+
+let wexp_prod ss =
+  if List.exists ((=) (wexp_smt (LI 0))) ss then
+    wexp_smt (LI 0)
+  else
+    let ss = List.filter ((<>) (wexp_smt (LI 1))) ss in
+    if ss = [] then wexp_smt (LI 1)
+    else Node(Mul, ss)
+
+let wexp_max ss =
+  let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
+  if ss = [] then wexp_smt (LI 0)
+  else Node(Max, ss)
 
 let punct_list elem punc (os : #printer) =
   let rec sub = function
@@ -26,13 +41,18 @@ let punct_list elem punc (os : #printer) =
   | [] -> ()
   | x::xs -> elem x; sub xs
 
-let put_wexp_inner smt e (os : #printer) =
+let put_wexp e (os : #printer) =
   let rec sub =
     function
-    | Node(Smt exp,[]) -> smt exp os
-    | Node(Add, es) -> punct_list sub (puts " + ") os es
-    | Node(Mul, es) -> punct_list sub (puts " * ") os es
-    | Node(Max, es) -> os#puts "max {"; punct_list sub (puts ", ") os es; os#puts "}";
+    | Node(Smt exp,[]) -> put_exp exp os
+    | Node(Add, es) ->
+      if es = [] then os#puts "0"
+      else punct_list sub (puts " + ") os es
+    | Node(Mul, es) ->
+      if es = [] then os#puts "1"
+      else punct_list sub (puts " * ") os es
+    | Node(Max, es) ->
+      os#puts "max {"; punct_list sub (puts ", ") os es; os#puts "}";
     | Node(BVar (k,i), []) ->
       os#puts "x";
       os#put_int (k+1);
@@ -41,9 +61,17 @@ let put_wexp_inner smt e (os : #printer) =
   in
   sub e
 
-let put_wexp e os = put_wexp_inner put_exp e os
-
-let eval_wexp solver = put_wexp_inner (fun exp -> put_exp (solver#get_value exp))
+let eval_wexp solver =
+  let rec sub (Node(f,ss)) =
+    let ss = List.map sub ss in
+    match f with
+    | Smt exp -> wexp_smt (solver#get_value exp)
+    | Add -> wexp_sum ss
+    | Mul -> wexp_prod ss
+    | Max -> wexp_max ss
+    | _ -> Node(f,ss)
+  in
+  sub
 
 (* Weight as a map from var list to exp *)
 
@@ -83,12 +111,7 @@ let ets_smt exp = [et_smt exp]
 let ets_bvar name = [et_bvar name]
 
 let ets_sum etss =
-debug2 (puts "entering ets_sum: " << flush);
-debug2 (put_int (List.length (list_product etss)) << endl);
-let ret =  List.map et_sum (list_product etss)
-in
-debug2 (puts "leaving" << endl);
-ret
+  List.map et_sum (list_product etss)
 
 let ets_prod etss = List.map et_prod (list_product etss)
 
@@ -159,11 +182,12 @@ let add_number : _ -> #context -> _ =
 
 type pos_info = {
   const : exp;
-  id : exp;
+  strict_linear : exp;
   weak_simple : exp;
 }
 type sym_info = {
   encodings : (int * int) wsym term array;
+  no_weight : exp;
   pos_info : pos_info array;
 }
 class virtual interpreter p =
@@ -178,16 +202,19 @@ class virtual interpreter p =
     method private find : 'b. (#sym as 'b) -> _ =
       fun f -> Hashtbl.find table f#name
 
-    method const_at : 'b. (#sym as 'b) -> int -> exp =
+    method no_weight : 'b. (#sym as 'b) -> exp =
+      fun f -> (x#find f).no_weight
+
+    method constant_at : 'b. (#sym as 'b) -> int -> exp =
       (* <--> [f](..x_k..) is constant *)
       fun f k -> (x#find f).pos_info.(k-1).const
 
     method depend_on : 'b. (#sym as 'b) -> int -> exp =
-      fun f k -> smt_not (x#const_at f k)
+      fun f k -> smt_not (x#constant_at f k)
 
-    method id_at : 'b. (#sym as 'b) -> int -> exp =
-      (* <--> [f](..x_k..) = x_k *)
-      fun f k -> (x#find f).pos_info.(k-1).id
+    method strict_linear_at : 'b. (#sym as 'b) -> int -> exp =
+      (* <--> [f](..x_k..) = x_k + ... *)
+      fun f k -> (x#find f).pos_info.(k-1).strict_linear
 
     method weak_simple_at : 'b. (#sym as 'b) -> int -> exp =
       (* <--> [f](..x_k..) >= x_k *)
@@ -220,10 +247,22 @@ class virtual interpreter p =
       WT(f,ts,w)
 
     method output_sym :
-      't 'o 'f. (#solver as 't) -> (#printer as 'o) -> string -> (#sym as 'f) -> int -> unit =
-      fun solver pr prefix f n ->
+      't 'o 'f. (#solver as 't) -> (#sym_detailed as 'f) -> (#printer as 'o) -> unit =
+      fun solver f ->
+      puts "[" << (fun pr ->
+	let punct = ref "" in
+	Array.iteri (fun i wexp ->
+          (puts !punct << put_wexp (eval_wexp solver wexp)) pr;
+	  punct := ", "
+        ) (x#encode_sym f);
+      ) <<
+      puts "]"
+
+     method output_sym_template :
+      'o 'f. ('o -> unit) -> (#sym as 'f) -> ('o -> unit) -> (#printer as 'o) -> unit =
+      fun prefix f infix pr ->
       Array.iteri (fun i wexp ->
-        (endl << puts prefix << puts (coord (i+1)) << puts ": " << eval_wexp solver wexp) pr
+        (prefix << puts (coord (i+1)) << infix << put_wexp wexp) pr
       ) (x#encode_sym f);
   end
 
@@ -316,7 +355,7 @@ class pol_interpreter p =
             let t = maxpoly_heuristic trs dg (not p.max_poly) in
             fun f k -> t#info f (k-1)
           | MAX_all ->
-            fun f _ -> if f#arity = 0 then no_max else use_max
+            fun f _ -> if f#arity < 2 then no_max else use_max
           | MAX_none ->
             fun _ _ -> no_max
         in
@@ -327,10 +366,12 @@ class pol_interpreter p =
 	  ref_weight (w f ^ coord i)
 	in
 	let coeff_sum f k i j =
-	  if (arg_mode f k)#in_sum then
-	    ref_coeff (c f k ^ coord i ^ coord j)
-	  else
-	    LI 0
+	  ( if (arg_mode f k)#in_sum then
+	      ref_coeff (c f k ^ coord i ^ coord j)
+	    else
+	      LI 0
+	  ) +^
+	  LI (if not p.dp && i = 1 then 1 else 0)
 	in
 	let coeff_max f k i j =
 	  if (arg_mode f k)#in_max then
@@ -351,11 +392,7 @@ class pol_interpreter p =
 		    let c_kij = c_ki ^ coord j in
 		    add_number p.sc_mode solver c_kij;
 		    bind_upper solver (ref_coeff c_kij);
-		    if not p.dp && i = 1 then begin
-		      solver#add_assertion (ref_coeff c_kij >=^ LI 1);
-		    end else begin
-		      solver#add_assertion (ref_coeff c_kij >=^ LI 0);
-		    end
+		    solver#add_assertion (ref_coeff c_kij >=^ LI 0);
 		  done;
 		if (arg_mode f k)#in_max then
 		  for j = 1 to p.w_dim do
@@ -368,13 +405,13 @@ class pol_interpreter p =
             done;
             Hashtbl.add table f#name {
               encodings = Array.map (fun i ->
-		sum (
-                  smt (weight f i) ::
-		  max (
+		wexp_sum (
+                  wexp_smt (weight f i) ::
+		  wexp_max (
 		    List.map (fun k ->
-		      sum (
+		      wexp_sum (
 			List.map (fun j ->
-			  prod [smt (coeff_max f k i j); bvar (k-1,j-1)]
+			  wexp_prod [wexp_smt (coeff_max f k i j); wexp_bvar (k-1,j-1)]
 		        ) (int_list 1 p.w_dim)
 		      )
 		    ) (int_list 1 f#arity)
@@ -382,12 +419,14 @@ class pol_interpreter p =
                   List.concat (
 		    List.map (fun k ->
                       List.map (fun j ->
-			prod [smt (coeff_sum f k i j); bvar (k-1,j-1)]
+			wexp_prod [wexp_smt (coeff_sum f k i j); wexp_bvar (k-1,j-1)]
 		      ) (int_list 1 p.w_dim)
                     ) (int_list 1 f#arity)
 		  )
 		)
 	      ) (int_array 1 p.w_dim);
+	      no_weight =
+		smt_for_all (fun i -> weight f i =^ LI 0) (int_list 1 p.w_dim);
               pos_info = Array.map (
                 fun k ->
 		let ck = c f k in
@@ -400,7 +439,7 @@ class pol_interpreter p =
                     ) (int_list 1 p.w_dim)
                   )
                 in
-                let ide =
+                let slin =
                   smt_for_all (fun i ->
                     smt_for_all (fun j ->
 		      coeff_sum f k i j =^ LI (if i = j then 1 else 0)
@@ -410,7 +449,7 @@ class pol_interpreter p =
                 in
 		{
 		  const = con;
-                  id = ide;
+                  strict_linear = slin;
                   weak_simple =
                     if p.w_neg then
                       smt_not con &^ smt_for_all (fun i ->
@@ -423,7 +462,13 @@ class pol_interpreter p =
                 }
               ) (int_array 1 f#arity);
             }
-          )
+          );
+debug2 (
+  puts "Weight template:" <<
+  (fun os ->
+    trs#iter_funs (fun f -> (x#output_sym_template (endl << puts "  " << f#output) f (puts ":\t") os))
+  )
+);
   end
 
 

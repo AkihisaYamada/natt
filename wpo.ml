@@ -35,32 +35,12 @@ class processor =
   let gt_p_v i = "gtP" ^ string_of_int i in (* probabilistic rules *)
   let ge_p_v i = "geP" ^ string_of_int i in
   let supply_index v i = v ^ "_" ^ string_of_int i in
-  let supply_index2 v j k = supply_index (supply_index v j) k in
-  let makebin a b =
-    smt_if a (smt_if b (LI 3) (LI 2)) (smt_if b (LI 1) (LI 0))
-  in
   fun p (trs : trs) (estimator : Estimator.t) (dg : dg) ->
   let weight_ty =
     match p.base_ty with
     | TY_int -> Int
     | TY_real -> Real
   in
-  (* Matrix interpretations *)
-  let to_dim = int_list 1 p.w_dim in
-  let makemat =
-    if p.w_dim > 1 then
-      fun f -> Mat(List.map (fun j -> List.map (fun k -> f j k) to_dim) to_dim)
-    else
-      fun f -> f 1 1
-  in
-  let makevec =
-    if p.w_dim > 1 then
-      fun f -> Vec(List.map f to_dim)
-    else
-      fun f -> f 1
-  in
-  let supply_matrix_index = if p.w_dim > 1 then supply_index2 else fun v _ _ -> v in
-
   let usables = ref [] in
   let dplist = ref [] in
   let solver =
@@ -74,20 +54,6 @@ class processor =
     try Hashtbl.find sigma name with  _ -> raise (Internal name)
   in
   let lookup f = lookup_name f#name in
-
-(*** Weights ***)
-  let add_number w_mode =
-    match w_mode with
-    | W_num -> fun v -> solver#new_variable v weight_ty
-    | W_bool -> fun v -> PB(solver#new_variable v Bool)
-    | W_tri -> fun v ->
-      smt_if (solver#new_variable (v ^ "a") Bool)
-        (smt_if (solver#new_variable (v ^ "b") Bool) (LI 2) (LI 1))
-        (LI 0)
-    | W_quad -> fun v ->
-      makebin (solver#new_variable (v ^ "a") Bool) (solver#new_variable (v ^ "b") Bool)
-    | W_none -> fun _ -> LI 0
-  in
 
   (* weight order *)
   let interpreter = new Weight.pol_interpreter p in
@@ -149,23 +115,6 @@ class processor =
         else sub g ts
       else if g#is_var then not_ordered
       else spo (lookup f) (lookup g)
-  in
-
- (* collapsing argument filters *)
-  let add_collapse =
-    if p.collapse then
-      fun finfo to_n ->
-        let f = finfo#base in
-        let v = "col_" ^ f#name in
-        solver#add_variable v Bool;
-        finfo#set_collapse (EV v);
-        solver#add_assertion (
-          EV v =>^ ES1(List.map
-            (fun i -> interpreter#depend_on f i &^ interpreter#id_at f i)
-            to_n)
-        );
-    else
-      fun finfo _ -> finfo#set_collapse (LB false)
   in
 
 (*** Usable rules ***)
@@ -341,14 +290,26 @@ class processor =
       | _ -> if finfo#base#arity > 1 then finfo#set_mset_status (sub fname);
   in
 
-(*** Tests for arity ***)
-  let is_unary =
-    if p.dp && p.sc_mode <> W_none then
+ (* collapsing argument filters *)
+  let add_collapse =
+    if p.collapse then
       fun finfo to_n ->
-        smt_not finfo#collapse &^
-        ES1(List.map (interpreter#depend_on finfo#base) to_n)
+        let f = finfo#base in
+        let v = "col_" ^ f#name in
+        solver#add_variable v Bool;
+        finfo#set_collapse (EV v);
+	solver#add_assertion
+	  (EV v =>^ interpreter#no_weight f);
+        solver#add_assertion
+	  (EV v =>^ ES1(List.map (fun i -> finfo#permed i) to_n));
+	for i = 1 to f#arity do
+	  solver#add_assertion
+	    (EV v =>^ (finfo#permed i =^ interpreter#depend_on f i));
+	  solver#add_assertion
+	    (EV v =>^ (finfo#permed i =^ interpreter#strict_linear_at f i));
+        done
     else
-      fun _ -> function [_] -> LB true | _ -> LB false
+      fun finfo _ -> finfo#set_collapse (LB false)
   in
 
 (*** preparing for function symbols ***)
@@ -356,11 +317,11 @@ class processor =
     let n = finfo#base#arity in
     let to_n = int_list 1 n in
 
-    add_collapse finfo to_n;
-
     add_prec fname finfo;
 
     add_perm fname finfo to_n;
+
+    add_collapse finfo to_n;
 
     (* for status *)
     add_mset_status fname finfo;
@@ -379,7 +340,7 @@ class processor =
     then begin
       let v = "const_" ^ fname in
       solver#add_definition v Bool
-        (smt_for_all (interpreter#const_at finfo#base) to_n);
+        (smt_for_all (interpreter#constant_at finfo#base) to_n);
       finfo#set_is_const (EV v);
       if finfo#status_mode = S_partial && p.mincons then begin
         let v = "qconst_" ^ fname in
@@ -857,7 +818,7 @@ object (x)
         let w = Weight.smult (LI coeff) w in
         Weight.add acc w
       in
-      let rw = prule#fold_rs folder (Array.create p.w_dim (Weight.ets_smt (LI 0))) in
+      let rw = prule#fold_rs folder (Array.make p.w_dim (Weight.ets_smt (LI 0))) in
       let (ge,gt) = split (Weight.order p.w_dim lw rw) solver in
       if p.remove_all then begin
         solver#add_assertion gt;
