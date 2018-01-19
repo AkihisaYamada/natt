@@ -361,7 +361,7 @@ class pol_interpreter p =
             let t = maxpoly_heuristic trs dg (not p.max_poly) in
             fun f k i -> if p.max_coord i then t#info f (k-1) else no_max
           | MAX_all ->
-            fun f _ i -> if p.max_coord i || f#arity < 2 then no_max else use_max
+            fun f _ i -> if p.max_coord i && f#arity >= 2 then use_max else no_max
           | MAX_none ->
             fun _ _ _ -> no_max
         in
