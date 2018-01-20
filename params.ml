@@ -60,6 +60,10 @@ type mat_mode =
 | MAT_full
 | MAT_upper
 | MAT_lower
+type w_template =
+| TEMP_max_sum
+| TEMP_sum_max
+
 type smt_tool = string * string list
 
 type order_params =
@@ -70,6 +74,7 @@ type order_params =
   mutable mat_mode : mat_mode;
   mutable w_max : int;
   mutable w_neg : bool;
+  mutable w_template : w_template;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -125,6 +130,7 @@ let order_default =
   mat_mode = MAT_full;
   w_max = 0;
   w_neg = false;
+  w_template = TEMP_max_sum;
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
@@ -292,7 +298,7 @@ let prerr_help () =
   pe "  --peek[-in|-out] dump transactions with the SMT solver.";
   pe "";
   pe "PROCESSORs: <ORDER> [OPTION]... | UNCURRY | EDG | LOOP";
-  pe "ORDERs: WPO | POLO | LPO | MPO | RPO | KBO";
+  pe "ORDERs: WPO | POLO | LPO | MPO | RPO";
   pe "";
   pe "Options for orders:";
   pe "  -u/-U        enable/disable usable rules (after EDG, enabled by default).";
@@ -532,7 +538,8 @@ while !i < argc do
 
     | "-min", None -> p.mincons <- true;
     | "-max", Some s -> p.max_coord <- ((=) (safe_atoi s arg));
-
+    | "-max-sum", None -> p.w_template <- TEMP_max_sum;
+    | "-sum-max", None -> p.w_template <- TEMP_sum_max;
     | "z", None -> p.mcw_val <- 0;
     | "Z", None -> p.mcw_val <- 1;
 

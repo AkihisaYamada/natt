@@ -349,6 +349,10 @@ class pol_interpreter p =
     if p.w_max = 0 then fun _ _ -> ()
     else fun solver fw -> solver#add_assertion (fw <=^ LI p.w_max)
   in
+  let make_positive =
+    if p.w_neg then fun e -> wexp_max [wexp_smt (LI 0); e]
+    else fun e -> e
+  in
   object (x)
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
@@ -426,34 +430,38 @@ class pol_interpreter p =
             done;
             Hashtbl.add table f#name {
               encodings = Array.map (fun i ->
-		wexp_sum (
-                  wexp_smt (weight f i) ::
-		  wexp_max (
-		    List.map (fun k ->
-		      wexp_sum (
-			List.map (fun j ->
-			  wexp_prod [
-			    wexp_smt (coeff_max f k i j);
-			    wexp_sum [
-			      wexp_smt (addend_max f k i j);
-			      wexp_bvar (k-1,j-1)
-			    ]
-			  ]
-		        ) (int_list 1 p.w_dim)
-		      )
-		    ) (int_list 1 f#arity)
-		  ) ::
+                let added =
                   List.concat (
 		    List.map (fun k ->
                       List.map (fun j ->
-			wexp_prod [wexp_smt (coeff_sum f k i j); wexp_bvar (k-1,j-1)]
+		        wexp_prod [wexp_smt (coeff_sum f k i j); wexp_bvar (k-1,j-1)]
 		      ) (int_list 1 p.w_dim)
                     ) (int_list 1 f#arity)
-		  )
-		)
+	          )
+                in
+                let maxed =
+	          List.map (fun k ->
+		    wexp_sum (
+		      List.map (fun j ->
+		        wexp_prod [
+		          wexp_smt (coeff_max f k i j);
+		          wexp_sum [
+			    wexp_smt (addend_max f k i j);
+			    wexp_bvar (k-1,j-1)
+		          ]
+		        ]
+		      ) (int_list 1 p.w_dim)
+		    )
+                  ) (int_list 1 f#arity)
+                in
+                let w = wexp_smt (weight f i) in
+                match p.w_template with
+                | TEMP_max_sum ->
+                  make_positive (wexp_max (wexp_sum (w :: added) :: maxed))
+                | TEMP_sum_max ->
+                  make_positive (wexp_sum (w :: wexp_max maxed :: added))
 	      ) (int_array 1 p.w_dim);
-	      no_weight =
-		smt_for_all (fun i -> weight f i =^ LI 0) (int_list 1 p.w_dim);
+	      no_weight = smt_for_all (fun i -> weight f i =^ LI 0) (int_list 1 p.w_dim);
               pos_info = Array.map (
                 fun k ->
 		let ck = c f k in
