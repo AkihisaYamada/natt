@@ -38,7 +38,7 @@ let wexp_max ss =
   | [s] -> s
   | _ -> Node(Max, ss)
 
-let put_wexp e (os : #printer) =
+let put_wexp var e (os : #printer) =
   let rec sub =
     function
     | Node(Smt exp,[]) -> put_exp exp os
@@ -50,11 +50,7 @@ let put_wexp e (os : #printer) =
       else punct_list sub (puts " * ") os es
     | Node(Max, es) ->
       os#puts "max {"; punct_list sub (puts ", ") os es; os#puts "}";
-    | Node(BVar (k,i), []) ->
-      os#puts "x";
-      os#put_int (k+1);
-      os#puts "_";
-      os#put_int (i+1)
+    | Node(BVar v, []) -> var v os
   in
   sub e
 
@@ -77,7 +73,7 @@ let et_smt exp = StrListMap.singleton [] exp
 let et_bvar name = StrListMap.singleton [name] (LI 1)
 
 let et_find vs et =
-  try StrListMap.find vs et with Not_found -> LI 0
+  try StrListMap.find vs et with Not_found -> NegInf
 
 let et_add = StrListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
 
@@ -98,8 +94,14 @@ let et_ge et1 et2 =
   smt_for_all (fun (vs,e) -> et_find vs et1 >=^ e) (StrListMap.bindings et2)
 
 let et_order solver et1 et2 =
-  let ge = solver#refer Bool (et_ge et1 et2) in
-  (ge, ge &^ (et_find [] et1 >^ et_find [] et2))
+  let pre =
+    smt_for_all (fun (vs,e) -> if vs = [] then LB true else et_find vs et1 >=^ e)
+    (StrListMap.bindings et2)
+  in
+  let pre = solver#refer Bool pre in
+  let l = et_find [] et1 in
+  let r = et_find [] et2 in
+  (pre &^ (l >=^ r), pre &^ (l >^ r))
 
 (* Max are expanded as lists *)
 
@@ -191,6 +193,8 @@ class virtual interpreter p =
   let coord = (* makes suffix for coordination *)
     if p.w_dim = 1 then fun _ -> "" else index
   in
+  let put_var (k, i) = puts ("x" ^ index (k+1) ^ coord (i+1))
+  in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> Dp.dg -> unit
 
@@ -249,7 +253,8 @@ class virtual interpreter p =
       puts "[" << (fun pr ->
 	let punct = ref "" in
 	Array.iteri (fun i wexp ->
-          (puts !punct << put_wexp (eval_wexp solver wexp)) pr;
+          pr#puts !punct;
+          (put_wexp put_var (eval_wexp solver wexp)) pr;
 	  punct := ", "
         ) (x#encode_sym f);
       ) <<
@@ -259,7 +264,7 @@ class virtual interpreter p =
       'o 'f. ('o -> unit) -> (#sym as 'f) -> ('o -> unit) -> (#printer as 'o) -> unit =
       fun prefix f infix pr ->
       Array.iteri (fun i wexp ->
-        (prefix << puts (coord (i+1)) << infix << put_wexp wexp) pr
+        (prefix << puts (coord (i+1)) << infix << put_wexp put_var wexp) pr
       ) (x#encode_sym f);
   end
 
@@ -398,7 +403,7 @@ class pol_interpreter p =
           for i = 1 to p.w_dim do
               let w_i = w f ^ coord i in
               add_number p.w_mode solver w_i;
-              if not p.w_neg then begin
+              if not p.w_neg || f#arity = 0 then begin
 		solver#add_assertion (ref_weight w_i >=^ LI 0);
 	      end;
               for k = 1 to f#arity do
@@ -456,7 +461,7 @@ class pol_interpreter p =
                 match coord_params.(i-1) with
                 | TEMP_max_sum_dup ->
                   wexp_max (
-                    (if p.w_neg then [wexp_smt (LI 0)] else []) @
+                    (if p.w_neg && f#arity > 0 then [wexp_smt (LI 0)] else []) @
                     wexp_sum (w :: added) :: maxed
                   )
                 | _ ->
