@@ -483,14 +483,10 @@ class pol_interpreter p =
 		  const = con;
                   strict_linear = slin;
                   weak_simple =
-                    if p.w_neg then
-                      smt_not con &^ smt_for_all (fun i ->
-                        smt_for_all (fun j ->
-                          coeff_max f k i j >=^ LI 1
-                        ) (int_list 1 p.w_dim)
-                      ) (int_list 1 p.w_dim)
-                    else
-                      smt_not con;
+                    smt_for_all (fun i ->
+                      (if p.w_neg then weight f i >=^ LI 0 else LB true) &^
+                      ( (coeff_max f k i i >=^ LI 1) |^ (coeff_sum f k i i >=^ LI 1) )
+                    ) (int_list 1 p.w_dim);
                 }
               ) (int_array 1 f#arity);
             }

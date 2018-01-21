@@ -639,7 +639,7 @@ while !i < argc do
       register_weight TEMP_sum;
     | "O" ->
       default := false;
-      register_order { order_default with w_params = []; };
+      apply_polo ();
     | "p" ->
       default := false;
       register_weight TEMP_sum;
