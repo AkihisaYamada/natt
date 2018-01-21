@@ -280,7 +280,7 @@ class enc_pos_info s m = object
 end
 
 
-let maxpoly_heuristic (trs:trs) (dg:Dp.dg) either =
+let maxpoly_heuristic (trs:trs) (dg:Dp.dg) either all =
 object (x)
 
   val table = Hashtbl.create 64
@@ -301,6 +301,10 @@ object (x)
     let summarize_term test =
       let summarize_sym f =
         let arr = x#get f in
+        let set_max i =
+	  arr.(i)#set_max true;
+	  if either then arr.(i)#set_sum false;
+	in
         let rec sub acc i = function
 	  | [] -> acc
 	  | vs::vss ->
@@ -311,8 +315,12 @@ object (x)
 	      if test acc' then
 	        sub acc' (i+1) vss
 	      else (
-	        arr.(i)#set_max true;
-	        if either then arr.(i)#set_sum false;
+	        if all then
+	          for j = 0 to i + List.length vss do
+	            set_max j;
+	          done
+	        else
+	          set_max i;
 	        raise Continue
 	      )
         in
@@ -359,7 +367,7 @@ class pol_interpreter p =
 	  let no_max = new enc_pos_info true false in
 	  let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
           if Array.exists use_dup coord_params then
-            let info = maxpoly_heuristic trs dg (not p.max_poly) in
+            let info = maxpoly_heuristic trs dg (not p.max_poly) true in
             fun f k i ->
             if f#arity < 2 then no_max
             else
