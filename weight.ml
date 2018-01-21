@@ -73,7 +73,7 @@ let et_smt exp = StrListMap.singleton [] exp
 let et_bvar name = StrListMap.singleton [name] (LI 1)
 
 let et_find vs et =
-  try StrListMap.find vs et with Not_found -> NegInf
+  try StrListMap.find vs et with Not_found -> LI 0
 
 let et_add = StrListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
 
