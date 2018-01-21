@@ -38,15 +38,6 @@ let wexp_max ss =
   | [s] -> s
   | _ -> Node(Max, ss)
 
-let punct_list elem punc (os : #printer) =
-  let rec sub = function
-    | [] -> ()
-    | x::xs -> punc os; elem x; sub xs
-  in
-  function
-  | [] -> ()
-  | x::xs -> elem x; sub xs
-
 let put_wexp e (os : #printer) =
   let rec sub =
     function
@@ -353,6 +344,7 @@ class pol_interpreter p =
     if p.w_neg then fun e -> wexp_max [wexp_smt (LI 0); e]
     else fun e -> e
   in
+  let coord_params = Array.of_list p.w_params in
   object (x)
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
@@ -360,14 +352,16 @@ class pol_interpreter p =
         let arg_mode =
 	  let use_max = new enc_pos_info p.max_poly true in
 	  let no_max = new enc_pos_info true false in
-          match p.max_mode with
-          | MAX_dup ->
-            let t = maxpoly_heuristic trs dg (not p.max_poly) in
-            fun f k i -> if p.max_coord i then t#info f (k-1) else no_max
-          | MAX_all ->
-            fun f _ i -> if p.max_coord i && f#arity >= 2 then use_max else no_max
-          | MAX_none ->
-            fun _ _ _ -> no_max
+	  let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
+          if Array.exists use_dup coord_params then
+            let info = maxpoly_heuristic trs dg (not p.max_poly) in
+            fun f k i ->
+              let t = coord_params.(i-1) in
+              if t = TEMP_max then use_max
+              else if use_dup t then info#info f (k-1)
+              else no_max
+          else
+            fun f _ i -> if coord_params.(i-1) = TEMP_max then use_max else no_max
         in
 	let w f = "w_" ^ f#name in
 	let c f k = "c_" ^ f#name ^ index k in
@@ -455,10 +449,13 @@ class pol_interpreter p =
                   ) (int_list 1 f#arity)
                 in
                 let w = wexp_smt (weight f i) in
-                match p.w_template with
-                | TEMP_max_sum ->
-                  make_positive (wexp_max (wexp_sum (w :: added) :: maxed))
-                | TEMP_sum_max ->
+                match coord_params.(i-1) with
+                | TEMP_max_sum_dup ->
+                  wexp_max (
+                    (if p.w_neg then [wexp_smt (LI 0)] else []) @
+                    wexp_sum (w :: added) :: maxed
+                  )
+                | _ ->
                   make_positive (wexp_sum (w :: wexp_max maxed :: added))
 	      ) (int_array 1 p.w_dim);
 	      no_weight = smt_for_all (fun i -> weight f i =^ LI 0) (int_list 1 p.w_dim);

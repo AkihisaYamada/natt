@@ -262,11 +262,12 @@ class processor =
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
-          if p.max_mode <> MAX_all || p.sp_mode <> W_none then begin
+          if List.for_all (fun t -> t = TEMP_sum || p.sp_mode <> W_none) p.w_params
+          then begin
+            sub_c fname finfo;
+          end else begin
             (* in this case, we cannot ensure monotonicity... *)
             finfo#set_status_mode S_empty;
-          end else begin
-            sub_c fname finfo;
           end
         end else begin
           sub_lex fname finfo finfo#base#arity to_n;

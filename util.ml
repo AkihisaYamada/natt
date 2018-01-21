@@ -45,6 +45,24 @@ let rec int_list m n = if m > n then [] else m :: int_list (m+1) n
 
 let int_array m n = Array.of_list (int_list m n)
 
+let foldl_nonnil z one f =
+  let rec sub acc = function
+    | [] -> acc
+    | x :: xs -> sub (f acc x) xs
+  in
+  function
+  | [] -> z
+  | x :: xs -> sub (one x) xs
+
+let punct_list elem punc os =
+  let rec sub = function
+    | [] -> ()
+    | x::xs -> punc os; elem x; sub xs
+  in
+  function
+  | [] -> ()
+  | x::xs -> elem x; sub xs
+
 let rec list_remove f =
   function
   | []  -> raise Not_found

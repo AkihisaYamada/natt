@@ -61,8 +61,10 @@ type mat_mode =
 | MAT_upper
 | MAT_lower
 type w_template =
-| TEMP_max_sum
-| TEMP_sum_max
+| TEMP_sum
+| TEMP_max
+| TEMP_max_sum_dup
+| TEMP_sum_max_dup
 
 type smt_tool = string * string list
 
@@ -70,11 +72,11 @@ type order_params =
 {
   mutable dp : bool;
   mutable w_mode : w_mode;
+  mutable w_neg : bool;
   mutable w_dim : int;
   mutable mat_mode : mat_mode;
   mutable w_max : int;
-  mutable w_neg : bool;
-  mutable w_template : w_template;
+  mutable w_params : w_template list;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -83,10 +85,8 @@ type order_params =
   mutable sc_mode : w_mode;
   mutable sc_max : int;
   mutable max_nest : int;
-  mutable max_mode : max_mode;
   mutable max_poly_nest : int;
   mutable max_poly : bool;
-  mutable max_coord : int -> bool;
   mutable sp_mode : w_mode;
   mutable prec_mode : prec_mode;
   mutable mcw_mode : mcw_mode;
@@ -99,7 +99,6 @@ type order_params =
   mutable collapse : bool;
   mutable usable : bool;
   mutable usable_w : bool;
-  mutable refer_w : bool;
   mutable reset_mode : reset_mode;
   mutable use_scope : bool;
   mutable use_scope_ratio : int;
@@ -124,13 +123,13 @@ let nonmonotone p =
 let order_default =
 {
   dp = false;
-  base_ty = TY_int;
-  w_mode = W_none;
-  w_dim = 1;
+  base_ty = TY_real;
+  w_mode = W_num;
+  w_dim = 0;
   mat_mode = MAT_full;
   w_max = 0;
   w_neg = false;
-  w_template = TEMP_max_sum;
+  w_params = [];
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
@@ -139,10 +138,8 @@ let order_default =
   sc_mode = W_none;
   sc_max = 0;
   max_nest = 0;
-  max_mode = MAX_none;
   max_poly = false;
   max_poly_nest = 0;
-  max_coord = (fun _ -> false);
   sp_mode = W_num;
   prec_mode = PREC_quasi;
   mcw_mode = MCW_const;
@@ -154,7 +151,6 @@ let order_default =
   collapse = false;
   usable = true;
   usable_w = false;
-  refer_w = true;
   reset_mode = RESET_reset;
   use_scope = true;
   use_scope_ratio = 0;
@@ -194,10 +190,13 @@ let name_order p =
       | W_quad  -> "qPol"
   in
   let algebra =
-    match p.max_mode with
-    | MAX_none -> base
-    | MAX_all -> if p.max_poly then "Max" ^ base else "max"
-    | MAX_dup -> (if p.max_poly then "M" else "m") ^ base
+    let elem = function
+      | TEMP_sum -> "Pol"
+      | TEMP_max -> "Max"
+      | TEMP_max_sum_dup -> "MaxPol"
+      | TEMP_sum_max_dup -> "PolMax"
+    in
+    Util.foldl_nonnil "" elem (fun acc t -> acc ^ "," ^ elem t) p.w_params
   in
   if p.w_mode = W_none then
     prec ^ (
@@ -325,6 +324,10 @@ let register_order p =
     pp := params.orders_removal.(Array.length params.orders_removal - 1);
   end;
 in
+let register_weight t =
+  (!pp).w_params <- (!pp).w_params @ [t];
+  (!pp).w_dim <- (!pp).w_dim + 1;
+in
 let apply_edg () =
   if params.dp then err "'EDG' cannot be applied twice!";
   params.dp <- true;
@@ -345,19 +348,19 @@ let apply_polo () =
     w_mode = W_num;
     collapse = false;
     usable_w = false;
-    refer_w = false;
     base_ty = TY_real;
     sc_mode = W_bool;
   };
 in
 let apply_lpo () =
-  register_order
-  {
+  register_order {
     order_default with
     ext_lex = true;
-    max_mode = MAX_all;
+    w_mode = W_none;
     sp_mode = W_none;
     status_mode = S_total;
+    w_params = [TEMP_max];
+    w_dim = 1;
   };
 in
 let apply_wpo () =
@@ -461,21 +464,8 @@ while !i < argc do
         | Some file -> p.peek_to <- open_out file;
         | _ -> ();
       end;
-    | "a", Some s ->
-      begin
-        match s with
-        | "pol" -> p.max_mode <- MAX_none;
-        | "max" -> p.max_mode <- MAX_all; p.refer_w <- true;
-        | "mpol" -> p.max_mode <- MAX_dup; p.refer_w <- true;
-        | "mpol2" -> p.max_mode <- MAX_dup; p.max_poly <- true; p.refer_w <- true;
-        | _ -> erro arg;
-      end;
 
     | "m", Some s -> p.max_nest <- safe_atoi s arg;
-
-    | "-dim", Some s ->
-      p.w_dim <- safe_atoi s arg;
-      if p.w_dim > 10 then err "too big dimension!";
 
     | "-upper", None -> p.mat_mode <- MAT_upper;
     | "-lower", None -> p.mat_mode <- MAT_lower;
@@ -512,9 +502,6 @@ while !i < argc do
       end;
     | "P", None -> p.prec_mode <- PREC_none;
 
-    | "r", None -> p.refer_w <- true;
-    | "R", None -> p.refer_w <- false;
-
     | "w", _ ->
       begin
         match optarg with
@@ -537,9 +524,6 @@ while !i < argc do
     | "C", None -> p.sc_mode <- W_none;
 
     | "-min", None -> p.mincons <- true;
-    | "-max", Some s -> p.max_coord <- ((=) (safe_atoi s arg));
-    | "-max-sum", None -> p.w_template <- TEMP_max_sum;
-    | "-sum-max", None -> p.w_template <- TEMP_sum_max;
     | "z", None -> p.mcw_val <- 0;
     | "Z", None -> p.mcw_val <- 1;
 
@@ -632,9 +616,10 @@ while !i < argc do
         order_default with
         ext_lex = false;
         ext_mset = true;
-        max_mode = MAX_all;
         sp_mode = W_none;
         status_mode = S_total;
+        w_params = [TEMP_max];
+        w_dim = 1;
       };
     | "RPO" ->
       default := false;
@@ -643,13 +628,30 @@ while !i < argc do
         order_default with
         ext_lex = true;
         ext_mset = true;
-        max_mode = MAX_all;
         sp_mode = W_none;
         status_mode = S_total;
+        w_params = [TEMP_max];
+        w_dim = 1;
       };
     | "POLO" ->
       default := false;
       apply_polo ();
+      register_weight TEMP_sum;
+    | "O" ->
+      default := false;
+      register_order { order_default with w_params = []; };
+    | "p" ->
+      default := false;
+      register_weight TEMP_sum;
+    | "m" ->
+      default := false;
+      register_weight TEMP_max;
+    | "mp" ->
+      default := false;
+      register_weight TEMP_max_sum_dup;
+    | "pm" ->
+      default := false;
+      register_weight TEMP_sum_max_dup;
     | _ ->
       if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
       params.file <- arg;
@@ -659,23 +661,24 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
+  register_weight TEMP_sum;
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;
   apply_polo ();
+  register_weight TEMP_sum;
   apply_polo ();
-  !pp.max_mode <- MAX_all;
-  !pp.refer_w <- true;
+  register_weight TEMP_max;
   apply_lpo ();
   apply_polo ();
-  !pp.max_mode <- MAX_dup;
-  !pp.refer_w <- true;
+  register_weight TEMP_max_sum_dup;
   !pp.w_neg <- true;
   apply_wpo ();
+  register_weight TEMP_max_sum_dup;
   !pp.status_mode <- S_partial;
-  !pp.max_mode <- MAX_dup;
   apply_polo ();
-  !pp.w_dim <- 2;
+  register_weight TEMP_sum;
+  register_weight TEMP_sum;
   (* certified nontermination not supported *)
   if not params.cpf then params.max_loop <- 3;
 end
