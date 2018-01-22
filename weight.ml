@@ -393,7 +393,7 @@ class pol_interpreter p =
 	    else
 	      LI 0
 	  ) +^
-	  LI (if not p.dp && i = 1 then 1 else 0)
+	  LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
 	in
 	let coeff_max f k i j =
 	  if (arg_mode f k i)#in_max then
