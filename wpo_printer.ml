@@ -116,12 +116,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
         Xml.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) (Matrix.trans ess))
       in
       let put_coef e =
-        Xml.enclose "polynomial" (
-          match e with
-          | Vec es -> Xml.enclose "coefficient" (put_vec es)
-          | Mat ess -> Xml.enclose "coefficient" (put_mat ess)
-          | _ -> put_inte e
-        )
+        Xml.enclose "polynomial" (put_inte e)
       in
       let pr_interpret pr _ (finfo:wpo_sym) =
         Xml.enter "interpret" pr;

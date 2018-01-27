@@ -162,7 +162,7 @@ let make_quad a b =
 let ref_number w_mode =
   match w_mode with
   | W_num -> fun v -> EV v
-  | W_bool -> fun v -> PB (EV v)
+  | W_bool -> fun v -> smt_if (EV v) (LI 1) (LI 0)
   | W_tri -> fun v -> make_tri (EV (v ^ "-a")) (EV (v ^ "-b"))
   | W_quad -> fun v -> make_quad (EV (v ^ "-a")) (EV (v ^ "-b"))
   | W_none -> fun _ -> LI 0
