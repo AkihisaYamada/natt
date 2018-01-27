@@ -94,6 +94,20 @@ clean:
 	rm -f $(TARG) $(TARG_OPT) *.cm[iox] *.o *.mli .depend
 	rm trs_parser.ml trs_lexer.ml
 
+# Consistency test
+test: $(TARG_OPT)
+	TOOL=$(PWD)/NaTT.sh; \
+	cd ~/TPDB/TRS_Standard; \
+	if [ -e tmp_result ]; then rm tmp_result; fi; \
+	while read f; do \
+		$$TOOL -V $$f | tee -a tmp_result; \
+		if grep -q YES tmp_result; then echo WRONG!; exit 1; fi;\
+	done < nonterm.list; \
+	grep -c NO tmp_result; \
+	rm tmp_result
+
+
+
 # Dependencies
 .depend: $(OCAML_MLS)
 	$(OCAMLDEP) *.mli *.ml > .depend

@@ -1,16 +1,5 @@
 TOOL=$(shell pwd)/../NaTT.sh	# this is ugly!
 
-test: NaTT.exe
-	TOOL=$(PWD)/NaTT.sh; \
-	cd ~/tpdb/TRS_Standard; \
-	if [ -e tmp_result ]; then rm tmp_result; fi; \
-	while read f; do \
-		$$TOOL -V $$f | tee -a tmp_result; \
-		if grep -q YES tmp_result; then echo WRONG!; exit 1; fi;\
-	done < nonterm.list; \
-	grep -c NO tmp_result; \
-	rm tmp_result
-
 MK_PROOF=\
 	mkdir $@;\
 	mkdir $@/proofs
