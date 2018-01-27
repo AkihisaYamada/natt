@@ -233,10 +233,11 @@ let is_one =
 
 let rec is_simple =
   function
-  | Nil   -> true
-  | EV _    -> true
-  | LI _    -> true
-  | LB _    -> true
+  | Nil
+  | Bot -> true (* impure SMT formula *)
+  | EV _
+  | LI _
+  | LB _
   | LR _    -> true
   | Not(EV _) -> true
 (*  | And(e1,e2)-> is_simple e1 && is_simple e2
@@ -279,55 +280,6 @@ let smt_expand e f =
 
 let smt_let ty e f =
   if is_simple e then f e else Delay(fun context -> f (context#refer ty e))
-
-let smt_pb =
-  function
-  | LB b  -> LI(if b then 1 else 0)
-  | e   -> If(e, LI 1, LI 0)
-
-let rec (+^) e1 e2 =
-  match e1, e2 with
-  | LI 0,  _    -> e2
-  | LR 0.0, _   -> e2
-  | _, LI 0   -> e1
-  | _, LR 0.0   -> e1
-  | LI i1, LI i2  -> LI(i1 + i2)
-  | LR r1, LR r2  -> LR(r1 +. r2)
-  | Max es1, _  -> Max(List.map (fun e1 -> e1 +^ e2) es1)
-  | _, Max es2  -> Max(List.map (fun e2 -> e1 +^ e2) es2)
-  | If(c,t,e),_ -> if is_simple e2 then If(c, t +^ e2, e +^ e2) else Add(e1,e2)
-  | _,If(c,t,e) -> if is_simple e1 then If(c, e1 +^ t, e1 +^ e) else Add(e1,e2)
-  | Add(e3,e4),_  -> Add(e3, e4 +^ e2)
-  | _       -> Add(e1,e2)
-
-let (-^) e1 e2 = Sub(e1,e2)
-
-let (>=^) e1 e2 =
-  match e1, e2 with
-  | Bot, _ -> LB true
-  | _, Bot -> LB false
-  | EV v1, EV v2 when v1 = v2 -> LB true
-  | LI i1, LI i2 -> LB(i1 >= i2)
-  | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
-  | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
-  | LR r1, LR r2 -> LB(r1 >= r2)
-  | _ -> Ge(e1, e2)
-
-let (>^) e1 e2 =
-  match e1, e2 with
-  | _, Bot -> LB false
-  | Bot, LI _
-  | Bot, LR _
-  | Bot, EV _ -> LB true
-  | EV v1, EV v2 when v1 = v2 -> LB false
-  | LI i1, LI i2 -> LB(i1 > i2)
-  | LI i1, LR r2 -> LB(float_of_int i1 > r2)
-  | LR r1, LI i2 -> LB(r1 > float_of_int i2)
-  | LR r1, LR r2 -> LB(r1 > r2)
-  | _ -> Gt(e1,e2)
-
-let (<=^) e1 e2 = e2 >=^ e1
-let (<^) e1 e2 = e2 >^ e1
 
 let rec simplify_under e1 e2 =
   match e1, e2 with
@@ -428,14 +380,14 @@ and (|^) e1 e2 =
 and (=>^) e1 e2 = smt_not e1 |^ e2
 and ( *^) e1 e2 =
   match e1, e2 with
-  | Bot, _
-  | _, Bot -> Bot
   | LI 0, _
   | LR 0.0, _ -> e1
-  | LI 1, _
-  | LR 1.0, _ -> e2
   | _, LI 0
   | _, LR 0.0 -> e2
+  | Bot, _
+  | _, Bot -> Bot
+  | LI 1, _
+  | LR 1.0, _ -> e2
   | _, LI 1
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
@@ -453,17 +405,82 @@ and ( *^) e1 e2 =
     let e = n *^ e in
     if t =^ e = LB true then t else If(c,t,e)
   | _ -> Mul(e1,e2)
-and smt_if e1 e2 e3 =
-  match e1 with
-  | LB b  -> if b then e2 else e3
-  | _   ->
-    let ne1 = smt_not e1 in
-    match simplify_under e1 e2, simplify_under ne1 e3 with
-    | LB b2, e3 -> if b2 then e1 |^ e3 else ne1 &^ e3
-    | e2, LB b3 -> if b3 then e1 =>^ e2 else e1 &^ e2
-    | e2, e3 ->
-      if e2 =^ e3 = LB true then e2
-      else If(e1,e2,e3)
+and smt_pre_if c nc t e =
+    match t, e with
+    | LB b, _ -> if b then c |^ e else nc &^ e
+    | _, LB b -> if b then c =>^ t else c &^ t
+    | _ ->
+      if t =^ e = LB true then t
+      else If(c,t,e)
+and smt_if c t e =
+  match c with
+  | LB b  -> if b then t else e
+  | _   -> let nc = smt_not c in smt_pre_if c nc (simplify_under c t) (simplify_under nc e)
+and (+^) e1 e2 =
+  match e1, e2 with
+  | Bot, _ -> Bot
+  | _, Bot -> Bot
+  | LI 0,  _    -> e2
+  | LR 0.0, _   -> e2
+  | _, LI 0   -> e1
+  | _, LR 0.0   -> e1
+  | LI i1, LI i2  -> LI(i1 + i2)
+  | LR r1, LR r2  -> LR(r1 +. r2)
+  | Max es1, _  -> Max(List.map (fun e1 -> e1 +^ e2) es1)
+  | _, Max es2  -> Max(List.map (fun e2 -> e1 +^ e2) es2)
+  | If(c,t,e),_ ->
+    let t = t +^ simplify_under c e2 in
+    let e = e +^ simplify_under (smt_not c) e2 in
+    if t =^ e = LB true then t else If(c,t,e)
+  | _,If(c,t,e) ->
+    let t = simplify_under c e1 +^ t in
+    let e = simplify_under (smt_not c) e1 +^ e in
+    if t =^ e = LB true then t else If(c,t,e)
+  | Add(e3,e4),_  -> Add(e3, e4 +^ e2)
+  | _       -> Add(e1,e2)
+and (>=^) e1 e2 =
+  match e1, e2 with
+  | Bot, _ -> LB true
+  | _, Bot -> LB false
+  | EV v1, EV v2 when v1 = v2 -> LB true
+  | LI i1, LI i2 -> LB(i1 >= i2)
+  | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
+  | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
+  | LR r1, LR r2 -> LB(r1 >= r2)
+  | If(c,t,e),_ ->
+    let nc = smt_not c in
+    let t = t >=^ simplify_under c e2 in
+    let e = e >=^ simplify_under nc e2 in
+    smt_pre_if c nc t e
+  | _,If(c,t,e) ->
+    let nc = smt_not c in
+    let t = simplify_under c e1 >=^ t in
+    let e = simplify_under nc e1 >=^ e in
+    smt_pre_if c nc t e
+  | _ -> Ge(e1, e2)
+and (>^) e1 e2 =
+  match e1, e2 with
+  | _, Bot -> LB false
+  | Bot, _ -> LB false (* Bot is excluded from strict relation *)
+  | EV v1, EV v2 when v1 = v2 -> LB false
+  | LI i1, LI i2 -> LB(i1 > i2)
+  | LI i1, LR r2 -> LB(float_of_int i1 > r2)
+  | LR r1, LI i2 -> LB(r1 > float_of_int i2)
+  | LR r1, LR r2 -> LB(r1 > r2)
+  | If(c,t,e),_ ->
+    let nc = smt_not c in
+    let t = t >^ simplify_under c e2 in
+    let e = e >^ simplify_under nc e2 in
+    smt_pre_if c nc t e
+  | _,If(c,t,e) ->
+    let nc = smt_not c in
+    let t = simplify_under c e1 >^ t in
+    let e = simplify_under nc e1 >^ e in
+    smt_pre_if c nc t e
+  | _ -> Gt(e1,e2)
+
+let (<=^) e1 e2 = e2 >=^ e1
+let (<^) e1 e2 = e2 >^ e1
 
 let (/^) e1 e2 =
   if e1 = LI 0 || e2 = LI 1 then e1
@@ -582,6 +599,7 @@ class virtual context =
       if not params.tmpvar || not consistent || is_simple e then e
       else
         match e with
+        | If(c,t,e) -> If(x#refer_sub Bool c, x#refer_sub ty t, x#refer_sub ty e)
         | Cons(e1,e2) ->
           (match ty with
            | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
@@ -626,7 +644,7 @@ class virtual context =
 
     method private expand_add e1 e2 = x#expand e1 +^ x#expand e2
 
-    method private expand_sub e1 e2 = x#expand e1 -^ x#expand e2
+    method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
     method private mul_if e1 e2 =
       match e1, e2 with
@@ -1004,13 +1022,21 @@ class virtual smt_lib_2_0 =
       | LB b -> b
       | v -> raise (Response("get_value (bool)",v))
     method get_value v =
-      x#puts "(get-value (";
-      x#pr_e (x#expand v);
-      x#puts "))";
-      x#endl;
-      match x#get_exp with
-      | App[App[e1;e2]] -> e2
-      | e -> raise (Response("get-value",e))
+      match v with
+      | LB _
+      | LI _
+      | LR _
+      | Bot -> v
+      | If(c,t,e) ->
+        x#get_value (if x#get_bool c then t else e)
+      | _ ->
+        x#puts "(get-value (";
+        x#pr_e (x#expand v);
+        x#puts "))";
+        x#endl;
+        match x#get_exp with
+        | App[App[e1;e2]] -> e2
+        | e -> raise (Response("get-value",e))
     method dump_value vs os =
       if vs <> [] then
       (

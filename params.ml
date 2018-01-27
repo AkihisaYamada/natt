@@ -21,6 +21,7 @@ type w_mode =
 | W_bool
 | W_tri
 | W_quad
+| W_arc
 type status_mode =
 | S_none
 | S_empty
@@ -505,6 +506,7 @@ while !i < argc do
     | "w", _ ->
       begin
         match optarg with
+        | Some "arc" -> p.w_mode <- W_arc;
         | Some "neg" -> p.w_mode <- W_num; p.w_neg <- true;
         | Some "b" -> p.w_mode <- W_bool;
         | Some s -> p.w_max <- safe_atoi s arg; p.w_mode <- W_num;

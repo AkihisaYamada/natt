@@ -165,6 +165,7 @@ let ref_number w_mode =
   | W_bool -> fun v -> smt_if (EV v) (LI 1) (LI 0)
   | W_tri -> fun v -> make_tri (EV (v ^ "-a")) (EV (v ^ "-b"))
   | W_quad -> fun v -> make_quad (EV (v ^ "-a")) (EV (v ^ "-b"))
+  | W_arc -> fun v -> smt_if (EV (v ^ "-b")) Bot (EV v)
   | W_none -> fun _ -> LI 0
 
 let add_number : _ -> #context -> _ =
@@ -176,6 +177,9 @@ let add_number : _ -> #context -> _ =
     solver#add_variable (v ^ "-b") Bool
   | W_quad -> fun solver v ->
     solver#add_variable (v ^ "-a") Bool;
+    solver#add_variable (v ^ "-b") Bool
+  | W_arc -> fun solver v ->
+    solver#add_variable_base v;
     solver#add_variable (v ^ "-b") Bool
   | W_none -> fun _ _ -> ()
 
@@ -334,7 +338,7 @@ object (x)
     in
     let rec loop () =
       try
-        dg#iter_dps (fun i rule ->
+        trs#iter_rules (fun i rule ->
           let lvs = summarize_term (fun _ -> true) rule#l in
           ignore (summarize_term (Mset.supseteq lvs) rule#r)
         )
