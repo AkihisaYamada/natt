@@ -629,10 +629,10 @@ class virtual context =
 
     method private add_if e1 e2 =
       match e1, e2 with
-      | If(c,t,e,false), _ ->
-        If(c, x#add_if t (simplify_under c e2), x#add_if e (simplify_under (smt_not c) e2), false)
-      | _, If(c,t,e,false) ->
-        If(c, x#add_if (simplify_under c e1) t, x#add_if (simplify_under (smt_not c) e1) e, false)
+      | If(c,t,e,p), _ ->
+        If(c, x#add_if t (simplify_under c e2), x#add_if e (simplify_under (smt_not c) e2), p)
+      | _, If(c,t,e,p) ->
+        If(c, x#add_if (simplify_under c e1) t, x#add_if (simplify_under (smt_not c) e1) e, p)
       | _ -> e1 +^ e2
 
     method private expand_add e1 e2 = x#add_if (x#expand e1) (x#expand e2)
