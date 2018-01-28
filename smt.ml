@@ -441,7 +441,6 @@ and (>=^) e1 e2 =
 and (>^) e1 e2 =
   match e1, e2 with
   | _, Bot -> LB false
-  | Bot, _ -> LB false (* Bot is excluded from strict relation *)
   | EV v1, EV v2 when v1 = v2 -> LB false
   | LI i1, LI i2 -> LB(i1 > i2)
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
@@ -613,6 +612,8 @@ class virtual context =
 
     method private gt_if e1 e2 =
       match e1, e2 with
+      | _, Bot -> LB false
+      | Bot, _ -> LB false (* Bot is excluded from strict relation *)
       | If(c,t,e,false), e2 ->
         let nc = smt_not c in
         let t = x#gt_if t (simplify_under c e2) in
