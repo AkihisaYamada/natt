@@ -58,7 +58,7 @@ type exp =
   | Dup of ty * exp
   | Car of exp
   | Cdr of exp
-  | If of exp * exp * exp
+  | If of exp * exp * exp * (* flag for purity *) bool
   | App of exp list
 and dec =
   | Dec of name * ty
@@ -186,7 +186,7 @@ class virtual sexp_printer =
       | Dup(_,e)    -> pr "(dup "; pr_e e; pr ")";
       | Car(e)    -> pr "(car "; pr_e e; pr ")";
       | Cdr(e)    -> pr "(cdr "; pr_e e; pr ")";
-      | If(e1,e2,e3)  -> x#enter_inline;
+      | If(e1,e2,e3,_)  -> x#enter_inline;
                  pr "(ite "; pr_e e1; pr " "; pr_e e2; pr " "; pr_e e3; pr ")";
                  x#leave_inline;
       | Max(es)   -> pr "(max"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
@@ -245,7 +245,6 @@ let rec is_simple =
 *)  | Eq(e1,e2) -> is_simple e1 && is_simple e2
   | Gt(e1,e2) -> is_simple e1 && is_simple e2
   | Ge(e1,e2) -> is_simple e1 && is_simple e2
-  | If(c,t,e) -> is_simple t && is_simple e
   | _     -> false
 
 let rec smt_not =
@@ -256,6 +255,7 @@ let rec smt_not =
   | Ge(e1,e2) -> Gt(e2,e1)
   | Or(e1,e2) -> And(smt_not e1, smt_not e2)
   | And(e1,e2) -> Or(smt_not e1, smt_not e2)
+  | If(c,t,e,p) -> If(c, smt_not t, smt_not e, p)
   | e   -> Not(e)
 
 let rec (=^) e1 e2 =
@@ -310,12 +310,12 @@ let rec simplify_under e1 e2 =
       else if (e3 =^ e4) = LB true then e3
       else Or(e3,e4)
   )
-  | _, If(e3,e4,e5) -> (
-    match simplify_under e1 e3 with
-    | LB b -> if b then simplify_under e1 e4 else simplify_under e1 e5
-    | e3 ->
-      (* e4 and e5 should be already simplified w.r.t. e3 *)
-      If(e3, simplify_under e1 e4, simplify_under e1 e5)
+  | _, If(c,t,e,p) -> (
+    match simplify_under e1 c with
+    | LB b -> if b then simplify_under e1 t else simplify_under e1 e
+    | c ->
+      (* t and e should be already simplified w.r.t. c *)
+      If(c, simplify_under e1 t, simplify_under e1 e, p)
   )
   | And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
   | Not e3, _ ->
@@ -392,26 +392,33 @@ and ( *^) e1 e2 =
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
   | LR r1, LR r2 -> LR(r1 *. r2)
-  | If(c,t,e), _ ->
-    let p = simplify_under c e2 in
-    let n = simplify_under (smt_not c) e2 in
-    let t = t *^ p in
-    let e = e *^ n in
-    if t =^ e = LB true then t else If(c,t,e)
-  | _, If(c,t,e) ->
-    let p = simplify_under c e1 in
-    let n = simplify_under (smt_not c) e1 in
-    let t = p *^ t in
-    let e = n *^ e in
-    if t =^ e = LB true then t else If(c,t,e)
+  | If(c,t,e,p), _ ->
+    let pe2 = simplify_under c e2 in
+    let ne2 = simplify_under (smt_not c) e2 in
+    let t = t *^ pe2 in
+    let e = e *^ ne2 in
+    if t =^ e = LB true then t else If(c,t,e,p)
+  | _, If(c,t,e,p) ->
+    let pe1 = simplify_under c e1 in
+    let ne1 = simplify_under (smt_not c) e1 in
+    let t = pe1 *^ t in
+    let e = ne1 *^ e in
+    if t =^ e = LB true then t else If(c,t,e,p)
   | _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
     match t, e with
     | LB b, _ -> if b then c |^ e else nc &^ e
     | _, LB b -> if b then c =>^ t else c &^ t
-    | _ ->
-      if t =^ e = LB true then t
-      else If(c,t,e)
+    | _ when t =^ e = LB true -> t
+    | Nil, _
+    | _, Nil
+    | Bot, _
+    | _, Bot
+    | Cons _, _
+    | _, Cons _
+    | If(_,_,_,false), _
+    | _, If(_,_,_,false) -> If(c,t,e,false)
+    | _ -> If(c,t,e,true)
 and smt_if c t e =
   match c with
   | LB b  -> if b then t else e
@@ -428,14 +435,14 @@ and (+^) e1 e2 =
   | LR r1, LR r2  -> LR(r1 +. r2)
   | Max es1, _  -> Max(List.map (fun e1 -> e1 +^ e2) es1)
   | _, Max es2  -> Max(List.map (fun e2 -> e1 +^ e2) es2)
-  | If(c,t,e),_ ->
+  | If(c,t,e,p),_ ->
     let t = t +^ simplify_under c e2 in
     let e = e +^ simplify_under (smt_not c) e2 in
-    if t =^ e = LB true then t else If(c,t,e)
-  | _,If(c,t,e) ->
+    if t =^ e = LB true then t else If(c,t,e,p)
+  | _,If(c,t,e,p) ->
     let t = simplify_under c e1 +^ t in
     let e = simplify_under (smt_not c) e1 +^ e in
-    if t =^ e = LB true then t else If(c,t,e)
+    if t =^ e = LB true then t else If(c,t,e,p)
   | Add(e3,e4),_  -> Add(e3, e4 +^ e2)
   | _       -> Add(e1,e2)
 and (>=^) e1 e2 =
@@ -447,12 +454,12 @@ and (>=^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
   | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
   | LR r1, LR r2 -> LB(r1 >= r2)
-  | If(c,t,e),_ ->
+  | If(c,t,e,false),_ ->
     let nc = smt_not c in
     let t = t >=^ simplify_under c e2 in
     let e = e >=^ simplify_under nc e2 in
     smt_pre_if c nc t e
-  | _,If(c,t,e) ->
+  | _,If(c,t,e,false) ->
     let nc = smt_not c in
     let t = simplify_under c e1 >=^ t in
     let e = simplify_under nc e1 >=^ e in
@@ -467,12 +474,12 @@ and (>^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
   | LR r1, LI i2 -> LB(r1 > float_of_int i2)
   | LR r1, LR r2 -> LB(r1 > r2)
-  | If(c,t,e),_ ->
+  | If(c,t,e,false),_ ->
     let nc = smt_not c in
     let t = t >^ simplify_under c e2 in
     let e = e >^ simplify_under nc e2 in
     smt_pre_if c nc t e
-  | _,If(c,t,e) ->
+  | _,If(c,t,e,false) ->
     let nc = smt_not c in
     let t = simplify_under c e1 >^ t in
     let e = simplify_under nc e1 >^ e in
@@ -599,7 +606,9 @@ class virtual context =
       if not params.tmpvar || not consistent || is_simple e then e
       else
         match e with
-        | If(c,t,e) -> If(x#refer_sub Bool c, x#refer_sub ty t, x#refer_sub ty e)
+          (* Impure formula will not be represented by a variable *)
+        | If(c,t,e,false) ->
+          If(x#refer_sub Bool c, x#refer_sub ty t, x#refer_sub ty e, false)
         | Cons(e1,e2) ->
           (match ty with
            | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
@@ -649,22 +658,22 @@ class virtual context =
     method private mul_if e1 e2 =
       match e1, e2 with
       | _, LI 0 -> e2
-      | If(c,t,e), _ ->
+      | If(c,t,e,p), _ ->
         if is_zero t then
-          If(c, t, x#mul_if e e2)
+          If(c, t, x#mul_if e e2, p)
         else if is_zero e then
-          If(c, x#mul_if t e2, e)
+          If(c, x#mul_if t e2, e, p)
         else
           let e2 = x#refer_sub base_ty e2 in
-          If(c, x#mul_if t e2, x#mul_if e e2)
-      | _, If(c,t,e) ->
+          If(c, x#mul_if t e2, x#mul_if e e2, p)
+      | _, If(c,t,e,p) ->
         if is_zero t then
-          If(c, t, x#mul_if e1 e)
+          If(c, t, x#mul_if e1 e, p)
         else if is_zero e then
-          If(c, x#mul_if e1 t, e)
+          If(c, x#mul_if e1 t, e, p)
         else
           let e1 = x#refer_sub base_ty e1 in
-          If(c, x#mul_if e1 t, x#mul_if e1 e)
+          If(c, x#mul_if e1 t, x#mul_if e1 e, p)
       | _ ->
         e1 *^ e2
     method private expand_mul e1 e2 =
@@ -735,7 +744,7 @@ class virtual context =
       | Cons(e,_) -> x#expand e
       | Dup(_,e)  -> x#expand e
       | Delay(f)  -> x#expand_car (x#force f)
-      | If(c,t,e) -> x#expand_if c (smt_car t) (smt_car e)
+      | If(c,t,e,p) -> x#expand_if c (smt_car t) (smt_car e)
       | e         -> raise (Invalid_formula ("expand_car", e))
 
     method private expand_cdr =
@@ -743,7 +752,7 @@ class virtual context =
       | Cons(_,e) -> x#expand e
       | Dup(_,e)  -> x#expand e
       | Delay(f)  -> x#expand_cdr (x#force f)
-      | If(c,t,e) -> x#expand_if c (smt_cdr t) (smt_cdr e)
+      | If(c,t,e,p) -> x#expand_if c (smt_cdr t) (smt_cdr e)
       | e     -> raise (Invalid_formula ("expand_cdr", e))
 
     method private expand_if e1 e2 e3 =
@@ -795,7 +804,7 @@ class virtual context =
       | Cdr e     -> x#expand_cdr e
       | Cons(e1,e2) -> Cons(x#expand e1,x#expand e2)
       | Dup(ty,e)   -> let e = x#refer ty e in Cons(e,e)
-      | If(e1,e2,e3)  -> x#expand_if e1 e2 e3
+      | If(c,t,e,p) -> x#expand_if c t e
       | App es    -> App(List.map x#expand es)
       | Delay f   -> x#expand_delay f
       | e         -> raise (Invalid_formula ("expand",e))
@@ -1027,7 +1036,7 @@ class virtual smt_lib_2_0 =
       | LI _
       | LR _
       | Bot -> v
-      | If(c,t,e) ->
+      | If(c,t,e,false) ->
         x#get_value (if x#get_bool c then t else e)
       | _ ->
         x#puts "(get-value (";
