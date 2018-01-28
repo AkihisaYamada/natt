@@ -281,6 +281,9 @@ let smt_expand e f =
 let smt_let ty e f =
   if is_simple e then f e else Delay(fun context -> f (context#refer ty e))
 
+let smt_let_base e f =
+  if is_simple e then f e else Delay(fun context -> f (context#refer_base e))
+
 let rec simplify_under e1 e2 =
   match e1, e2 with
   | _, LB _
@@ -392,18 +395,6 @@ and ( *^) e1 e2 =
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
   | LR r1, LR r2 -> LR(r1 *. r2)
-  | If(c,t,e,p), _ ->
-    let pe2 = simplify_under c e2 in
-    let ne2 = simplify_under (smt_not c) e2 in
-    let t = t *^ pe2 in
-    let e = e *^ ne2 in
-    if t =^ e = LB true then t else If(c,t,e,p)
-  | _, If(c,t,e,p) ->
-    let pe1 = simplify_under c e1 in
-    let ne1 = simplify_under (smt_not c) e1 in
-    let t = pe1 *^ t in
-    let e = ne1 *^ e in
-    if t =^ e = LB true then t else If(c,t,e,p)
   | _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
     match t, e with
@@ -435,14 +426,6 @@ and (+^) e1 e2 =
   | LR r1, LR r2  -> LR(r1 +. r2)
   | Max es1, _  -> Max(List.map (fun e1 -> e1 +^ e2) es1)
   | _, Max es2  -> Max(List.map (fun e2 -> e1 +^ e2) es2)
-  | If(c,t,e,p),_ ->
-    let t = t +^ simplify_under c e2 in
-    let e = e +^ simplify_under (smt_not c) e2 in
-    if t =^ e = LB true then t else If(c,t,e,p)
-  | _,If(c,t,e,p) ->
-    let t = simplify_under c e1 +^ t in
-    let e = simplify_under (smt_not c) e1 +^ e in
-    if t =^ e = LB true then t else If(c,t,e,p)
   | Add(e3,e4),_  -> Add(e3, e4 +^ e2)
   | _       -> Add(e1,e2)
 and (>=^) e1 e2 =
@@ -454,16 +437,6 @@ and (>=^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
   | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
   | LR r1, LR r2 -> LB(r1 >= r2)
-  | If(c,t,e,false),_ ->
-    let nc = smt_not c in
-    let t = t >=^ simplify_under c e2 in
-    let e = e >=^ simplify_under nc e2 in
-    smt_pre_if c nc t e
-  | _,If(c,t,e,false) ->
-    let nc = smt_not c in
-    let t = simplify_under c e1 >=^ t in
-    let e = simplify_under nc e1 >=^ e in
-    smt_pre_if c nc t e
   | _ -> Ge(e1, e2)
 and (>^) e1 e2 =
   match e1, e2 with
@@ -474,16 +447,6 @@ and (>^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
   | LR r1, LI i2 -> LB(r1 > float_of_int i2)
   | LR r1, LR r2 -> LB(r1 > r2)
-  | If(c,t,e,false),_ ->
-    let nc = smt_not c in
-    let t = t >^ simplify_under c e2 in
-    let e = e >^ simplify_under nc e2 in
-    smt_pre_if c nc t e
-  | _,If(c,t,e,false) ->
-    let nc = smt_not c in
-    let t = simplify_under c e1 >^ t in
-    let e = simplify_under nc e1 >^ e in
-    smt_pre_if c nc t e
   | _ -> Gt(e1,e2)
 
 let (<=^) e1 e2 = e2 >=^ e1
@@ -508,22 +471,6 @@ let smt_for_all2 f = List.fold_left2 (fun ret e1 e2 -> ret &^ f e1 e2) (LB true)
 let smt_exists f = List.fold_left (fun ret e -> ret |^ f e) (LB false)
 
 let smt_exists2 f = List.fold_left2 (fun ret e1 e2 -> ret |^ f e1 e2) (LB false)
-
-let vector_scalar comp es1 e2 context =
-  let e2 = context#refer Int e2 in
-  List.fold_left (fun ret e1 -> ret &^ comp e1 e2) (LB true) es1
-
-let scalar_vector comp e1 es2 context =
-  let e1 = context#refer Int e1 in
-  List.fold_left (fun ret e2 -> ret &^ comp e1 e2) (LB true) es2
-
-let matrix_scalar comp ess1 e2 context =
-  let e2 = context#refer Int e2 in
-  Matrix.foldij (fun ret i j e1 -> ret &^ comp e1 (if i = j then e2 else LI 0)) (LB true) ess1
-
-let scalar_matrix comp e1 ess2 context =
-  let e1 = context#refer Int e1 in
-  Matrix.foldij (fun ret i j e2 -> ret &^ comp (if i = j then e1 else LI 0) e2) (LB true) ess2
 
 let smt_mod e1 e2 = Mod(e1,e2)
 let smt_max e1 e2 =
@@ -578,7 +525,7 @@ class virtual context =
       in
       fun e -> if consistent then sub (x#expand e);
 
-    method add_declaration d =
+    method private add_declaration d =
       if consistent then begin
         let d =
           match d with
@@ -587,7 +534,8 @@ class virtual context =
         in
         x#add_declaration_body d;
       end
-    method add_definition v ty e = x#add_declaration (Def(v,ty,e))
+    method add_definition v ty e =
+      x#add_declaration (Def(v,ty,e))
 
     method add_variable v ty = x#add_declaration (Dec(v,ty))
 
@@ -647,33 +595,74 @@ class virtual context =
     method private expand_eq e1 e2 =
       x#expand e1 =^ x#expand e2
 
-    method private expand_ge e1 e2 = x#expand e1 >=^ x#expand e2
+    method private ge_if e1 e2 =
+      match e1, e2 with
+      | If(c,t,e,false), e2 ->
+        let nc = smt_not c in
+        let t = x#ge_if t (simplify_under c e2) in
+        let e = x#ge_if e (simplify_under nc e2) in
+        smt_pre_if c nc t e
+      | e1, If(c,t,e,false) ->
+        let nc = smt_not c in
+        let t = x#ge_if (simplify_under c e1) t in
+        let e = x#ge_if (simplify_under nc e1) e in
+        smt_pre_if c nc t e
+      | e1, e2 -> e1 >=^ e2
+    method private expand_ge e1 e2 =
+      x#ge_if (x#expand e1) (x#expand e2)
 
-    method private expand_gt e1 e2 = x#expand e1 >^ x#expand e2
+    method private gt_if e1 e2 =
+      match e1, e2 with
+      | If(c,t,e,false), e2 ->
+        let nc = smt_not c in
+        let t = x#gt_if t (simplify_under c e2) in
+        let e = x#gt_if e (simplify_under nc e2) in
+        smt_pre_if c nc t e
+      | e1, If(c,t,e,false) ->
+        let nc = smt_not c in
+        let t = x#gt_if (simplify_under c e1) t in
+        let e = x#gt_if (simplify_under nc e1) e in
+        smt_pre_if c nc t e
+      | e1, e2 -> e1 >^ e2
+    method private expand_gt e1 e2 =
+      x#gt_if (x#expand e1) (x#expand e2)
 
-    method private expand_add e1 e2 = x#expand e1 +^ x#expand e2
+    method private add_if e1 e2 =
+      match e1, e2 with
+      | If(c,t,e,false), _ ->
+        If(c, x#add_if t (simplify_under c e2), x#add_if e (simplify_under (smt_not c) e2), false)
+      | _, If(c,t,e,false) ->
+        If(c, x#add_if (simplify_under c e1) t, x#add_if (simplify_under (smt_not c) e1) e, false)
+      | _ -> e1 +^ e2
+
+    method private expand_add e1 e2 = x#add_if (x#expand e1) (x#expand e2)
 
     method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
     method private mul_if e1 e2 =
       match e1, e2 with
-      | _, LI 0 -> e2
-      | If(c,t,e,p), _ ->
+      | LI 0, _
+      | LR 0.0, _ -> e1
+      | _, LI 0
+      | _, LR 0.0 -> e2
+      | If(c,t,e,_), _ ->
+        let nc = smt_not c in
         if is_zero t then
-          If(c, t, x#mul_if e e2, p)
+          smt_pre_if c nc t (x#mul_if e (simplify_under nc e2))
         else if is_zero e then
-          If(c, x#mul_if t e2, e, p)
+          smt_pre_if c nc (x#mul_if t (simplify_under c e2)) e
         else
           let e2 = x#refer_sub base_ty e2 in
-          If(c, x#mul_if t e2, x#mul_if e e2, p)
-      | _, If(c,t,e,p) ->
+          smt_pre_if c nc (x#mul_if t e2) (x#mul_if e e2)
+      | _, If(c,t,e,_) ->
+        let nc = smt_not c in
         if is_zero t then
-          If(c, t, x#mul_if e1 e, p)
+          smt_pre_if c nc t (x#mul_if (simplify_under nc e1) e)
         else if is_zero e then
-          If(c, x#mul_if e1 t, e, p)
+          smt_pre_if c nc (x#mul_if (simplify_under c e1) t) e
         else
           let e1 = x#refer_sub base_ty e1 in
-          If(c, x#mul_if e1 t, x#mul_if e1 e, p)
+          smt_pre_if c nc (x#mul_if e1 t) (x#mul_if e1 e)
       | _ ->
         e1 *^ e2
     method private expand_mul e1 e2 =
@@ -786,8 +775,8 @@ class virtual context =
       | Eq(e1,e2)   -> x#expand_eq e1 e2
       | Ge(e1,e2)   -> x#expand_ge e1 e2
       | Gt(e1,e2)   -> x#expand_gt e1 e2
-      | Le(e1,e2)   -> x#expand e1 <=^ x#expand e2
-      | Lt(e1,e2)   -> x#expand e1 <^ x#expand e2
+      | Le(e1,e2)   -> x#expand_ge e2 e1
+      | Lt(e1,e2)   -> x#expand_gt e2 e1
       | ForAll(ds,e)  ->
         let branch = x#branch in
         List.iter branch#add_declaration ds;
