@@ -383,12 +383,14 @@ and (|^) e1 e2 =
 and (=>^) e1 e2 = smt_not e1 |^ e2
 and ( *^) e1 e2 =
   match e1, e2 with
+  | Bot, _
+  | _, Bot -> Bot
+(* cannot apply in presence of bot
   | LI 0, _
   | LR 0.0, _ -> e1
   | _, LI 0
   | _, LR 0.0 -> e2
-  | Bot, _
-  | _, Bot -> Bot
+*)
   | LI 1, _
   | LR 1.0, _ -> e2
   | _, LI 1
@@ -440,7 +442,7 @@ and (>=^) e1 e2 =
   | _ -> Ge(e1, e2)
 and (>^) e1 e2 =
   match e1, e2 with
-  | _, Bot -> LB false
+  | Bot, _ -> LB false
   | EV v1, EV v2 when v1 = v2 -> LB false
   | LI i1, LI i2 -> LB(i1 > i2)
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
@@ -594,56 +596,65 @@ class virtual context =
     method private expand_eq e1 e2 =
       x#expand e1 =^ x#expand e2
 
-    method private ge_if e1 e2 =
+    method private ge_purify e1 e2 =
       match e1, e2 with
+      | _, Bot -> LB true
+      | Bot, _ -> LB false
       | If(c,t,e,false), e2 ->
         let nc = smt_not c in
-        let t = x#ge_if t (simplify_under c e2) in
-        let e = x#ge_if e (simplify_under nc e2) in
+        let t = x#ge_purify t (simplify_under c e2) in
+        let e = x#ge_purify e (simplify_under nc e2) in
         smt_pre_if c nc t e
       | e1, If(c,t,e,false) ->
         let nc = smt_not c in
-        let t = x#ge_if (simplify_under c e1) t in
-        let e = x#ge_if (simplify_under nc e1) e in
+        let t = x#ge_purify (simplify_under c e1) t in
+        let e = x#ge_purify (simplify_under nc e1) e in
         smt_pre_if c nc t e
       | e1, e2 -> e1 >=^ e2
     method private expand_ge e1 e2 =
-      x#ge_if (x#expand e1) (x#expand e2)
+      x#ge_purify (x#expand e1) (x#expand e2)
 
-    method private gt_if e1 e2 =
+    method private gt_purify e1 e2 =
       match e1, e2 with
-      | _, Bot -> LB false
-      | Bot, _ -> LB false (* Bot is excluded from strict relation *)
+      | _, Bot -> LB false (* Bot is excluded from strict relation *)
+      | Bot, _ -> LB false
       | If(c,t,e,false), e2 ->
         let nc = smt_not c in
-        let t = x#gt_if t (simplify_under c e2) in
-        let e = x#gt_if e (simplify_under nc e2) in
+        let t = x#gt_purify t (simplify_under c e2) in
+        let e = x#gt_purify e (simplify_under nc e2) in
         smt_pre_if c nc t e
       | e1, If(c,t,e,false) ->
         let nc = smt_not c in
-        let t = x#gt_if (simplify_under c e1) t in
-        let e = x#gt_if (simplify_under nc e1) e in
+        let t = x#gt_purify (simplify_under c e1) t in
+        let e = x#gt_purify (simplify_under nc e1) e in
         smt_pre_if c nc t e
       | e1, e2 -> e1 >^ e2
     method private expand_gt e1 e2 =
-      x#gt_if (x#expand e1) (x#expand e2)
+      x#gt_purify (x#expand e1) (x#expand e2)
 
-    method private add_if e1 e2 =
+    method private add_purify e1 e2 =
       match e1, e2 with
+      | Bot, _
+      | _, Bot -> Bot
       | If(c,t,e,p), _ ->
         let e2 = x#refer_sub base_ty e2 in
-        If(c, x#add_if t e2, x#add_if e e2, p)
+        If(c, x#add_purify t e2, x#add_purify e e2, p)
       | _, If(c,t,e,p) ->
         let e1 = x#refer_sub base_ty e1 in
-        If(c, x#add_if e1 t, x#add_if e1 e, p)
+        If(c, x#add_purify e1 t, x#add_purify e1 e, p)
       | _ -> e1 +^ e2
 
-    method private expand_add e1 e2 = x#add_if (x#expand e1) (x#expand e2)
+    method private expand_add e1 e2 =
+      match x#expand e1 with
+      | Bot -> Bot
+      | e1  -> x#add_purify e1 (x#expand e2)
 
     method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
-    method private mul_if e1 e2 =
+    method private mul_purify e1 e2 =
       match e1, e2 with
+      | Bot, _
+      | _, Bot -> Bot
       | LI 0, _
       | LR 0.0, _ -> e1
       | _, LI 0
@@ -651,28 +662,28 @@ class virtual context =
       | If(c,t,e,_), _ ->
         let nc = smt_not c in
         if is_zero t then
-          smt_pre_if c nc t (x#mul_if e (simplify_under nc e2))
+          smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
         else if is_zero e then
-          smt_pre_if c nc (x#mul_if t (simplify_under c e2)) e
+          smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
         else
           let e2 = x#refer_sub base_ty e2 in
-          smt_pre_if c nc (x#mul_if t e2) (x#mul_if e e2)
+          smt_pre_if c nc (x#mul_purify t e2) (x#mul_purify e e2)
       | _, If(c,t,e,_) ->
         let nc = smt_not c in
         if is_zero t then
-          smt_pre_if c nc t (x#mul_if (simplify_under nc e1) e)
+          smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
         else if is_zero e then
-          smt_pre_if c nc (x#mul_if (simplify_under c e1) t) e
+          smt_pre_if c nc (x#mul_purify (simplify_under c e1) t) e
         else
           let e1 = x#refer_sub base_ty e1 in
-          smt_pre_if c nc (x#mul_if e1 t) (x#mul_if e1 e)
+          smt_pre_if c nc (x#mul_purify e1 t) (x#mul_purify e1 e)
       | _ ->
         e1 *^ e2
     method private expand_mul e1 e2 =
       match x#expand e1 with
       | LI 0   -> LI 0
       | LR 0.0 -> LR 0.0
-      | e1     -> x#mul_if e1 (x#expand e2)
+      | e1     -> x#mul_purify e1 (x#expand e2)
 
     method private zero_one = (* returns (zero, one) *)
       function
