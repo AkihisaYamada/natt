@@ -225,6 +225,13 @@ let is_zero =
   | LR 0.0 -> true
   | _ -> false
 
+let is_zero_bot =
+  function
+  | LI 0 -> true
+  | LR 0.0 -> true
+  | Bot -> true
+  | _ -> false
+
 let is_one =
   function
   | LI 1 -> true
@@ -296,7 +303,7 @@ let rec simplify_under e1 e2 =
     let e3 = simplify_under e1 e3 in
     if e3 = LB false then e3
     else
-      let e4 = simplify_under e1 e4 in
+      let e4 = simplify_under e3 (simplify_under e1 e4) in
       if e3 = LB true then e4
       else if e4 = LB false then e4
       else if e4 = LB true then e3
@@ -306,7 +313,7 @@ let rec simplify_under e1 e2 =
     let e3 = simplify_under e1 e3 in
     if e3 = LB true then e3
     else
-      let e4 = simplify_under e1 e4 in
+      let e4 = simplify_under (smt_not e3) (simplify_under e1 e4) in
       if e3 = LB false then e4
       else if e4 = LB false then e3
       else if e4 = LB true then e4
@@ -594,7 +601,12 @@ class virtual context =
       smt_xor (x#expand e1) (x#expand e2)
 
     method private expand_eq e1 e2 =
-      x#expand e1 =^ x#expand e2
+      let e1 = x#expand e1 in
+      let e2 = x#expand e2 in
+      match e1, e2 with
+      | If(c,t,e,p), e2 when is_simple e2 -> If(c, t =^ e2, e =^ e2, p)
+      | e1, If(c,t,e,p) when is_simple e1 -> If(c, e1 =^ t, e1 =^ e, p)
+      | _ -> e1 =^ e2
 
     method private ge_purify e1 e2 =
       match e1, e2 with
@@ -636,12 +648,24 @@ class virtual context =
       match e1, e2 with
       | Bot, _
       | _, Bot -> Bot
-      | If(c,t,e,p), _ ->
-        let e2 = x#refer_sub base_ty e2 in
-        If(c, x#add_purify t e2, x#add_purify e e2, p)
-      | _, If(c,t,e,p) ->
-        let e1 = x#refer_sub base_ty e1 in
-        If(c, x#add_purify e1 t, x#add_purify e1 e, p)
+      | If(c,t,e,_), _ ->
+        let nc = smt_not c in
+        if t = Bot then
+          smt_pre_if c nc Bot (x#add_purify e (simplify_under nc e2))
+        else if e = Bot then
+          smt_pre_if c nc (x#add_purify t (simplify_under c e2)) Bot
+        else
+          let e2 = x#refer_base e2 in
+          smt_pre_if c nc (x#add_purify t e2) (x#add_purify e e2)
+      | _, If(c,t,e,_) ->
+        let nc = smt_not c in
+        if t = Bot then
+          smt_pre_if c nc Bot (x#add_purify (simplify_under nc e1) e)
+        else if e = Bot then
+          smt_pre_if c nc (x#add_purify (simplify_under c e1) t) Bot
+        else
+          let e1 = x#refer_base e1 in
+          smt_pre_if c nc (x#add_purify e1 t) (x#add_purify e1 e)
       | _ -> e1 +^ e2
 
     method private expand_add e1 e2 =
@@ -661,18 +685,18 @@ class virtual context =
       | _, LR 0.0 -> e2
       | If(c,t,e,_), _ ->
         let nc = smt_not c in
-        if is_zero t then
+        if is_zero_bot t then
           smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
-        else if is_zero e then
+        else if is_zero_bot e then
           smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
         else
           let e2 = x#refer_sub base_ty e2 in
           smt_pre_if c nc (x#mul_purify t e2) (x#mul_purify e e2)
       | _, If(c,t,e,_) ->
         let nc = smt_not c in
-        if is_zero t then
+        if is_zero_bot t then
           smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
-        else if is_zero e then
+        else if is_zero_bot e then
           smt_pre_if c nc (x#mul_purify (simplify_under c e1) t) e
         else
           let e1 = x#refer_sub base_ty e1 in
@@ -681,6 +705,7 @@ class virtual context =
         e1 *^ e2
     method private expand_mul e1 e2 =
       match x#expand e1 with
+      | Bot    -> Bot
       | LI 0   -> LI 0
       | LR 0.0 -> LR 0.0
       | e1     -> x#mul_purify e1 (x#expand e2)
