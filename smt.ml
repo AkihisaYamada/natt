@@ -238,20 +238,27 @@ let is_one =
   | LR 1.0 -> true
   | _ -> false
 
-let rec is_simple =
-  function
-  | Nil
-  | Bot -> true (* impure SMT formula *)
-  | EV _
-  | LI _
-  | LB _
-  | LR _    -> true
-  | Not(EV _) -> true
+let is_simple =
+  let very_simple =
+    function
+    | Nil
+    | Bot -> true (* impure SMT formula *)
+    | EV _
+    | Not (EV _)
+    | LI _
+    | LB _
+    | LR _    -> true
+    | _ -> false
+  in
+  fun e -> very_simple e ||
+  match e with
+  | If(c,t,e, _) when very_simple c && very_simple t && very_simple e -> true
 (*  | And(e1,e2)-> is_simple e1 && is_simple e2
   | Or(e1,e2) -> is_simple e1 && is_simple e2
-*)  | Eq(e1,e2) -> is_simple e1 && is_simple e2
-  | Gt(e1,e2) -> is_simple e1 && is_simple e2
-  | Ge(e1,e2) -> is_simple e1 && is_simple e2
+*)
+  | Eq(e1,e2) -> very_simple e1 && very_simple e2
+  | Gt(e1,e2) -> very_simple e1 && very_simple e2
+  | Ge(e1,e2) -> very_simple e1 && very_simple e2
   | _     -> false
 
 let rec smt_not =
@@ -265,23 +272,6 @@ let rec smt_not =
   | If(c,t,e,p) -> If(c, smt_not t, smt_not e, p)
   | e   -> Not(e)
 
-let rec (=^) e1 e2 =
-  match e1, e2 with
-  | LB b1, LB b2  -> LB (b1 = b2)
-  | LI i1, LI i2  -> LB (i1 = i2)
-  | LR r1, LR r2  -> LB (r1 = r2)
-  | Not e1, Not e2 -> e1 =^ e2
-  | Nil, Nil
-  | Bot, Bot -> LB true
-  | EV v1, EV v2 when v1 = v2 -> LB true
-  | Ge(l1,r1),Ge(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true -> LB true
-  | Gt(l1,r1),Gt(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true -> LB true
-  | Eq(l1,r1),Eq(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true || (l1 =^ r2) = LB true && (r1 =^ l2) = LB true
-  -> LB true
-  | _ -> Eq (e1, e2)
-
-let (<>^) e1 e2 = smt_not (e1 =^ e2)
-
 let smt_expand e f =
   if is_simple e then f e else Delay(fun context -> f (context#expand e))
 
@@ -291,8 +281,13 @@ let smt_let ty e f =
 let smt_let_base e f =
   if is_simple e then f e else Delay(fun context -> f (context#refer_base e))
 
+
 let rec simplify_under e1 e2 =
   match e1, e2 with
+  | LB b, _ -> if b then e2 else e1
+  | _ when e1 =^ e2 = LB true -> LB true
+  | And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
+  | Or _, _ -> e2
   | _, LB _
   | _, LI _
   | _, LR _
@@ -327,7 +322,6 @@ let rec simplify_under e1 e2 =
       (* t and e should be already simplified w.r.t. c *)
       If(c, simplify_under e1 t, simplify_under e1 e, p)
   )
-  | And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
   | Not e3, _ ->
     if (e3 =^ e2) = LB true then LB false else e2
   | Eq(l1,r1), Gt(l2,r2) ->
@@ -372,7 +366,7 @@ let rec simplify_under e1 e2 =
     else l2 >^ r2
   | EV v1, EV v2 -> if v1 = v2 then LB true else e2
   | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
-  | _ -> if e1 =^ e2 = LB true then LB true else e2
+  | _ -> e2
 and (&^) e1 e2 =
   match e1 with
   | LB b -> if b then e2 else e1
@@ -388,28 +382,54 @@ and (|^) e1 e2 =
     | LB b -> if b then LB true else e1
     | e2 -> Or(e1,e2)
 and (=>^) e1 e2 = smt_not e1 |^ e2
+and (=^) e1 e2 =
+  match e1, e2 with
+  | LB b1, LB b2  -> LB (b1 = b2)
+  | LI i1, LI i2  -> LB (i1 = i2)
+  | LR r1, LR r2  -> LB (r1 = r2)
+  | Not e1, Not e2 -> e1 =^ e2
+  | Nil, Nil
+  | Bot, Bot -> LB true
+  | EV v1, EV v2 when v1 = v2 -> LB true
+  | Ge(l1,r1),Ge(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true -> LB true
+  | Gt(l1,r1),Gt(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true -> LB true
+  | Eq(l1,r1),Eq(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true || (l1 =^ r2) = LB true && (r1 =^ l2) = LB true
+  -> LB true
+  | If(c,t,e,p), e2 when is_simple e2 -> smt_pre_if c (smt_not c) (t =^ e2) (e =^ e2)
+  | e1, If(c,t,e,p) when is_simple e1 -> smt_pre_if c (smt_not c) (e1 =^ t) (e1 =^ e)
+  | _ -> Eq (e1, e2)
 and ( *^) e1 e2 =
   match e1, e2 with
   | Bot, _
   | _, Bot -> Bot
-(* cannot apply in presence of bot
   | LI 0, _
   | LR 0.0, _ -> e1
   | _, LI 0
   | _, LR 0.0 -> e2
-*)
   | LI 1, _
   | LR 1.0, _ -> e2
   | _, LI 1
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
   | LR r1, LR r2 -> LR(r1 *. r2)
+  | If(c,t,e,p), _ when is_zero_bot t ->
+    let nc = smt_not c in smt_pre_if c nc t (e *^ simplify_under nc e2)
+  | If(c,t,e,p), _ when is_zero_bot e ->
+    smt_pre_if c (smt_not c) (t *^ simplify_under c e2) e
+  | _, If(c,t,e,p) when is_zero_bot t ->
+    let nc = smt_not c in smt_pre_if c nc t (simplify_under nc e1 *^ e)
+  | _, If(c,t,e,p) when is_zero_bot e ->
+    smt_pre_if c (smt_not c) (simplify_under c e1 *^ t) e
   | _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
     match t, e with
     | LB b, _ -> if b then c |^ e else nc &^ e
     | _, LB b -> if b then c =>^ t else c &^ t
     | _ when t =^ e = LB true -> t
+    | If(c',t',e',p), _ when e' =^ e = LB true -> If(c  &^ c', t', e', p)
+    | If(c',t',e',p), _ when t' =^ e = LB true -> If(nc &^ c', t', e', p)
+    | _, If(c',t',e',p) when e' =^ t = LB true -> If(nc &^ c', t', e', p)
+    | _, If(c',t',e',p) when t' =^ t = LB true -> If(c  &^ c', t', e', p)
     | Nil, _
     | _, Nil
     | Bot, _
@@ -446,16 +466,83 @@ and (>=^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
   | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
   | LR r1, LR r2 -> LB(r1 >= r2)
+  | If(c,t,e,p), _ -> (
+    match t >=^ e2 with
+    | LB b -> (
+      match e >=^ e2 with
+      | LB b' ->
+        if b then if b' then LB true else c
+        else if b' then smt_not c else LB false
+      | e' -> if b then c |^ e' else smt_not c &^ e'
+      )
+    | t' -> (
+      match e >=^ e2 with
+      | LB b' ->
+        if b' then c =>^ t' else c &^ t'
+      | _ -> Ge(e1, e2)
+      )
+    )
+  | _, If(c,t,e,p) -> (
+    match e1 >=^ t with
+    | LB b -> (
+      match e1 >=^ e with
+      | LB b' ->
+        if b then if b' then LB true else c
+        else if b' then smt_not c else LB false
+      | e' -> if b then c |^ e' else smt_not c &^ e'
+      )
+    | t' -> (
+      match e1 >=^ e with
+      | LB b' ->
+        if b' then c =>^ t' else c &^ t'
+      | _ -> Ge(e1, e2)
+      )
+    )
   | _ -> Ge(e1, e2)
 and (>^) e1 e2 =
   match e1, e2 with
   | Bot, _ -> LB false
+  | LI 0, _ -> LB false
   | EV v1, EV v2 when v1 = v2 -> LB false
   | LI i1, LI i2 -> LB(i1 > i2)
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
   | LR r1, LI i2 -> LB(r1 > float_of_int i2)
   | LR r1, LR r2 -> LB(r1 > r2)
+  | If(c,t,e,p), _ -> (
+    match t >^ e2 with
+    | LB b -> (
+      match e >^ e2 with
+      | LB b' ->
+        if b then if b' then LB true else c
+        else if b' then smt_not c else LB false
+      | e' -> if b then c |^ e' else smt_not c &^ e'
+      )
+    | t' -> (
+      match e >^ e2 with
+      | LB b' ->
+        if b' then c =>^ t' else c &^ t'
+      | _ -> Gt(e1,e2)
+      )
+    )
+  | _, If(c,t,e,p) -> (
+    match e1 >^ t with
+    | LB b -> (
+      match e1 >^ e with
+      | LB b' ->
+        if b then if b' then LB true else c
+        else if b' then smt_not c else LB false
+      | e' -> if b then c |^ e' else smt_not c &^ e'
+      )
+    | t' -> (
+      match e1 >^ e with
+      | LB b' ->
+        if b' then c =>^ t' else c &^ t'
+      | _ -> Gt(e1,e2)
+      )
+    )
   | _ -> Gt(e1,e2)
+
+let (<>^) e1 e2 = smt_not (e1 =^ e2)
 
 let (<=^) e1 e2 = e2 >=^ e1
 let (<^) e1 e2 = e2 >^ e1
@@ -604,8 +691,8 @@ class virtual context =
       let e1 = x#expand e1 in
       let e2 = x#expand e2 in
       match e1, e2 with
-      | If(c,t,e,p), e2 when is_simple e2 -> If(c, t =^ e2, e =^ e2, p)
-      | e1, If(c,t,e,p) when is_simple e1 -> If(c, e1 =^ t, e1 =^ e, p)
+      | If(c,t,e,p), e2 when is_simple e2 -> smt_pre_if c (smt_not c) (t =^ e2) (e =^ e2)
+      | e1, If(c,t,e,p) when is_simple e1 -> smt_pre_if c (smt_not c) (e1 =^ t) (e1 =^ e)
       | _ -> e1 =^ e2
 
     method private ge_purify e1 e2 =
@@ -683,24 +770,24 @@ class virtual context =
       | LR 0.0, _ -> e1
       | _, LI 0
       | _, LR 0.0 -> e2
+      | If(c,t,e,_), _ when is_zero_bot t ->
+        let nc = smt_not c in
+        smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
+      | If(c,t,e,_), _ when is_zero_bot e ->
+        let nc = smt_not c in
+        smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
+      | _, If(c,t,e,_) when is_zero_bot t ->
+        let nc = smt_not c in
+        smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
+      | _, If(c,t,e,_) when is_zero_bot e ->
+        let nc = smt_not c in
+        smt_pre_if c nc (x#mul_purify (simplify_under nc e1) t) e
       | If(c,t,e,_), _ ->
-        let nc = smt_not c in
-        if is_zero_bot t then
-          smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
-        else if is_zero_bot e then
-          smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
-        else
-          let e2 = x#refer_sub base_ty e2 in
-          smt_pre_if c nc (x#mul_purify t e2) (x#mul_purify e e2)
+        let e2 = x#refer_sub base_ty e2 in
+        smt_pre_if c (smt_not c) (x#mul_purify t e2) (x#mul_purify e e2)
       | _, If(c,t,e,_) ->
-        let nc = smt_not c in
-        if is_zero_bot t then
-          smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
-        else if is_zero_bot e then
-          smt_pre_if c nc (x#mul_purify (simplify_under c e1) t) e
-        else
-          let e1 = x#refer_sub base_ty e1 in
-          smt_pre_if c nc (x#mul_purify e1 t) (x#mul_purify e1 e)
+        let e1 = x#refer_sub base_ty e1 in
+        smt_pre_if c (smt_not c) (x#mul_purify e1 t) (x#mul_purify e1 e)
       | _ ->
         e1 *^ e2
     method private expand_mul e1 e2 =
