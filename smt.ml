@@ -384,7 +384,8 @@ and (|^) e1 e2 =
 and (=>^) e1 e2 = smt_not e1 |^ e2
 and (=^) e1 e2 =
   match e1, e2 with
-  | LB b1, LB b2  -> LB (b1 = b2)
+  | LB b1, _ -> if b1 then e2 else smt_not e2
+  | _, LB b2 -> if b2 then e1 else smt_not e1
   | LI i1, LI i2  -> LB (i1 = i2)
   | LR r1, LR r2  -> LB (r1 = r2)
   | Not e1, Not e2 -> e1 =^ e2
