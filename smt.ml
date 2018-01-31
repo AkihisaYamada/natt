@@ -285,8 +285,7 @@ let smt_let_base e f =
 let rec simplify_under e1 e2 =
   match e1, e2 with
   | LB b, _ -> if b then e2 else e1
-  | _ when e1 =^ e2 = LB true -> LB true
-  | And(e3,e4), _ -> simplify_under e3 (simplify_under e4 e2)
+  | And(e3,e4), _ -> e2 (*simplify_under e3 (simplify_under e4 e2)*)
   | Or _, _ -> e2
   | _, LB _
   | _, LI _
@@ -322,8 +321,6 @@ let rec simplify_under e1 e2 =
       (* t and e should be already simplified w.r.t. c *)
       If(c, simplify_under e1 t, simplify_under e1 e, p)
   )
-  | Not e3, _ ->
-    if (e3 =^ e2) = LB true then LB false else e2
   | Eq(l1,r1), Gt(l2,r2) ->
     let l2 = simplify_under e1 l2 in
     let r2 = simplify_under e1 r2 in
@@ -366,6 +363,8 @@ let rec simplify_under e1 e2 =
     else l2 >^ r2
   | EV v1, EV v2 -> if v1 = v2 then LB true else e2
   | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
+  | Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
+  | Not(EV v1), Not(EV v2) -> if v1 = v2 then LB false else e2
   | _ -> e2
 and (&^) e1 e2 =
   match e1 with
