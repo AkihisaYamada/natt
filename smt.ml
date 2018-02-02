@@ -293,11 +293,18 @@ let rec simplify_under e1 e2 =
   | _, Bot -> e2
   | _, Add(e3,e4) -> simplify_under e1 e3 +^ simplify_under e1 e4
   | _, Mul(e3,e4) -> simplify_under e1 e3 *^ simplify_under e1 e4
+  | EV v1, EV v2 -> if v1 = v2 then LB true else e2
+  | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
+  | Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
+  | Not(EV v1), Not(EV v2) -> if v1 = v2 then LB false else e2
   | _, And(e3,e4) -> (
     let e3 = simplify_under e1 e3 in
     if e3 = LB false then e3
     else
-      let e4 = simplify_under e3 (simplify_under e1 e4) in
+      let e4 = simplify_under e1 e4 in
+(*
+      let e4 = simplify_under e3 e4 in
+*)
       if e3 = LB true then e4
       else if e4 = LB false then e4
       else if e4 = LB true then e3
@@ -307,11 +314,14 @@ let rec simplify_under e1 e2 =
     let e3 = simplify_under e1 e3 in
     if e3 = LB true then e3
     else
-      let e4 = simplify_under (smt_not e3) (simplify_under e1 e4) in
+      let e4 = simplify_under e1 e4 in
+(*
+      let e4 = simplify_under (smt_not e3) e4 in
+*)
       if e3 = LB false then e4
       else if e4 = LB false then e3
       else if e4 = LB true then e4
-      else if (e3 =^ e4) = LB true then e3
+      else if simple_eq e3 e4 = Some true then e3
       else Or(e3,e4)
   )
   | _, If(c,t,e,p) -> (
@@ -361,10 +371,6 @@ let rec simplify_under e1 e2 =
     let r2 = simplify_under e1 r2 in
     if r2 >=^ l1 = LB true && r1 >=^ l2 = LB true then LB false
     else l2 >^ r2
-  | EV v1, EV v2 -> if v1 = v2 then LB true else e2
-  | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
-  | Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
-  | Not(EV v1), Not(EV v2) -> if v1 = v2 then LB false else e2
   | _ -> e2
 and (&^) e1 e2 =
   match e1 with
@@ -381,23 +387,70 @@ and (|^) e1 e2 =
     | LB b -> if b then LB true else e1
     | e2 -> Or(e1,e2)
 and (=>^) e1 e2 = smt_not e1 |^ e2
-and (=^) e1 e2 =
+and simple_eq e1 e2 =
   match e1, e2 with
-  | LB b1, _ -> if b1 then e2 else smt_not e2
-  | _, LB b2 -> if b2 then e1 else smt_not e1
-  | LI i1, LI i2  -> LB (i1 = i2)
-  | LR r1, LR r2  -> LB (r1 = r2)
-  | Not e1, Not e2 -> e1 =^ e2
+  | LB b1, LB b2 -> Some (b1 = b2)
+  | LI i1, LI i2  -> Some (i1 = i2)
+  | LR r1, LR r2  -> Some (r1 = r2)
+  | Not e1, Not e2 -> simple_eq e1 e2
+  | EV v1, EV v2 when v1 = v2 -> Some true
+  | Not(EV v1), EV v2 when v1 = v2 -> Some false
+  | EV v1, Not (EV v2) when v1 = v2 -> Some false
   | Nil, Nil
-  | Bot, Bot -> LB true
-  | EV v1, EV v2 when v1 = v2 -> LB true
-  | Ge(l1,r1),Ge(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true -> LB true
-  | Gt(l1,r1),Gt(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true -> LB true
-  | Eq(l1,r1),Eq(l2,r2) when (l1 =^ l2) = LB true && (r1 =^ r2) = LB true || (l1 =^ r2) = LB true && (r1 =^ l2) = LB true
-  -> LB true
-  | If(c,t,e,p), e2 when is_simple e2 -> smt_pre_if c (smt_not c) (t =^ e2) (e =^ e2)
-  | e1, If(c,t,e,p) when is_simple e1 -> smt_pre_if c (smt_not c) (e1 =^ t) (e1 =^ e)
-  | _ -> Eq (e1, e2)
+  | Bot, Bot -> Some true
+  | _ -> None
+and (=^) e1 e2 =
+  match simple_eq e1 e2 with Some b -> LB b
+  | None -> (
+    match e1, e2 with
+    | LB b1, _ -> if b1 then e2 else smt_not e2
+    | _, LB b2 -> if b2 then e1 else smt_not e1
+    | LI i1, LI i2  -> LB (i1 = i2)
+    | LR r1, LR r2  -> LB (r1 = r2)
+    | Not e1, Not e2 -> e1 =^ e2
+    | Nil, Nil
+    | Bot, Bot -> LB true
+    | EV v1, EV v2 when v1 = v2 -> LB true
+    | Ge(l1,r1),Ge(l2,r2) when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true -> LB true
+    | Gt(l1,r1),Gt(l2,r2) when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true -> LB true
+    | Eq(l1,r1),Eq(l2,r2)
+    when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true
+      || simple_eq l1 r2 = Some true && simple_eq r1 l2 = Some true
+    -> LB true
+(*    | If(c,t,e,p), e2 -> (
+      match t =^ e2 with
+      | LB b -> (
+        match e =^ e2 with
+        | LB b' ->
+          if b then if b' then LB true else c
+          else if b' then smt_not c else LB false
+        | e' -> if b then c |^ e' else smt_not c &^ e'
+        )
+      | t' -> (
+        match e =^ e2 with
+        | LB b' ->
+          if b' then c =>^ t' else c &^ t'
+        | _ -> Eq(e1, e2)
+        )
+      )
+    | _, If(c,t,e,p) -> (
+      match e1 =^ t with
+      | LB b -> (
+        match e1 =^ e with
+        | LB b' ->
+          if b then if b' then LB true else c
+          else if b' then smt_not c else LB false
+        | e' -> if b then c |^ e' else smt_not c &^ e'
+        )
+      | t' -> (
+        match e1 =^ e with
+        | LB b' ->
+          if b' then c =>^ t' else c &^ t'
+        | _ -> Eq(e1, e2)
+        )
+      )
+*)    | _ -> Eq (e1, e2)
+  )
 and ( *^) e1 e2 =
   match e1, e2 with
   | Bot, _
@@ -425,11 +478,11 @@ and smt_pre_if c nc t e =
     match t, e with
     | LB b, _ -> if b then c |^ e else nc &^ e
     | _, LB b -> if b then c =>^ t else c &^ t
-    | _ when t =^ e = LB true -> t
-    | If(c',t',e',p), _ when e' =^ e = LB true -> If(c  &^ c', t', e', p)
-    | If(c',t',e',p), _ when t' =^ e = LB true -> If(nc &^ c', t', e', p)
-    | _, If(c',t',e',p) when e' =^ t = LB true -> If(nc &^ c', t', e', p)
-    | _, If(c',t',e',p) when t' =^ t = LB true -> If(c  &^ c', t', e', p)
+    | _ when simple_eq t e = Some true -> t
+    | If(c',t',e',p), _ when simple_eq e' e = Some true -> If(c  &^ c', t', e', p)
+    | If(c',t',e',p), _ when simple_eq t' e = Some true -> If(nc &^ c', t', e', p)
+    | _, If(c',t',e',p) when simple_eq e' t = Some true -> If(nc &^ c', t', e', p)
+    | _, If(c',t',e',p) when simple_eq t' t = Some true -> If(c  &^ c', t', e', p)
     | Nil, _
     | _, Nil
     | Bot, _
@@ -466,7 +519,7 @@ and (>=^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
   | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
   | LR r1, LR r2 -> LB(r1 >= r2)
-  | If(c,t,e,p), _ -> (
+  | If(c,t,e,p), e2 -> (
     match t >=^ e2 with
     | LB b -> (
       match e >=^ e2 with
