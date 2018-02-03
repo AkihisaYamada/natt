@@ -497,7 +497,10 @@ class pol_interpreter p =
                 let slin =
                   smt_for_all (fun i ->
                     smt_for_all (fun j ->
-                      coeff_sum f k i j =^ LI (if i = j then 1 else 0)
+                      ( if (arg_mode f k i)#in_sum then coeff_sum f k i j
+                        else coeff_max f k i j
+                      ) =^ LI (if i = j then 1 else 0) &^
+                      (addend_max f k i j =^ LI 0)
                     ) (int_list 1 p.w_dim) &^
                     (weight f i =^ LI 0)
                   ) (int_list 1 p.w_dim)
