@@ -17,7 +17,7 @@ let wexp_smt exp = Node(Smt exp, [])
 let wexp_sum ss =
   let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
   match ss with
-  | [] -> wexp_smt (NegInf)
+  | [] -> wexp_smt (LI 0)
   | [s] -> s
   | _ -> Node(Add, ss)
 
