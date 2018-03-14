@@ -17,7 +17,7 @@ let wexp_smt exp = Node(Smt exp, [])
 let wexp_sum ss =
   let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
   match ss with
-  | [] -> wexp_smt (LI 0)
+  | [] -> wexp_smt (NegInf)
   | [s] -> s
   | _ -> Node(Add, ss)
 
@@ -384,7 +384,7 @@ class pol_interpreter p =
               else no_max
           else
             fun f _ i ->
-            if f#arity < 2 then no_max
+            if f#arity < 2 && p.w_dim < 2 then no_max
             else if coord_params.(i-1) = TEMP_max then use_max else no_max
         in
         let w f = "w_" ^ f#name in
