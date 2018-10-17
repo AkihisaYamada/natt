@@ -376,7 +376,7 @@ class pol_interpreter p =
           if Array.exists use_dup coord_params then
             let info = maxpoly_heuristic trs dg (not p.max_poly) true in
             fun f k i ->
-            if f#arity < 2 then no_max
+            if p.w_dim < 2 then no_max
             else
               let t = coord_params.(i-1) in
               if t = TEMP_max then use_max
@@ -384,7 +384,7 @@ class pol_interpreter p =
               else no_max
           else
             fun f _ i ->
-            if f#arity < 2 then no_max
+            if p.w_dim < 2 then no_max
             else if coord_params.(i-1) = TEMP_max then use_max else no_max
         in
         let w f = "w_" ^ f#name in

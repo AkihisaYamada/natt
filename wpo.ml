@@ -305,9 +305,9 @@ class processor =
 	  (EV v =>^ ES1(List.map (fun i -> finfo#permed i) to_n));
 	for i = 1 to f#arity do
 	  solver#add_assertion
-	    (EV v =>^ (finfo#permed i =^ interpreter#depend_on f i));
+	    (smt_not (EV v) |^ smt_not (finfo#permed i) |^ interpreter#depend_on f i);
 	  solver#add_assertion
-	    (EV v =>^ (finfo#permed i =^ interpreter#strict_linear_at f i));
+	    (smt_not (EV v) |^ smt_not (finfo#permed i) |^ interpreter#strict_linear_at f i);
         done
     else
       fun finfo _ -> finfo#set_collapse (LB false)
