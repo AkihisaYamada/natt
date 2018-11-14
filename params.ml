@@ -423,6 +423,7 @@ while !i < argc do
         params.debug <- v > 4;
         params.debug2 <- v > 5;
       end;
+	| "-no-result", None -> params.result <- false;
     | "x", None ->
       params.result <- false;
       params.warning <- false;
