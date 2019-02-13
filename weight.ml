@@ -91,17 +91,17 @@ let et_mul wt1 wt2 =
 let et_prod = List.fold_left et_mul StrListMap.empty
 
 let et_ge et1 et2 =
-  smt_for_all (fun (vs,e) -> et_find vs et1 >=^ e) (StrListMap.bindings et2)
+  smt_for_all (fun (vs,e2) -> et_find vs et1 >=^ e2) (StrListMap.bindings et2)
 
 let et_order solver et1 et2 =
   let pre =
-    smt_for_all (fun (vs,e) -> if vs = [] then LB true else et_find vs et1 >=^ e)
-    (StrListMap.bindings et2)
+    smt_for_all
+        (fun (vs,e2) -> if vs = [] then LB true else et_find vs et1 >=^ e2)
+        (StrListMap.bindings et2)
   in
-  let pre = solver#refer Bool pre in
-  let l = et_find [] et1 in
-  let r = et_find [] et2 in
-  (pre &^ (l >=^ r), pre &^ (l >^ r))
+  let e1 = et_find [] et1 in
+  let e2 = et_find [] et2 in
+  (pre &^ (e1 >=^ e2), e1 >^ e2)
 
 (* Max are expanded as lists *)
 
@@ -143,10 +143,10 @@ let smult exp = Array.map (List.map (et_mul_one [] exp))
 let order dim w1 w2 =
   Delay (fun solver ->
     let (ge,gt) = ets_order solver w1.(0) w2.(0) in
-    let ge_rest = solver#refer Bool
+    let ge_rest =
       (smt_for_all (fun i -> ets_ge w1.(i) w2.(i)) (int_list 1 (dim-1)))
     in
-    Cons(ge &^ ge_rest, gt &^ ge_rest)
+    Cons(ge &^ ge_rest, gt)
   )
 
 let index i = "_" ^ string_of_int i
@@ -197,7 +197,8 @@ class virtual interpreter p =
   let coord = (* makes suffix for coordination *)
     if p.w_dim = 1 then fun _ -> "" else index
   in
-  let put_var (k, i) = puts ("x" ^ index (k+1) ^ coord (i+1))
+  let put_var (k, i) =
+    puts ("x" ^ index (k+1) ^ coord (i+1))
   in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> Dp.dg -> unit
