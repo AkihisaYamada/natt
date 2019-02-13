@@ -129,7 +129,7 @@ do
 	then
 		xsltproc "$dir/xtc2tpdb.xml" "$d$f"
 	else
-		echo "$d$f"
+		cat "$d$f"
 	fi | {
 		time -p {
 			timeout $t "$dir/NaTT.exe" $cpfopt $@ $options 1> "$outfile"
