@@ -294,8 +294,8 @@ let dp_prove (trs : #trs) =
   trs#iter_rules iterer;
   let estimator =
     match params.edge_mode with
-    | E_tcap -> Estimator.tcap trs
-    | _ -> Estimator.sym_trans trs
+    | E_sym_trans -> Estimator.sym_trans trs
+    | _ -> Estimator.tcap trs
   in
   debug estimator#output;
 

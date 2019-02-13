@@ -9,7 +9,7 @@ type prec_mode =
 | PREC_quasi
 | PREC_partial
 type estimator_mode =
-| E_tcap
+| E_none
 | E_sym_trans
 type max_mode =
 | MAX_none
@@ -586,7 +586,7 @@ while !i < argc do
     | "-z3", None -> p.smt_tool <- z3cmd;
     | "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
     | "-dup", None -> default := false; params.mode <- MODE_dup;
-    | "-tcap", None -> params.edge_mode <- E_tcap;
+    | "-no-stg", None -> params.edge_mode <- E_none;
     | "-edge", Some s -> params.edge_length <- safe_atoi s arg;
     | "t", mode ->
       default := false;
