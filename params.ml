@@ -214,6 +214,7 @@ type params_type =
   mutable dp : bool;
   mutable edge_mode : estimator_mode;
   mutable edge_length : int;
+  mutable edge_debug : bool;
   mutable sort_scc : sort_mode;
   mutable uncurry : bool;
   mutable max_loop : int;
@@ -245,6 +246,7 @@ let params =
   dp = false;
   edge_mode = E_sym_trans;
   edge_length = 8;
+  edge_debug = false;
   sort_scc = SORT_asc;
   uncurry = false;
   max_loop = 0;
@@ -414,6 +416,7 @@ while !i < argc do
       | "l" | "log" -> params.log <- true;
       | "d" | "debug" -> params.debug <- true;
       | "d2" | "debug2" -> params.debug2 <- true;
+      | "edge" -> params.edge_debug <- true;
       | _ ->
         let v = safe_atoi s arg in
         params.comment <- v > 0;

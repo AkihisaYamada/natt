@@ -332,7 +332,7 @@ let dp_prove (trs : #trs) =
   );
   problem (puts "Dependency Pairs:" << endl << dg#output_dps);
   debug dg#output_edges;
-  (dg#output_debug << endl) cout;
+  if params.edge_debug then (dg#output_debug << endl) cout;
 
   let ret = dp_remove trs estimator dg in
   cpf (Xml.leave "acDependencyPairs");
