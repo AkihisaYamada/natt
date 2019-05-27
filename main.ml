@@ -384,18 +384,13 @@ class main =
   let err msg = prerr_endline ("Error: " ^ msg ^ "!"); exit 1 in
   let warn msg = warning(fun _ -> prerr_endline ("Warning: " ^ msg ^ ".")) in
 object (x)
-  val trs = new trs
+  val trs = params.trs
 
   method no_ac = not(StrSet.mem "AC" trs#get_ths)
 
   method duplicating = trs#exists_rule (fun _ rule -> rule#is_duplicating)
 
   method run =
-    if params.file = "" then
-      trs#read_stdin
-    else
-      trs#read params.file;
-
     cpf (
       puts "<?xml version=\"1.0\"?>" << endl <<
       puts "<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>" <<
@@ -404,7 +399,7 @@ object (x)
 
     begin match params.mode with
     | MODE_higher_xml ->
-      trs#output_xml_ho cout;
+      params.trs#output_xml_ho cout;
     | MODE_through ->
         trs#output cout;
                 | MODE_xml -> trs#output_xml cout;

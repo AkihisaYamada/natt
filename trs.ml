@@ -186,15 +186,9 @@ class trs =
           let l = app f [v1; app f [v2;v3]] in
           let r = app f [app f [v1;v2]; v3] in
           x#add_rule (weak_rule l r);
-          if f#is_commutative then begin
-            if Params.(params.naive_C) then begin
-              x#add_rule (weak_rule (app f [v1;v2]) (app f [v2;v1]));
-            end;
-          end else begin
+          if not f#is_commutative then begin
             x#add_rule (weak_rule r l);
           end;
-        end else if Params.(params.naive_C) && f#is_commutative then begin
-          x#add_rule (weak_rule (app f [v1;v2]) (app f [v2;v1]));
         end;
       in
       x#iter_syms iterer;

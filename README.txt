@@ -2,7 +2,7 @@
   Welcome to Nagoya Termination Tool (NaTT)
 =============================================
 
-This is a release of NaTT ver.1.7.
+This is a release of NaTT ver.1.9.
 
 
 ---- Installation ----
@@ -27,4 +27,4 @@ http://z3.codeplex.com/
 ---- Contact ----
 In case you find bugs, comments, or suggestions,
 please contact the author Akihisa Yamada:
-http://cl-informatik.uibk.ac.at/~ayamada
+http://group-mmm.org/~ayamada

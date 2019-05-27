@@ -1,5 +1,4 @@
 open Util
-open Params
 open Io
 open Sym
 

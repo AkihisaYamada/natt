@@ -22,19 +22,19 @@ OCAML_SRCS=\
 	trs_sem.ml \
 	read.ml \
 	util.ml \
+	matrix.ml \
 	io.ml \
 	xml.ml \
-	matrix.ml \
-	params.ml \
-	proc.ml \
-	smt.ml \
-	preorder.ml \
 	mset.ml \
 	abbrev.ml \
 	sym.ml \
 	term.ml \
 	subst.ml \
 	trs.ml \
+	params.ml \
+	proc.ml \
+	smt.ml \
+	preorder.ml \
 	estimator.ml \
 	dp.ml \
 	app.ml \

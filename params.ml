@@ -1,4 +1,7 @@
-let version = "1.8";
+open Io
+open Trs
+
+let version = "1.9";
 
 type base_ty =
 | TY_int
@@ -210,7 +213,7 @@ let name_order p =
 type params_type =
 {
   mutable mode : mode;
-  mutable file : string;
+  trs : trs;
   mutable dp : bool;
   mutable edge_mode : estimator_mode;
   mutable edge_length : int;
@@ -242,7 +245,7 @@ type params_type =
 let params =
 {
   mode = MODE_order;
-  file = "";
+  trs = new trs;
   dp = false;
   edge_mode = E_sym_trans;
   edge_length = 8;
@@ -365,6 +368,8 @@ in
 let erro str = err ("unknown option: " ^ str ^ "!") in
 let safe_atoi s arg = (try int_of_string s with _ -> erro arg) in
 let default = ref true in
+let file_read = ref false in
+let file_name = ref "" in
 while !i < argc do
   let p = !pp in
   let arg = argv.(!i) in
@@ -646,34 +651,50 @@ while !i < argc do
       default := false;
       apply_polo ();
     | _ ->
-      if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
-      params.file <- arg;
+      if !file_read then
+        err ("too many input file: " ^ arg ^ "!")
+      else
+        file_name := arg;
+        file_read := true;
   end;
   i := !i + 1;
 done;
-if !default then begin
-  (* the default strategy *)
-  apply_polo ();
-  params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
-  apply_edg ();
-  params.naive_C <- params.cpf;
-  apply_polo ();
-  apply_polo ();
-  !pp.max_mode <- MAX_all;
-  !pp.refer_w <- true;
-  apply_lpo ();
-  apply_polo ();
-  !pp.max_mode <- MAX_dup;
-  !pp.refer_w <- true;
-  !pp.w_neg <- true;
-  apply_wpo ();
-  !pp.status_mode <- S_partial;
-  !pp.max_mode <- MAX_dup;
-  apply_polo ();
-  !pp.w_dim <- 2;
-  (* certified nontermination not supported *)
-  if not params.cpf then params.max_loop <- 3;
-end
+if !file_read then
+  params.trs#read !file_name
+else
+  params.trs#read_stdin;
+if !default then
+  if params.trs#is_probabilistic then begin
+    (* default strategy for probabilistic systems *)
+    apply_polo ();
+    !pp.remove_all <- true;
+    apply_polo ();
+    !pp.remove_all <- true;
+    !pp.w_dim <- 2;
+  end else begin
+    (* the default strategy *)
+    apply_polo ();
+    params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
+    apply_edg ();
+    params.naive_C <- params.cpf;
+    apply_polo ();
+    apply_polo ();
+    !pp.max_mode <- MAX_all;
+    !pp.refer_w <- true;
+    apply_lpo ();
+    apply_polo ();
+    !pp.max_mode <- MAX_dup;
+    !pp.refer_w <- true;
+    !pp.w_neg <- true;
+    apply_wpo ();
+    !pp.status_mode <- S_partial;
+    !pp.max_mode <- MAX_dup;
+    apply_polo ();
+    !pp.w_dim <- 2;
+    (* certified nontermination not supported *)
+    if not params.cpf then params.max_loop <- 3;
+  end;
+
 
 type comment_type =
 | CMT_error

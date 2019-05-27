@@ -1,5 +1,4 @@
 open Util
-open Params
 open Io
 
 type symtype = Var | Fun | Th of string | Special
