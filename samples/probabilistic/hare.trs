@@ -1,0 +1,18 @@
+(VAR h t z u x y)
+(RULES
+	le(0,x) -> True
+	le(s(x),0) -> False
+	le(s(x),s(y)) -> le(x,y)
+
+	add(0,y) -> y
+	add(s(x),y) -> s(add(x,y))
+
+	rand -> 0 || s(0) || s(s(0)) || s(s(s(0))) || s(s(s(s(0))))
+		|| s(s(s(s(s(0))))) || s(s(s(s(s(s(0))))))
+
+	l0(h,t,z,u) -> l1(le(h,t),h,t,z,u)
+	l1(True,h,t,z,u) -> l2(h,s(t),z,u)
+	l1(False,h,t,z,u) -> End
+	l2(h,t,z,u) -> l3(h,t,z,rand) || l0(h,t,z,u)
+	l3(h,t,z,u) -> l0(add(h,u),t,z,u)
+)

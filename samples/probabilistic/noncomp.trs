@@ -1,0 +1,8 @@
+(VAR x)
+(RULES
+	dbl(0) -> 0
+	dbl(s(x)) -> s(s(dbl(x)))
+	f(x) -> f(dbl(x)) || g(x)
+	g(0) -> 0
+	g(s(x)) -> g(x)
+)

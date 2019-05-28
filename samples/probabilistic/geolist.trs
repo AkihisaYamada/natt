@@ -1,0 +1,5 @@
+(VAR x xs)
+(RULES
+	randL(xs) -> xs || cons(randN(0),randL(xs))
+	randN(x) -> x || randN(s(x))
+)

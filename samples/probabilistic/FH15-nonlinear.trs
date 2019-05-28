@@ -1,0 +1,14 @@
+(VAR x y)
+(RULES
+	h(x)        -> h(s(x)) || count(g(x))
+	h(x)        -> count(f(x))
+	count(0)    -> 0
+	count(s(x)) -> count(x)
+	add(x,0) -> x
+	add(x,s(y)) -> s(add(x,y))
+	mul(x,0) -> 0
+	mul(x,s(y)) -> add(x,mul(x,y))
+	f(x)        -> mul(x,x)
+	g(x)        -> x
+)
+(COMMENT from Fioriti & Hermmans POPL 2015, replacing f and g)
