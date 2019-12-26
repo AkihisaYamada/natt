@@ -8,7 +8,7 @@
 %token LPAR RPAR COMMA BAR BBAR ARROW DARROW EQUAL ARROWEQ
 %token <Lexing.position * string> ID DIGITS COLON
 %token <string> STRING OTHER
-%token <Lexing.position> CONTEXTSENSITIVE EQUATIONS INNERMOST RULES STRATEGY THEORY VAR OUTERMOST
+%token <Lexing.position> CONTEXTSENSITIVE EQUATIONS INNERMOST RULES STRATEGY THEORY VAR OUTERMOST REWRITE
 
 %type < Trs_ast.decl list > spec
 %start spec
@@ -24,6 +24,7 @@ decl:
 | THEORY listofthdecl   { TheoryDecl($2) }
 | RULES listofrules     { RulesDecl($2) }
 | STRATEGY strategydecl { StrategyDecl($2) }
+| REWRITE sterm sterm  { RulesDecl([Rew([],$2,$3)]) }
 | ID anylist            { OtherDecl($1,$2) }
 ;
 
@@ -59,6 +60,7 @@ id:
 | STRATEGY         { $1,"STRATEGY" }
 | THEORY           { $1,"THEORY" }
 | VAR              { $1,"VAR" }
+| REWRITE          { $1,"rewrite" }
 ;
 
 
@@ -125,6 +127,16 @@ term:
 termlist:
 | term                    { [$1] }
 | term COMMA termlist     { $1::$3 }
+;
+
+sterm:
+| id                       { Term($1,[]) }
+| LPAR id sterms RPAR      { Term($2,$3) }
+;
+
+sterms:
+| /* epsilon */ { [] }
+| sterm sterms    { $1::$2 }
 ;
 
 strategydecl:

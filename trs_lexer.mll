@@ -13,6 +13,7 @@ let key_list = [
   "STRATEGY",(fun p -> STRATEGY p);
   "THEORY",(fun p -> THEORY p);
   "VAR",(fun p -> VAR p);
+  "rewrite", (fun p -> REWRITE p);
 ]
 
 let key_sym = Hashtbl.create 17 

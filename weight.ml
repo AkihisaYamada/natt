@@ -384,7 +384,7 @@ class pol_interpreter p =
               else no_max
           else
             fun f _ i ->
-            if p.w_dim < 2 then no_max
+            if f#arity < 2 && p.w_dim < 2 then no_max
             else if coord_params.(i-1) = TEMP_max then use_max else no_max
         in
         let w f = "w_" ^ f#name in
@@ -523,6 +523,6 @@ debug2 (
     trs#iter_funs (fun f -> (x#output_sym_template (endl << puts "  " << f#output) f (puts ":\t") os))
   )
 );
-  end
+end
 
 
