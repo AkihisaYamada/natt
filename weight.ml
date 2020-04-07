@@ -39,20 +39,24 @@ let wexp_max ss =
   | _ -> Node(Max, ss)
 
 let put_wexp var e (os : #printer) =
-  let rec sub =
+  let rec sub lvl =
     function
     | Node(Smt exp,[]) -> put_exp exp os
     | Node(Add, es) ->
       if es = [] then os#puts "0"
-      else punct_list sub (puts " + ") os es
+      else begin
+        if lvl > 1 then os#puts "(";
+        punct_list (sub 1) (puts " + ") os es;
+        if lvl > 1 then os#puts ")"
+      end
     | Node(Mul, es) ->
       if es = [] then os#puts "1"
-      else punct_list sub (puts " * ") os es
+      else punct_list (sub 2) (puts " * ") os es
     | Node(Max, es) ->
-      os#puts "max {"; punct_list sub (puts ", ") os es; os#puts "}";
+      os#puts "max {"; punct_list (sub 0) (puts ", ") os es; os#puts "}";
     | Node(BVar v, []) -> var v os
   in
-  sub e
+  sub 0 e
 
 let eval_wexp solver =
   let rec sub (Node(f,ss)) =
@@ -165,7 +169,6 @@ let ref_number w_mode =
   | W_bool -> fun v -> smt_if (EV v) (LI 1) (LI 0)
   | W_tri -> fun v -> make_tri (EV (v ^ "-a")) (EV (v ^ "-b"))
   | W_quad -> fun v -> make_quad (EV (v ^ "-a")) (EV (v ^ "-b"))
-  | W_arc -> fun v -> smt_if (EV (v ^ "-b")) Bot (EV v)
   | W_none -> fun _ -> LI 0
 
 let add_number : _ -> #context -> _ =
@@ -193,12 +196,18 @@ type sym_info = {
   no_weight : exp;
   pos_info : pos_info array;
 }
+
+let coord i = (* makes suffix for coordination *)
+  "_" ^ String.make 1 (char_of_int (int_of_char 'a' + i - 1))
+
+let coord2 i j =
+  "_" ^ String.make 1 (char_of_int (int_of_char 'a' + i - 1))
+  ^ String.make 1 (char_of_int (int_of_char 'a' + j - 1))
+
 class virtual interpreter p =
-  let coord = (* makes suffix for coordination *)
-    if p.w_dim = 1 then fun _ -> "" else index
-  in
-  let put_var (k, i) = puts ("x" ^ index (k+1) ^ coord (i+1))
-  in
+  let coord = if p.w_dim = 1 then fun _ -> "" else coord in
+  let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
+  let put_var = fun (k, i) -> puts ("x" ^ index (k+1) ^ coord (i+1)) in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> Dp.dg -> unit
 
@@ -255,21 +264,27 @@ class virtual interpreter p =
       't 'o 'f. (#solver as 't) -> (#sym_detailed as 'f) -> (#printer as 'o) -> unit =
       fun solver f ->
       puts "[" << (fun pr ->
-	let punct = ref "" in
-	Array.iteri (fun i wexp ->
+        let punct = ref "" in
+        Array.iteri (fun i wexp ->
           pr#puts !punct;
           (put_wexp put_var (eval_wexp solver wexp)) pr;
-	  punct := ", "
+          punct := ", "
         ) (x#encode_sym f);
       ) <<
       puts "]"
 
      method output_sym_template :
-      'o 'f. ('o -> unit) -> (#sym as 'f) -> ('o -> unit) -> (#printer as 'o) -> unit =
-      fun prefix f infix pr ->
+      'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
+      fun f pr ->
+      pr#puts "  ";
+      f#output pr;
+      let punct = ref ":\t[ " in
       Array.iteri (fun i wexp ->
-        (prefix << puts (coord (i+1)) << infix << put_wexp put_var wexp) pr
+        pr#puts !punct;
+        punct := ",\n\t  ";
+        put_wexp put_var wexp pr;
       ) (x#encode_sym f);
+      pr#puts " ]"
   end
 
 exception Continue
@@ -351,9 +366,8 @@ object (x)
 end;;
 
 class pol_interpreter p =
-  let coord = (* makes suffix for coordination *)
-    if p.w_dim = 1 then fun _ -> "" else index
-  in
+  let coord = if p.w_dim = 1 then fun _ -> "" else coord in
+  let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
   let ref_weight = ref_number p.w_mode in
   let ref_coeff = ref_number p.sc_mode in
   let bind_upper =
@@ -376,7 +390,7 @@ class pol_interpreter p =
           if Array.exists use_dup coord_params then
             let info = maxpoly_heuristic trs dg (not p.max_poly) true in
             fun f k i ->
-            if p.w_dim < 2 then no_max
+            if f#arity < 2 && p.w_dim < 2 then no_max
             else
               let t = coord_params.(i-1) in
               if t = TEMP_max then use_max
@@ -396,20 +410,21 @@ class pol_interpreter p =
         in
         let coeff_sum f k i j =
           if (arg_mode f k i)#in_sum then
-            ref_coeff (c f k ^ coord i ^ coord j)
+            ref_coeff (c f k ^ coord2 i j)
             +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else
             LI 0
         in
         let coeff_max f k i j =
           if (arg_mode f k i)#in_max then
-            ref_coeff (d f k ^ coord i ^ coord j)
+            ref_coeff (d f k ^ coord2 i j)
+            +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else
             LI 0
         in
         let addend_max f k i j =
           if (arg_mode f k i)#in_max then
-            ref_weight (a f k ^ coord i ^ coord j)
+            ref_weight (a f k ^ coord2 i j)
           else
             LI 0
         in
@@ -421,20 +436,20 @@ class pol_interpreter p =
                 solver#add_assertion (ref_weight w_i >=^ LI 0);
               end;
               for k = 1 to f#arity do
-                let c_ki = c f k ^ coord i in
-                let d_ki = d f k ^ coord i in
-                let a_ki = a f k ^ coord i in
+                let c_k = c f k in
+                let d_k = d f k in
+                let a_k = a f k in
                 if (arg_mode f k i)#in_sum then
                   for j = 1 to p.w_dim do
-                    let c_kij = c_ki ^ coord j in
+                    let c_kij = c_k ^ coord2 i j in
                     add_number p.sc_mode solver c_kij;
                     bind_upper solver (ref_coeff c_kij);
                     solver#add_assertion (ref_coeff c_kij >=^ LI 0);
                   done;
                 if (arg_mode f k i)#in_max then
                   for j = 1 to p.w_dim do
-                    let d_kij = d_ki ^ coord j in
-                    let a_kij = a_ki ^ coord j in
+                    let d_kij = d_k ^ coord2 i j in
+                    let a_kij = a_k ^ coord2 i j in
                     add_number p.sc_mode solver d_kij;
                     bind_upper solver (ref_coeff d_kij);
                     solver#add_assertion (ref_coeff d_kij >=^ LI 0);
@@ -518,9 +533,12 @@ class pol_interpreter p =
             }
           );
 debug2 (
-  puts "Weight template:" <<
+  endl << puts "Weight template:" << endl <<
   (fun os ->
-    trs#iter_funs (fun f -> (x#output_sym_template (endl << puts "  " << f#output) f (puts ":\t") os))
+    trs#iter_funs (fun f ->
+     x#output_sym_template f os;
+     endl os
+    )
   )
 );
 end

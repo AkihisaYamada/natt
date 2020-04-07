@@ -25,7 +25,6 @@ type exp =
   | Dummy
   | EOF
   | Nil
-  | Bot
   | EV of name
   | LI of int
   | LR of float
@@ -117,7 +116,6 @@ class virtual sexp_printer =
       | Dummy -> pr "<Dummy>"
       | EOF   -> pr "<EOF>";
       | Nil   -> pr "()";
-      | Bot   -> pr "<Bottom>";
       | EV v  -> x#pr_v v;
       | LI i  -> if i < 0 then (pr "(- "; pr_i (-i); pr ")";) else pr_i i;
       | LR r  -> if r < 0.0 then (pr "(- "; pr_f (-. r); pr ")";) else pr_f r;
@@ -225,13 +223,6 @@ let is_zero =
   | LR 0.0 -> true
   | _ -> false
 
-let is_zero_bot =
-  function
-  | LI 0 -> true
-  | LR 0.0 -> true
-  | Bot -> true
-  | _ -> false
-
 let is_one =
   function
   | LI 1 -> true
@@ -242,7 +233,6 @@ let is_simple =
   let very_simple =
     function
     | Nil
-    | Bot -> true (* impure SMT formula *)
     | EV _
     | Not (EV _)
     | LI _
@@ -289,8 +279,7 @@ let rec simplify_under e1 e2 =
   | Or _, _ -> e2
   | _, LB _
   | _, LI _
-  | _, LR _
-  | _, Bot -> e2
+  | _, LR _ -> e2
   | _, Add(e3,e4) -> simplify_under e1 e3 +^ simplify_under e1 e4
   | _, Mul(e3,e4) -> simplify_under e1 e3 *^ simplify_under e1 e4
   | EV v1, EV v2 -> if v1 = v2 then LB true else e2
@@ -397,7 +386,6 @@ and simple_eq e1 e2 =
   | Not(EV v1), EV v2 when v1 = v2 -> Some false
   | EV v1, Not (EV v2) when v1 = v2 -> Some false
   | Nil, Nil
-  | Bot, Bot -> Some true
   | _ -> None
 and (=^) e1 e2 =
   match simple_eq e1 e2 with Some b -> LB b
@@ -408,8 +396,7 @@ and (=^) e1 e2 =
     | LI i1, LI i2  -> LB (i1 = i2)
     | LR r1, LR r2  -> LB (r1 = r2)
     | Not e1, Not e2 -> e1 =^ e2
-    | Nil, Nil
-    | Bot, Bot -> LB true
+    | Nil, Nil -> LB true
     | EV v1, EV v2 when v1 = v2 -> LB true
     | Ge(l1,r1),Ge(l2,r2) when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true -> LB true
     | Gt(l1,r1),Gt(l2,r2) when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true -> LB true
@@ -453,8 +440,6 @@ and (=^) e1 e2 =
   )
 and ( *^) e1 e2 =
   match e1, e2 with
-  | Bot, _
-  | _, Bot -> Bot
   | LI 0, _
   | LR 0.0, _ -> e1
   | _, LI 0
@@ -465,13 +450,13 @@ and ( *^) e1 e2 =
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
   | LR r1, LR r2 -> LR(r1 *. r2)
-  | If(c,t,e,p), _ when is_zero_bot t ->
+  | If(c,t,e,p), _ when is_zero t ->
     let nc = smt_not c in smt_pre_if c nc t (e *^ simplify_under nc e2)
-  | If(c,t,e,p), _ when is_zero_bot e ->
+  | If(c,t,e,p), _ when is_zero e ->
     smt_pre_if c (smt_not c) (t *^ simplify_under c e2) e
-  | _, If(c,t,e,p) when is_zero_bot t ->
+  | _, If(c,t,e,p) when is_zero t ->
     let nc = smt_not c in smt_pre_if c nc t (simplify_under nc e1 *^ e)
-  | _, If(c,t,e,p) when is_zero_bot e ->
+  | _, If(c,t,e,p) when is_zero e ->
     smt_pre_if c (smt_not c) (simplify_under c e1 *^ t) e
   | _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
@@ -485,8 +470,6 @@ and smt_pre_if c nc t e =
     | _, If(c',t',e',p) when simple_eq t' t = Some true -> If(c  &^ c', t', e', p)
     | Nil, _
     | _, Nil
-    | Bot, _
-    | _, Bot
     | Cons _, _
     | _, Cons _
     | If(_,_,_,false), _
@@ -498,8 +481,6 @@ and smt_if c t e =
   | _   -> let nc = smt_not c in smt_pre_if c nc (simplify_under c t) (simplify_under nc e)
 and (+^) e1 e2 =
   match e1, e2 with
-  | Bot, _ -> Bot
-  | _, Bot -> Bot
   | LI 0,  _    -> e2
   | LR 0.0, _   -> e2
   | _, LI 0   -> e1
@@ -512,8 +493,6 @@ and (+^) e1 e2 =
   | _       -> Add(e1,e2)
 and (>=^) e1 e2 =
   match e1, e2 with
-  | Bot, _ -> LB true
-  | _, Bot -> LB false
   | EV v1, EV v2 when v1 = v2 -> LB true
   | LI i1, LI i2 -> LB(i1 >= i2)
   | LI i1, LR r2 -> LB(float_of_int i1 >= r2)
@@ -554,7 +533,6 @@ and (>=^) e1 e2 =
   | _ -> Ge(e1, e2)
 and (>^) e1 e2 =
   match e1, e2 with
-  | Bot, _ -> LB false
   | LI 0, _ -> LB false
   | EV v1, EV v2 when v1 = v2 -> LB false
   | LI i1, LI i2 -> LB(i1 > i2)
@@ -623,8 +601,6 @@ let smt_exists2 f = List.fold_left2 (fun ret e1 e2 -> ret |^ f e1 e2) (LB false)
 let smt_mod e1 e2 = Mod(e1,e2)
 let smt_max e1 e2 =
   match e1, e2 with
-  | Bot, _   -> e2
-  | _, Bot   -> e1
   | LI i1, LI i2  -> LI(if i1 > i2 then i1 else i2)
   | _, Max es2  -> Max(e1::es2)
   | Max es1,_   -> Max(e2::es1)
@@ -750,8 +726,6 @@ class virtual context =
 
     method private ge_purify e1 e2 =
       match e1, e2 with
-      | _, Bot -> LB true
-      | Bot, _ -> LB false
       | If(c,t,e,false), e2 ->
         let nc = smt_not c in
         let t = x#ge_purify t (simplify_under c e2) in
@@ -768,8 +742,6 @@ class virtual context =
 
     method private gt_purify e1 e2 =
       match e1, e2 with
-      | _, Bot -> LB false (* Bot is excluded from strict relation *)
-      | Bot, _ -> LB false
       | If(c,t,e,false), e2 ->
         let nc = smt_not c in
         let t = x#gt_purify t (simplify_under c e2) in
@@ -786,53 +758,38 @@ class virtual context =
 
     method private add_purify e1 e2 =
       match e1, e2 with
-      | Bot, _
-      | _, Bot -> Bot
       | If(c,t,e,_), _ ->
-        let nc = smt_not c in
-        if t = Bot then
-          smt_pre_if c nc Bot (x#add_purify e (simplify_under nc e2))
-        else if e = Bot then
-          smt_pre_if c nc (x#add_purify t (simplify_under c e2)) Bot
-        else
-          let e2 = x#refer_base e2 in
-          smt_pre_if c nc (x#add_purify t e2) (x#add_purify e e2)
+				let nc = smt_not c in
+				let e2 = x#refer_base e2 in
+        smt_pre_if c nc (x#add_purify t e2) (x#add_purify e e2)
       | _, If(c,t,e,_) ->
         let nc = smt_not c in
-        if t = Bot then
-          smt_pre_if c nc Bot (x#add_purify (simplify_under nc e1) e)
-        else if e = Bot then
-          smt_pre_if c nc (x#add_purify (simplify_under c e1) t) Bot
-        else
-          let e1 = x#refer_base e1 in
-          smt_pre_if c nc (x#add_purify e1 t) (x#add_purify e1 e)
+        let e1 = x#refer_base e1 in
+        smt_pre_if c nc (x#add_purify e1 t) (x#add_purify e1 e)
       | _ -> e1 +^ e2
 
     method private expand_add e1 e2 =
       match x#expand e1 with
-      | Bot -> Bot
       | e1  -> x#add_purify e1 (x#expand e2)
 
     method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
     method private mul_purify e1 e2 =
       match e1, e2 with
-      | Bot, _
-      | _, Bot -> Bot
       | LI 0, _
       | LR 0.0, _ -> e1
       | _, LI 0
       | _, LR 0.0 -> e2
-      | If(c,t,e,_), _ when is_zero_bot t ->
+      | If(c,t,e,_), _ when is_zero t ->
         let nc = smt_not c in
         smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
-      | If(c,t,e,_), _ when is_zero_bot e ->
+      | If(c,t,e,_), _ when is_zero e ->
         let nc = smt_not c in
         smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
-      | _, If(c,t,e,_) when is_zero_bot t ->
+      | _, If(c,t,e,_) when is_zero t ->
         let nc = smt_not c in
         smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
-      | _, If(c,t,e,_) when is_zero_bot e ->
+      | _, If(c,t,e,_) when is_zero e ->
         let nc = smt_not c in
         smt_pre_if c nc (x#mul_purify (simplify_under nc e1) t) e
       | If(c,t,e,_), _ ->
@@ -845,7 +802,6 @@ class virtual context =
         e1 *^ e2
     method private expand_mul e1 e2 =
       match x#expand e1 with
-      | Bot    -> Bot
       | LI 0   -> LI 0
       | LR 0.0 -> LR 0.0
       | e1     -> x#mul_purify e1 (x#expand e2)
@@ -935,7 +891,6 @@ class virtual context =
     method expand =
       function
       | Nil  -> Nil
-      | Bot  -> Bot
       | EV v -> EV v
       | LB b -> LB b
       | LI i -> LI i
@@ -1202,8 +1157,7 @@ class virtual smt_lib_2_0 =
       match v with
       | LB _
       | LI _
-      | LR _
-      | Bot -> v
+      | LR _ -> v
       | If(c,t,e,false) ->
         x#get_value (if x#get_bool c then t else e)
       | _ ->
