@@ -475,10 +475,10 @@ class pol_interpreter p =
                   List.map (fun k ->
                     wexp_sum (
                       List.map (fun j ->
-                        wexp_prod [
-                          wexp_smt (coeff_max f k i j);
-                          wexp_sum [
-                            wexp_smt (addend_max f k i j);
+                        wexp_sum [
+                          wexp_smt (addend_max f k i j);
+                          wexp_prod [
+                            wexp_smt (coeff_max f k i j);
                             wexp_bvar (k-1,j-1)
                           ]
                         ]
@@ -508,7 +508,7 @@ class pol_interpreter p =
               pos_info = Array.map (
                 fun k ->
                 let ck = c f k in
-                let con = solver#refer Bool (
+                let const = solver#refer Bool (
                     smt_for_all (fun i ->
                       smt_for_all (fun j ->
                         (coeff_sum f k i j =^ LI 0) &^
@@ -529,7 +529,7 @@ class pol_interpreter p =
                   ) (int_list 1 p.w_dim)
                 in
                 {
-                  const = con;
+                  const = const;
                   strict_linear = slin;
                   weak_simple =
                     smt_for_all (fun i ->
