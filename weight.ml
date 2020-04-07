@@ -496,7 +496,15 @@ class pol_interpreter p =
                 | _ ->
                   make_positive (wexp_sum (w :: wexp_max maxed :: added))
               ) (int_array 1 p.w_dim);
-              no_weight = smt_for_all (fun i -> weight f i =^ LI 0) (int_list 1 p.w_dim);
+              no_weight =
+                smt_for_all (fun i ->
+                  weight f i =^ LI 0 &^
+                  smt_for_all (fun j ->
+                    smt_for_all (fun k ->
+                      addend_max f k i j =^ LI 0
+                    ) (int_list 1 f#arity)
+                  ) (int_list 1 p.w_dim)
+                ) (int_list 1 p.w_dim);
               pos_info = Array.map (
                 fun k ->
                 let ck = c f k in
