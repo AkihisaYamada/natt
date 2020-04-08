@@ -289,7 +289,7 @@ class virtual interpreter p =
 
 exception Continue
 
-class enc_pos_info s m = object
+class template_mode s m = object
   val mutable in_sum : bool = s
   val mutable in_max : bool = m
   method set_sum b = in_sum <- b
@@ -298,51 +298,80 @@ class enc_pos_info s m = object
   method in_max = in_max
 end
 
+class virtual template_heuristic =
+object
+  method virtual sym_mode : 'f. (#sym as 'f) -> template_mode
+  method virtual arg_mode : 'f. (#sym as 'f) -> int -> template_mode
+end
+
+let sum_mode = new template_mode true false
+let max_mode = new template_mode false true
+
+let sum_heuristic =
+object (x)
+  inherit template_heuristic
+  method sym_mode f = sum_mode
+  method arg_mode f i = sum_mode
+end;;
+
+let max_heuristic =
+object (x)
+  inherit template_heuristic
+  method sym_mode f = max_mode
+  method arg_mode f i = max_mode
+end;;
 
 let maxpoly_heuristic (trs:trs) (dg:Dp.dg) either all =
 object (x)
+  inherit template_heuristic
+  val sym_table : (string, template_mode) Hashtbl.t = Hashtbl.create 64
+  val arg_table : (string, template_mode array) Hashtbl.t = Hashtbl.create 64
 
-  val table = Hashtbl.create 64
-
-  method private get : 'f. (#sym as 'f) -> _ =
+  method sym_mode f =
+    try Hashtbl.find sym_table f#name
+    with Not_found ->
+      let ret = new template_mode true false in
+      Hashtbl.add sym_table f#name ret;
+      ret
+  method private get_arg : 'f. (#sym as 'f) -> _ =
   fun f ->
-    try Hashtbl.find table f#name
+    try Hashtbl.find arg_table f#name
     with Not_found ->
       let ret =
-        (Array.init (trs#find_sym f)#arity (fun k -> new enc_pos_info true false))
+        Array.init (trs#find_sym f)#arity (fun k -> new template_mode true false)
       in
-      Hashtbl.add table f#name ret;
+      Hashtbl.add arg_table f#name ret;
       ret
-
-  method info f k = (x#get f).(k-1)
-
+  method arg_mode f k = (x#get_arg f).(k-1)
   initializer
     let summarize_term test =
       let summarize_sym f =
-        let arr = x#get f in
+        let sym = x#sym_mode f in
+        let arg = x#get_arg f in
         let set_max i =
-	  arr.(i)#set_max true;
-	  if either then arr.(i)#set_sum false;
-	in
+          arg.(i)#set_max true;
+          sym#set_max true;
+          if either then arg.(i)#set_sum false
+        in
         let rec sub acc i = function
-	  | [] -> acc
-	  | vs::vss ->
-	    if arr.(i)#in_max then
-	      sub (Mset.join acc vs) (i+1) vss
-	    else
-	      let acc' = Mset.union acc vs in
-	      if test acc' then
-	        sub acc' (i+1) vss
-	      else (
-	        debug2 (puts "prefer max for " << puts f#name << puts " in " << put_int i << endl);
-	        if all then
-	          for j = 0 to i + List.length vss do
-	            set_max j;
-	          done
-	        else
-	          set_max i;
-	        raise Continue
-	      )
+        | [] -> acc
+        | vs::vss ->
+          if arg.(i)#in_max then
+            sub (Mset.join acc vs) (i+1) vss
+          else
+            let acc' = Mset.union acc vs in
+            if test acc' then
+              sub acc' (i+1) vss
+            else (
+              debug2 (puts "prefer max for " << puts f#name << puts " in " << put_int i << endl);
+              if all then
+                for j = 0 to i + List.length vss do
+                  set_max j;
+                done
+              else
+                set_max i;
+              raise Continue
+            )
         in
         sub Mset.empty 0
       in
@@ -365,6 +394,7 @@ object (x)
     loop ()
 end;;
 
+
 class pol_interpreter p =
   let coord = if p.w_dim = 1 then fun _ -> "" else coord in
   let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
@@ -383,81 +413,87 @@ class pol_interpreter p =
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
       fun solver trs dg ->
-        let arg_mode =
-          let use_max = new enc_pos_info p.max_poly true in
-          let no_max = new enc_pos_info true false in
-          let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
+        let use_max = new template_mode p.max_poly true in
+        let no_max = new template_mode true false in
+        let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
+        let heuristic =
           if Array.exists use_dup coord_params then
-            let info = maxpoly_heuristic trs dg (not p.max_poly) true in
-            fun f k i ->
-            if f#arity < 2 && p.w_dim < 2 then no_max
-            else
-              let t = coord_params.(i-1) in
-              if t = TEMP_max then use_max
-              else if use_dup t then info#info f k
-              else no_max
+            maxpoly_heuristic trs dg (not p.max_poly) true
+          else sum_heuristic
+        in
+        let sym_mode f i =
+          if f#arity < 2 && p.w_dim < 2 then no_max
           else
-            fun f _ i ->
-            if f#arity < 2 && p.w_dim < 2 then no_max
-            else if coord_params.(i-1) = TEMP_max then use_max else no_max
+            let t = coord_params.(i-1) in
+            if t = TEMP_max then use_max
+            else if use_dup t then heuristic#sym_mode f
+            else no_max
+        in
+        let arg_mode f k i =
+          if f#arity < 2 && p.w_dim < 2 then no_max
+          else
+            let t = coord_params.(i-1) in
+            if t = TEMP_max then use_max
+            else if use_dup t then heuristic#arg_mode f k
+            else no_max
         in
         let w f = "w_" ^ f#name in
         let c f k = "c_" ^ f#name ^ index k in
         let d f k = "d_" ^ f#name ^ index k in
         let a f k = "a_" ^ f#name ^ index k in
         let weight f i =
-          ref_weight (w f ^ coord i)
+          if not (sym_mode f i)#in_max then
+            ref_weight (w f ^ coord i)
+          else
+            LI 0
         in
         let coeff_sum f k i j =
           if (arg_mode f k i)#in_sum then
-            ref_coeff (c f k ^ coord2 i j)
-            +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
+            ref_coeff (c f k ^ coord2 i j) +^
+            LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else
             LI 0
         in
         let coeff_max f k i j =
-          if (arg_mode f k i)#in_max then
-            ref_coeff (d f k ^ coord2 i j)
-            +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
-          else
-            LI 0
+          if (arg_mode f k i)#in_max then ref_coeff (d f k ^ coord2 i j)
+          else LI 0
         in
         let addend_max f k i j =
-          if (arg_mode f k i)#in_max then
-            ref_weight (a f k ^ coord2 i j)
-          else
-            LI 0
+          if (arg_mode f k i)#in_max then ref_weight (a f k ^ coord2 i j)
+          else LI 0
         in
         trs#iter_funs (fun f ->
           for i = 1 to p.w_dim do
+            if not (sym_mode f i)#in_max then begin
               let w_i = w f ^ coord i in
               add_number p.w_mode solver w_i;
               if not p.w_neg || f#arity = 0 then begin
                 solver#add_assertion (ref_weight w_i >=^ LI 0);
-              end;
-              for k = 1 to f#arity do
-                let c_k = c f k in
-                let d_k = d f k in
-                let a_k = a f k in
-                if (arg_mode f k i)#in_sum then
-                  for j = 1 to p.w_dim do
-                    let c_kij = c_k ^ coord2 i j in
-                    add_number p.sc_mode solver c_kij;
-                    bind_upper solver (ref_coeff c_kij);
-                    solver#add_assertion (ref_coeff c_kij >=^ LI 0);
-                  done;
-                if (arg_mode f k i)#in_max then
-                  for j = 1 to p.w_dim do
-                    let d_kij = d_k ^ coord2 i j in
-                    let a_kij = a_k ^ coord2 i j in
-                    add_number p.sc_mode solver d_kij;
-                    bind_upper solver (ref_coeff d_kij);
-                    solver#add_assertion (ref_coeff d_kij >=^ LI 0);
-                    add_number p.w_mode solver a_kij;
-                    if not p.w_neg then begin
-                      solver#add_assertion (ref_weight a_kij >=^ LI 0);
-                    end;
-                  done;
+              end
+            end;
+            for k = 1 to f#arity do
+              let c_k = c f k in
+              let d_k = d f k in
+              let a_k = a f k in
+              if (arg_mode f k i)#in_sum then
+                for j = 1 to p.w_dim do
+                  let c_kij = c_k ^ coord2 i j in
+                  add_number p.sc_mode solver c_kij;
+                  bind_upper solver (ref_coeff c_kij);
+                  solver#add_assertion (ref_coeff c_kij >=^ LI 0);
+                done;
+              if (arg_mode f k i)#in_max then
+                for j = 1 to p.w_dim do
+                  let d_kij = d_k ^ coord2 i j in
+                  let a_kij = a_k ^ coord2 i j in
+                  add_number p.sc_mode solver d_kij;
+                  bind_upper solver (ref_coeff d_kij);
+                  solver#add_assertion (ref_coeff d_kij >=^ LI 0);
+                  add_number p.w_mode solver a_kij;
+                  if not p.w_neg then begin
+                    solver#add_assertion (ref_weight a_kij >=^ LI 0);
+                  end;
+                done;
               done
             done;
             Hashtbl.add table f#name {
@@ -472,8 +508,8 @@ class pol_interpreter p =
                   )
                 in
                 let maxed =
-                  List.map (fun k ->
-                    wexp_sum (
+                  List.concat (
+                    List.map (fun k ->
                       List.map (fun j ->
                         wexp_sum [
                           wexp_smt (addend_max f k i j);
@@ -483,8 +519,8 @@ class pol_interpreter p =
                           ]
                         ]
                       ) (int_list 1 p.w_dim)
-                    )
-                  ) (int_list 1 f#arity)
+                    ) (int_list 1 f#arity)
+                  )
                 in
                 let w = wexp_smt (weight f i) in
                 match coord_params.(i-1) with

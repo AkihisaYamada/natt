@@ -197,7 +197,7 @@ let name_order p =
       | TEMP_max_sum_dup -> "MaxPol"
       | TEMP_sum_max_dup -> "PolMax"
     in
-    Util.foldl_nonnil "" elem (fun acc t -> acc ^ "," ^ elem t) p.w_params
+    "[" ^ Util.foldl_nonnil "" elem (fun acc t -> acc ^ "," ^ elem t) p.w_params ^ "]"
   in
   if p.w_mode = W_none then
     prec ^ (
@@ -208,10 +208,7 @@ let name_order p =
       | _ -> "???"
     )
   else if p.status_mode = S_empty && p.prec_mode = PREC_none then
-    if p.w_dim > 1 then
-      algebra
-    else
-      "POLO(" ^ algebra ^ ")"
+    algebra
   else
     prec ^ "WPO" ^ status ^ "(" ^ algebra ^ ")"
 
