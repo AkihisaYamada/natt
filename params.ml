@@ -329,7 +329,10 @@ let apply_edg () =
 	params.dp <- true;
 	order_default.dp <- true;
 	order_default.sc_mode <- W_bool;
-	order_default.collapse <- not params.cpf;
+	if params.cpf then begin
+		order_default.collapse <- true; (* Not yet supported *)
+		params.sort_scc <- SORT_none; (* In CPF, the order of SCCs matters *)
+	end;
 	order_default.status_mode <- S_partial;
 	pp := order_default;
 in
