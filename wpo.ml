@@ -1486,16 +1486,18 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 	(* Print CPF proof *)
 	let output_cpf =
 		let put_status finfo pr =
-			Xml.enter "status" pr;
-			let n = finfo.arity in
-			for j = 1 to n do
-				for i = 1 to n do
-					if solver#get_bool (perm finfo i j) then begin
-						Xml.enclose_inline "position" (put_int i) pr;
-					end;
+			if solver#get_bool (argfilt_list finfo) then begin
+				Xml.enter "status" pr;
+				let n = finfo.arity in
+				for j = 1 to n do
+					for i = 1 to n do
+						if solver#get_bool (perm finfo i j) then begin
+							Xml.enclose_inline "position" (put_int i) pr;
+						end;
+					done;
 				done;
-			done;
-			Xml.leave "status" pr;
+				Xml.leave "status" pr;
+			end
 		in
 		let put_prec finfo =
 			Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value (prec finfo))))
@@ -1584,21 +1586,45 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			end;
 			Xml.leave "interpret" pr;
 		in
+		let pr_collapse_entry pr _ finfo =
+			if solver#get_bool (argfilt_list finfo) then begin
+				Xml.enter "argumentFilterEntry" pr;
+				finfo.sym#output_xml pr;
+				let n = finfo.arity in
+				Xml.enclose_inline "arity" (put_int n) pr;
+				for i = 1 to n do
+					if solver#get_bool (perm finfo i 0) then begin
+						Xml.enclose_inline "collapsing" (put_int i) pr;
+					end;
+				done;
+				Xml.leave "argumentFilterEntry" pr;
+			end;
+		in
+		let pr_collapse pr =
+			Xml.enter "argumentFilter" pr;
+			Hashtbl.iter (pr_collapse_entry pr) sigma;
+			Xml.leave "argumentFilter" pr;
+		in
 		fun pr ->
 			Xml.enter "orderingConstraintProof" pr;
 			Xml.enter "redPair" pr;
+			Xml.enter "filteredRedPair" pr;
+			pr_collapse pr;
 			if prec_is_used || status_is_used then begin
 				Xml.enter "weightedPathOrder" pr;
 				Xml.enter "precedenceStatus" pr;
 				Hashtbl.iter (pr_precstat pr) sigma;
 				Xml.leave "precedenceStatus" pr;
 			end;
+			Xml.enter "interpretation" pr;
 			Xml.enter "maxPoly" pr;
 			Hashtbl.iter (pr_interpret pr) sigma;
 			Xml.leave "maxPoly" pr;
+			Xml.leave "interpretation" pr;
 			if prec_is_used || status_is_used then begin
 				Xml.leave "weightedPathOrder" pr;
 			end;
+			Xml.leave "filteredRedPair" pr;
 			Xml.leave "redPair" pr;
 			Xml.leave "orderingConstraintProof" pr;
 	in
