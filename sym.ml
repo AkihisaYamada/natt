@@ -42,8 +42,8 @@ class sym_unmarked ty0 name = object (x:'x)
 	inherit sym ty0
 	method name = name
 	method output_xml : 'b. (#printer as 'b) -> unit =
-		if x#is_var then Xml.enclose_inline "var" x#output
-		else Xml.enclose_inline "name" x#output
+		if x#is_var then Xml.enclose_inline "var" (Xml.put_string name)
+		else Xml.enclose_inline "name" (Xml.put_string name)
 end
 
 let escape c = " " ^ String.make 1 c
@@ -65,7 +65,7 @@ class sym_marked ty0 name0 = object
 	val mutable name = name0
 	method name = mark_name name
 	method output_xml =
-		Xml.enclose_inline "sharp" (Xml.enclose_inline "name" (put_name name))
+		Xml.enclose_inline "sharp" (Xml.enclose_inline "name" (Xml.put_string name))
 end
 
 let mark_sym (f:#sym) = new sym_marked f#ty f#name
@@ -79,8 +79,8 @@ class sym_freezed (f:#sym) (g:#sym) i =
 		method name = name
 		method output_xml : 'b. (#printer as 'b) -> unit =
 			Xml.enclose_inline "name" (
-				f#output << puts "&middot;" <<
-				g#output << Xml.enclose "sup" (put_int i)
+				Xml.put_string f#name << puts "&middot;" <<
+				Xml.put_string g#name << Xml.enclose "sup" (put_int i)
 			)
 	end
 

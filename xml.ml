@@ -1,5 +1,19 @@
 open Io
 
+let put_string str =
+	let n = String.length str in
+	let rec sub i =
+		if i < n then
+			(	match str.[i] with
+				| '<'	-> puts "&lt;"
+				| '&'	-> puts "&amp;"
+				| '>'	-> puts "&gt;"
+				| c		-> putc c
+			) << sub (i+1)
+		else (fun pr -> pr)
+	in
+	sub 0
+
 let enter_inline name = putc '<' << puts name << putc '>'
 
 let leave_inline name = puts "</" << puts name << putc '>'
