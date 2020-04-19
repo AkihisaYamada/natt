@@ -301,8 +301,13 @@ class trs =
 				done
 			)
 		method output_xml : 'a. (#Io.printer as 'a) -> unit =
-			Xml.enclose "trs" x#output_xml_rules << x#output_xml_ths
-
+		fun pr ->
+			if x#is_theoried then
+				Xml.enclose "acRewriteSystem"
+					(Xml.enclose "trs" x#output_xml_rules << x#output_xml_ths) pr
+			else
+				Xml.enclose "trsInput"
+					(Xml.enclose "trs" x#output_xml_rules) pr
 		method output_xml_ho_signature : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			Xml.enter "higherOrderSignature" pr;
 			let first = ref true in

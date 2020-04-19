@@ -58,6 +58,10 @@ then
 	{
 		:
 	}
+	finfo()
+	{
+		echo -n "$@: "
+	}
 	options="$options -V"
 	cpfdir="${1#-x:}"
 	shift

@@ -211,9 +211,17 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	in
 
 	let rec dg_proc n_reals n_dps sccs =
-		cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc");
+		cpf (
+			if trs#is_theoried then
+				Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc"
+			else Xml.enter "dpProof" << Xml.enter "depGraphProc"
+		);
 		let ret = loop n_reals n_dps sccs in
-		cpf (Xml.leave "acDepGraphProc" << Xml.leave "acDPTerminationProof");
+		cpf (
+			if trs#is_theoried then
+				Xml.leave "acDepGraphProc" << Xml.leave "acDPTerminationProof"
+			else Xml.leave "depGraphProc" << Xml.leave "dpProof"
+		);
 		ret
 	and loop n_reals n_dps sccs =
 		comment (puts "Number of SCCs: " << put_int n_reals << puts ", DPs: " << put_int n_dps << endl);
@@ -232,11 +240,21 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 				cpf (Xml.enclose_inline "realScc" (puts "true"));
 				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
 					comment (puts "only weak rules." << endl);
-					cpf (Xml.enclose "acDPTerminationProof" (Xml.tag "acTrivialProc"));
+					cpf (
+						if trs#is_theoried then
+							Xml.enclose "acDPTerminationProof" (Xml.tag "acTrivialProc")
+						else
+							Xml.enclose "dpProof" (Xml.tag "pIsEmpty")
+					);
 					cpf (Xml.leave "component");
 					loop (n_reals - 1) (n_dps - List.length scc) sccs
 				) else (
-					cpf (Xml.enter "acDPTerminationProof");
+					cpf (
+						if trs#is_theoried then
+							Xml.enter "acDPTerminationProof"
+						else
+							Xml.enter "dpProof"
+					);
 					let sccref = ref scc in
 					let n_dps = n_dps - List.length scc in
 					let n_reals = n_reals - 1 in
@@ -246,16 +264,23 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 						let real_subsccs = real_filter subsccs in
 						let subsccs = scc_sorter subsccs in
 						let n_subdps = count_dps real_subsccs in
-						let ret = dg_proc (n_reals + List.length real_subsccs) (n_dps + n_subdps) subsccs in
-						cpf (Xml.leave "acRedPairProc" << Xml.leave "acDPTerminationProof");
-						cpf (Xml.leave "component");
+						let ret = dg_proc (n_reals + List.length real_subsccs) (n_dps + n_subdps)  subsccs in
+						cpf (
+							(if trs#is_theoried then
+								Xml.leave "acRedPairProc" << Xml.leave "acDPTerminationProof"
+							else
+								Xml.leave "redPairUrProc" << Xml.leave "dpProof"
+							) << Xml.leave "component"
+						);
 						if ret = YES then loop_silent n_reals n_dps sccs else ret
 					) else (
 						comment (puts "failed." << endl);
 						Nonterm.find_loop params.max_loop trs estimator dg scc;
-						cpf (Xml.enclose "unknownProof" (Xml.enclose "description" (puts "Failed!")));
-						cpf (Xml.leave "acDPTerminationProof");
-						cpf (Xml.leave "component");
+						cpf (
+							Xml.enclose "unknownProof" (Xml.enclose "description" (puts "Failed!")) <<
+							Xml.leave (if trs#is_theoried then "acDPTerminationProof" else "dpProof") <<
+							Xml.leave "component"
+						);
 						MAYBE
 					)
 				)
@@ -278,44 +303,56 @@ let dp_prove (trs : #trs) =
 		| _ -> Estimator.sym_trans trs
 	in
 	debug estimator#output;
-
-	cpf (Xml.enter "acDependencyPairs");
-(*	cpf (Xml.enclose "markedSymbols" (fun os -> output_string os "true");
-*)	let dg = new dg trs estimator in
+	let dg = new dg trs estimator in
 	dg#init;
 	cpf (
-		Xml.enclose "equations" (
-			Xml.enclose "rules" (fun pr ->
-				trs#iter_rules (fun _ rule -> if rule#is_weak then rule#output_xml pr;)
+		if trs#is_theoried then
+			Xml.enter "acDependencyPairs" <<
+			Xml.enclose "equations" (
+				Xml.enclose "rules" (fun pr ->
+					trs#iter_rules (fun _ rule -> if rule#is_weak then rule#output_xml pr;)
+				)
+			) <<
+			Xml.enclose "dpEquations" (
+				Xml.enclose "rules" (fun pr ->
+					dg#iter_dps (fun _ dp -> if dp#is_weak then dp#output_xml pr;)
+				)
+			) <<
+			Xml.enclose "dps" (
+				Xml.enclose "rules" (fun pr ->
+					dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml pr;)
+				)
+			) <<
+			Xml.enclose "extensions" (
+				Xml.enclose "rules" (fun (pr:#printer) ->
+					let iterer i (rule:rule) =
+						if rule#is_strict && trs#weakly_defines (root rule#l) then begin
+							List.iter (fun (rule:#rule) -> rule#output_xml pr) (extended_rules rule);
+						end;
+					in
+					trs#iter_rules iterer;
+				)
 			)
-		) <<
-		Xml.enclose "dpEquations" (
-			Xml.enclose "rules" (fun pr ->
-				dg#iter_dps (fun _ dp -> if dp#is_weak then dp#output_xml pr;)
-			)
-		) <<
-		Xml.enclose "dps" (
-			Xml.enclose "rules" (fun pr ->
-				dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml pr;)
-			)
-		) <<
-		Xml.enclose "extensions" (
-			Xml.enclose "rules" (fun (pr:#printer) ->
-				let iterer i (rule:rule) =
-					if rule#is_strict && trs#weakly_defines (root rule#l) then begin
-						List.iter (fun (rule:#rule) -> rule#output_xml pr) (extended_rules rule);
-					end;
-				in
-				trs#iter_rules iterer;
-			)
-		)
+		else
+			Xml.enter "dpTrans" <<
+			Xml.enclose "dps" (
+				Xml.enclose "rules" (fun pr ->
+					dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml pr;)
+				)
+			) <<
+			Xml.enclose_inline "markedSymbols" (puts "true")
 	);
 	problem (puts "Dependency Pairs:" << endl << dg#output_dps);
 	log dg#output_edges;
 	log (dg#output_debug << endl);
 
 	let ret = dp_remove trs estimator dg in
-	cpf (Xml.leave "acDependencyPairs");
+	cpf (
+		if trs#is_theoried then
+			Xml.leave "acDependencyPairs"
+		else
+			Xml.leave "dpTrans"
+	);
 	ret;;
 
 
@@ -323,10 +360,10 @@ let dp_prove (trs : #trs) =
 let prove_termination (trs : #trs) =
 	problem (puts "Input TRS:" << endl << trs#output);
 	cpf (
-		Xml.enclose "input" (Xml.enclose "acRewriteSystem" trs#output_xml) <<
+		Xml.enclose "input" trs#output_xml <<
 		Xml.enclose_inline "cpfVersion" (puts "2.2") <<
 		Xml.enter "proof" <<
-		Xml.enter "acTerminationProof"
+		Xml.enter (if trs#is_theoried then "acTerminationProof" else "trsTerminationProof")
 	);
 
 	let ret =
@@ -347,7 +384,7 @@ let prove_termination (trs : #trs) =
 		| Nonterm -> NO
 	in
 	cpf (
-		Xml.leave "acTerminationProof" <<
+		Xml.leave (if trs#is_theoried then "acTerminationProof" else "trsTerminationProof") <<
 		Xml.leave "proof" <<
 		Xml.enclose "origin" (
 			Xml.enclose "proofOrigin" (
