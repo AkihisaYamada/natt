@@ -1610,8 +1610,10 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 		fun pr ->
 			Xml.enter "orderingConstraintProof" pr;
 			Xml.enter "redPair" pr;
-			Xml.enter "filteredRedPair" pr;
-			pr_collapse pr;
+			if p.collapse then begin
+				Xml.enter "filteredRedPair" pr;
+				pr_collapse pr;
+			end;
 			if prec_is_used || status_is_used then begin
 				Xml.enter "weightedPathOrder" pr;
 				Xml.enter "precedenceStatus" pr;
@@ -1624,7 +1626,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			if prec_is_used || status_is_used then begin
 				Xml.leave "weightedPathOrder" pr;
 			end;
-			Xml.leave "filteredRedPair" pr;
+			if p.collapse then begin
+				Xml.leave "filteredRedPair" pr;
+			end;
 			Xml.leave "redPair" pr;
 			Xml.leave "orderingConstraintProof" pr;
 	in

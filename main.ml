@@ -201,7 +201,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 
 	let real_sccs = real_filter sccs in
 
-	if dg#minimal then remove_unusable trs estimator dg real_sccs;
+	if dg#minimal && !use_usable_rules then remove_unusable trs estimator dg real_sccs;
 
 	let count_dps =
 		let rec sub ret = function

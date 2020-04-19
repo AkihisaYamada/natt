@@ -431,20 +431,20 @@ while !i < argc do
 				params.debug <- v > 4;
 				params.debug2 <- v > 5;
 			end;
-		| "x", None ->
-			params.result <- false;
-			params.warning <- false;
-			params.comment <- false;
-			params.problem <- false;
-			params.proof <- false;
+		| "x", cpfopt ->
 			params.cpf <- true;
-			params.naive_C <- true;
-			params.edge_mode <- E_tcap;
 			params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
-		| "x", Some file ->
-			params.cpf <- true;
-			params.cpf_to <- open_out file;
-			params.naive_C <- true;
+			params.naive_C <- true; (* commutativity is treated as an equation naively *)
+      begin match cpfopt with
+      | None ->
+        params.result <- false;
+        params.warning <- false;
+        params.comment <- false;
+        params.problem <- false;
+        params.proof <- false;
+      | Some file ->
+			  params.cpf_to <- open_out file;
+      end;
 		| "-peek", _ ->
 			begin
 				p.peek_in <- true;
@@ -667,9 +667,13 @@ while !i < argc do
 done;
 if !default then begin
 	(* the default strategy *)
-	apply_polo ();
-	!pp.sc_mode <- W_bool;
-	params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
+  if params.cpf then begin
+	  params.uncurry <- false; (* certifed uncurrying not supported *)
+  end else begin
+  	apply_polo ();
+  	!pp.sc_mode <- W_bool;
+	  params.uncurry <- true;
+  end;
 	apply_edg ();
 	apply_polo ();
 	apply_polo ();
@@ -679,7 +683,8 @@ if !default then begin
 	apply_polo ();
 	!pp.max_mode <- MAX_dup;
 	!pp.refer_w <- true;
-	!pp.w_neg <- true;
+  (* certified negative coefficient with max not supported *)
+  if not params.cpf then !pp.w_neg <- true;
 	apply_wpo ();
 	!pp.status_mode <- S_partial;
 	!pp.max_mode <- MAX_dup;
