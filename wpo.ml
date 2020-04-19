@@ -1486,29 +1486,29 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 	(* Print CPF proof *)
 	let output_cpf =
 		let put_status finfo pr =
-			if solver#get_bool (argfilt_list finfo) then begin
-				Xml.enter "status" pr;
-				let n = finfo.arity in
-				for j = 1 to n do
-					for i = 1 to n do
-						if solver#get_bool (perm finfo i j) then begin
-							Xml.enclose_inline "position" (put_int i) pr;
-						end;
-					done;
+			Xml.enter "status" pr;
+			let n = finfo.arity in
+			for j = 1 to n do
+				for i = 1 to n do
+					if solver#get_bool (perm finfo i j) then begin
+						Xml.enclose_inline "position" (put_int i) pr;
+					end;
 				done;
-				Xml.leave "status" pr;
-			end
+			done;
+			Xml.leave "status" pr;
 		in
 		let put_prec finfo =
 			Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value (prec finfo))))
 		in
 		let pr_precstat pr _ finfo =
-			Xml.enclose "precedenceStatusEntry" (
-				finfo.sym#output_xml <<
-				Xml.enclose_inline "arity" (put_int finfo.arity) <<
-				put_prec finfo <<
-				put_status finfo
-			) pr
+			if solver#get_bool (argfilt_list finfo) then begin
+				Xml.enclose "precedenceStatusEntry" (
+					finfo.sym#output_xml <<
+					Xml.enclose_inline "arity" (put_int finfo.arity) <<
+					put_prec finfo <<
+					put_status finfo
+				) pr
+			end
 		in
 		let put_inte e =
 			Xml.enclose_inline "constant" (put_int (smt_eval_int e))
@@ -1526,74 +1526,76 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 			| _ -> put_inte e
 		in
 		let pr_interpret pr _ finfo =
-			Xml.enter "interpret" pr;
-			finfo.sym#output_xml pr;
-			let n = finfo.arity in
-			Xml.enclose_inline "arity" (put_int n) pr;
-			let sc =
-				if finfo.symtype = Fun then subterm_coef finfo
-				else (fun v _ -> v) (subterm_coef finfo 1)
-			in
-			let put_sum pr =
-				Xml.enter "sum" pr;
-				for i = 1 to n do
-					let coef = solver#get_value (sc i) in
-					if zero coef then begin
-						(* nothing *)
-					end else if one coef then begin
-						Xml.enclose_inline "variable" (
-							put_int i
-						) pr;
+			if solver#get_bool (argfilt_list finfo) then begin
+				Xml.enter "interpret" pr;
+				finfo.sym#output_xml pr;
+				let n = finfo.arity in
+				Xml.enclose_inline "arity" (put_int n) pr;
+				let sc =
+					if finfo.symtype = Fun then subterm_coef finfo
+					else (fun v _ -> v) (subterm_coef finfo 1)
+				in
+				let put_sum pr =
+					Xml.enter "sum" pr;
+					for i = 1 to n do
+						let coef = solver#get_value (sc i) in
+						if zero coef then begin
+							(* nothing *)
+						end else if one coef then begin
+							Xml.enclose_inline "variable" (
+								put_int i
+							) pr;
+						end else begin
+							Xml.enclose "product" (
+								put_coef coef <<
+								Xml.enclose_inline "variable" (put_int i)
+							) pr;
+						end;
+					done;
+					put_coef (solver#get_value (weight finfo)) pr;
+					Xml.leave "sum" pr;
+				in
+				if max_status finfo then begin
+					let usemax = solver#get_bool (argfilt_list finfo) in
+					if usemax then begin
+						Xml.enter "max" pr;
+					end;
+					for i = 1 to n do
+						let pen = solver#get_value (subterm_penalty finfo i) in
+						if solver#get_bool (maxfilt finfo i) then begin
+							Xml.enclose "sum" (
+								Xml.enclose_inline "variable" (put_int i) <<
+								put_coef pen
+							) pr;
+						end;
+					done;
+					if finfo.maxpol then begin
+						put_sum pr;
 					end else begin
-						Xml.enclose "product" (
-							put_coef coef <<
-							Xml.enclose_inline "variable" (put_int i)
-						) pr;
+						put_coef (solver#get_value mcw) pr;
 					end;
-				done;
-				put_coef (solver#get_value (weight finfo)) pr;
-				Xml.leave "sum" pr;
-			in
-			if max_status finfo then begin
-				let usemax = solver#get_bool (argfilt_list finfo) in
-				if usemax then begin
-					Xml.enter "max" pr;
-				end;
-				for i = 1 to n do
-					let pen = solver#get_value (subterm_penalty finfo i) in
-					if solver#get_bool (maxfilt finfo i) then begin
-						Xml.enclose "sum" (
-							Xml.enclose_inline "variable" (put_int i) <<
-							put_coef pen
-						) pr;
+					if usemax then begin
+						Xml.leave "max" pr;
 					end;
-				done;
-				if finfo.maxpol then begin
-					put_sum pr;
+				end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
+					Xml.enclose "max" (
+						put_sum <<
+						put_coef (solver#get_value mcw)
+					) pr;
 				end else begin
-					put_coef (solver#get_value mcw) pr;
+					put_sum pr;
 				end;
-				if usemax then begin
-					Xml.leave "max" pr;
-				end;
-			end else if p.w_neg && not (solver#get_bool (is_const finfo)) then begin
-				Xml.enclose "max" (
-					put_sum <<
-					put_coef (solver#get_value mcw)
-				) pr;
-			end else begin
-				put_sum pr;
-			end;
 			Xml.leave "interpret" pr;
+			end
 		in
 		let pr_collapse_entry pr _ finfo =
-			if solver#get_bool (argfilt_list finfo) then begin
+			if not (solver#get_bool (argfilt_list finfo)) then begin
 				Xml.enter "argumentFilterEntry" pr;
 				finfo.sym#output_xml pr;
 				let n = finfo.arity in
 				Xml.enclose_inline "arity" (put_int n) pr;
 				for i = 1 to n do
-					if solver#get_bool (perm finfo i 0) then begin
+					if solver#get_bool (perm finfo i 1) then begin
 						Xml.enclose_inline "collapsing" (put_int i) pr;
 					end;
 				done;
@@ -1616,11 +1618,9 @@ class processor p (trs : trs) (estimator : Estimator.t) (dg : dg) =
 				Hashtbl.iter (pr_precstat pr) sigma;
 				Xml.leave "precedenceStatus" pr;
 			end;
-			Xml.enter "interpretation" pr;
 			Xml.enter "maxPoly" pr;
 			Hashtbl.iter (pr_interpret pr) sigma;
 			Xml.leave "maxPoly" pr;
-			Xml.leave "interpretation" pr;
 			if prec_is_used || status_is_used then begin
 				Xml.leave "weightedPathOrder" pr;
 			end;
