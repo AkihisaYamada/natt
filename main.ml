@@ -37,66 +37,64 @@ let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_
 		trs#fold_rules (fun i _ is -> i::is) [], []
 	)
 
+let dummy_estimator = Estimator.tcap (new trs)
+let dummy_dg = new dg (new trs) dummy_estimator
 
-let uncurry =
-	if params.uncurry then
-		fun (trs : #trs) (dg : #dg) ->
-			comment (puts "Uncurrying");
-			let appsyms = App.auto_uncurry trs dg in
-			if appsyms = [] then
-				(comment (puts " ... failed." << endl); false)
-			else (
-				comment (fun (pr : #printer) ->
-					List.iter (fun (a : #sym) -> pr#putc ' '; a#output pr) appsyms;
-					pr#endl;
-				);
-				problem trs#output;
-				true
-			)
-	else
-		fun _ _ -> false
+let uncurry success fail (trs : #trs) =
+	if params.uncurry then (
+		comment (puts "Uncurrying");
+		let appsyms = App.auto_uncurry trs dummy_dg in
+		if appsyms = [] then
+			(comment (puts " ... failed." << endl); fail trs)
+		else (
+			comment (fun (pr : #printer) ->
+				List.iter (fun (a : #sym) -> pr#putc ' '; a#output pr) appsyms;
+				pr#endl;
+			);
+			problem trs#output;
+			success trs
+		)
+	) else
+		fail trs
 
-let theory_test (trs : #trs) =
+let theory_test next (trs : #trs) =
 	let ths = trs#get_ths in
 	let ths = StrSet.remove "A" ths in
 	let ths = StrSet.remove "C" ths in
 	let ths = StrSet.remove "AC" ths in
-	if not (StrSet.is_empty ths) then begin
+	if not (StrSet.is_empty ths) then (
 		warning (fun _ -> prerr_endline ("Unacceptable theories: " ^ StrSet.fold (^) ths ""));
-		raise Unknown;
-	end;;
+		MAYBE
+	) else next trs
 
 (* extra variable test *)
-let extra_test (trs : #trs) =
-	let iterer i rule =
-		if rule#has_extra_variable then begin
-			proof (puts "Extra variable in rule " << put_int i << puts "." << endl);
-			raise Nonterm;
-		end;
+let extra_test next (trs : #trs) =
+	let test i rule =
+		rule#has_extra_variable &&
+		(proof (puts "Extra variable in rule " << put_int i << puts "." << endl); true)
 	in
-	trs#iter_rules iterer;;
+		if trs#for_all_rules test then NO else next trs
+
 
 (* remove trivial relative rules *)
-let trivial_test (trs : #trs) =
-	let iterer i rule =
-		if rule#l = rule#r then begin
-			if rule#is_strict then begin
+let trivial_test next (trs : #trs) =
+	let test i rule =
+		if rule#l = rule#r then
+			if rule#is_strict then (
 				proof (puts "Trivially nonterminating rule " << put_int i << puts "." << endl);
-				raise Nonterm;
-			end else if rule#is_weak then begin
+				false
+			) else if rule#is_weak then (
 				proof (puts "Removing trivial weak rule " << put_int i << puts "." << endl);
 				trs#remove_rule i;
-			end;
-		end;
+				true
+			) else true
+		else true
 	in
-	trs#iter_rules iterer;;
-
+	if trs#for_all_rules test then next trs else NO
 
 (* rule removal processor *)
-let dummy_estimator = Estimator.tcap (new trs)
-let dummy_dg = new dg (new trs) dummy_estimator
 
-let rule_remove (trs : #trs) next =
+let rule_remove next (trs : #trs) =
 	if Array.length params.orders_removal = 0 then
 		next trs
 	else
@@ -297,6 +295,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 
 
 let dp_prove (trs : #trs) =
+	if not params.dp then MAYBE else
 	let estimator =
 		match params.edge_mode with
 		| E_tcap -> Estimator.tcap trs
@@ -355,8 +354,6 @@ let dp_prove (trs : #trs) =
 	);
 	ret;;
 
-
-
 let prove_termination (trs : #trs) =
 	problem (puts "Input TRS:" << endl << trs#output);
 	cpf (
@@ -367,17 +364,13 @@ let prove_termination (trs : #trs) =
 	);
 
 	let ret =
-		try
-			theory_test trs;
-			extra_test trs;
-			trivial_test trs;
-			rule_remove trs (fun trs ->
-				if uncurry trs dummy_dg then
-					rule_remove trs dp_prove
-				else if params.dp then
-					dp_prove trs
-				else raise Unknown
-			)
+		try (
+			theory_test @@
+			extra_test @@
+			trivial_test @@
+			rule_remove @@
+			uncurry (rule_remove dp_prove) dp_prove
+		) trs
 		with
 		| Success -> YES
 		| Unknown -> MAYBE

@@ -1,4 +1,4 @@
-let version = "1.6";
+let version = "certifiable-1.6";
 
 type base_ty =
 | TY_int
