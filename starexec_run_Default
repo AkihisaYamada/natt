@@ -1,0 +1,4 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+xsltproc "$DIR/xtc2tpdb.xml" "$1" | NaTT.exe 2> "$2/stdout.txt"
