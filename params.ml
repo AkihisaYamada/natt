@@ -223,7 +223,7 @@ type params_type =
 	mutable edge_length : int;
 	mutable sort_scc : sort_mode;
 	mutable uncurry : bool;
-        mutable duplicating : bool;
+        mutable extravar : bool;
 	mutable max_loop : int;
 	mutable max_narrowing : int;
 	mutable acdp_mode : acdp_mode;
@@ -256,7 +256,7 @@ let params =
 	sort_scc = SORT_asc;
 	uncurry = false;
 	max_loop = 0;
-        duplicating = true;
+        extravar = true;
 	max_narrowing = 8;
 	acdp_mode = ACDP_new;
 	rdp_mode = RDP_move;
@@ -437,7 +437,7 @@ while !i < argc do
 			params.cpf <- true;
 			params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
 			params.naive_C <- true; (* commutativity is treated as an equation naively *)
-                        params.duplicating <- false;
+                        params.extravar <- false;
       begin match cpfopt with
       | None ->
         params.result <- false;
