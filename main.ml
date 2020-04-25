@@ -442,8 +442,8 @@ object (x)
 			if params.result then
 				print_endline
 				(	match ans with
-					| YES	-> "YES"
-					| NO	-> "NO"
+					| YES	-> if params.cpf then "CERTIFIED YES" else "YES"
+					| NO	-> if params.cpf then "CERTIFIED NO" else "NO"
 					| MAYBE	-> "MAYBE"
 				);
 		end;
