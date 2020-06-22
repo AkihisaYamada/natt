@@ -73,7 +73,7 @@ let extra_test next (trs : #trs) =
 		rule#has_extra_variable &&
 		(proof (puts "Extra variable in rule " << put_int i << puts "." << endl); true)
 	in
-		if trs#exists_rule test then NO else next trs
+	if trs#exists_rule test then if params.cpf then MAYBE else NO else next trs
 
 
 (* remove trivial relative rules *)
