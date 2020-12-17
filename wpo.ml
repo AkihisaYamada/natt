@@ -302,15 +302,13 @@ class processor =
         let v = "col_" ^ f#name in
         solver#add_variable v Bool;
         finfo#set_collapse (EV v);
-	solver#add_assertion
-	  (EV v =>^ interpreter#no_weight f);
-        solver#add_assertion
-	  (EV v =>^ ES1(List.map (fun i -> finfo#permed i) to_n));
-	for i = 1 to f#arity do
-	  solver#add_assertion
-	    (EV v =>^ (finfo#permed i =^ interpreter#depend_on f i));
-	  solver#add_assertion
-	    (EV v =>^ (finfo#permed i =^ interpreter#strict_linear_at f i));
+        solver#add_assertion (EV v =>^ interpreter#no_weight f);
+        solver#add_assertion (EV v =>^ ES1(List.map (fun i -> finfo#permed i) to_n));
+        for i = 1 to f#arity do
+          solver#add_assertion
+            (smt_not (EV v) |^ (finfo#permed i =^ interpreter#depend_on f i));
+          solver#add_assertion
+            (smt_not (EV v) |^ smt_not (finfo#permed i) |^ interpreter#strict_linear_at f i);
         done
     else
       fun finfo _ -> finfo#set_collapse (LB false)

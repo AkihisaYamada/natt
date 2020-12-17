@@ -1,0 +1,7 @@
+(VAR n m L)
+(RULES
+	ackloop(n,c(0,L)) -> ackloop(Suc(n),L)
+	ackloop(0,c(Suc(m),L)) -> ackloop(Suc(0),c(m,L))
+	ackloop(Suc(n),c(Suc(m),L)) -> ackloop(n,c(Suc(m),c(m,L)))
+	ackloop(m,Nil) -> m
+)

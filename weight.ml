@@ -36,20 +36,24 @@ let wexp_max ss =
   | ss' -> Node(Max, ss')
 
 let put_wexp var e (os : #printer) =
-  let rec sub =
+  let rec sub lvl =
     function
     | Node(Smt exp,[]) -> put_exp exp os
     | Node(Add, es) ->
       if es = [] then os#puts "0"
-      else punct_list sub (puts " + ") os es
+      else begin
+        if lvl > 1 then os#puts "(";
+        punct_list (sub 1) (puts " + ") os es;
+        if lvl > 1 then os#puts ")"
+      end
     | Node(Mul, es) ->
       if es = [] then os#puts "1"
-      else punct_list sub (puts " * ") os es
+      else punct_list (sub 2) (puts " * ") os es
     | Node(Max, es) ->
-      os#puts "max {"; punct_list sub (puts ", ") os es; os#puts "}";
+      os#puts "max {"; punct_list (sub 0) (puts ", ") os es; os#puts "}";
     | Node(BVar v, []) -> var v os
   in
-  sub e
+  sub 0 e
 
 let eval_wexp solver =
   let rec sub (Node(f,ss)) =
@@ -162,7 +166,6 @@ let ref_number w_mode =
   | W_bool -> fun v -> smt_if (EV v) (LI 1) (LI 0)
   | W_tri -> fun v -> make_tri (EV (v ^ "-a")) (EV (v ^ "-b"))
   | W_quad -> fun v -> make_quad (EV (v ^ "-a")) (EV (v ^ "-b"))
-  | W_arc -> fun v -> smt_if (EV (v ^ "-b")) Bot (EV v)
   | W_none -> fun _ -> LI 0
 
 let add_number : _ -> #context -> _ =
@@ -190,13 +193,18 @@ type sym_info = {
   no_weight : exp;
   pos_info : pos_info array;
 }
+
+let coord i = (* makes suffix for coordination *)
+  "_" ^ String.make 1 (char_of_int (int_of_char 'a' + i - 1))
+
+let coord2 i j =
+  "_" ^ String.make 1 (char_of_int (int_of_char 'a' + i - 1))
+  ^ String.make 1 (char_of_int (int_of_char 'a' + j - 1))
+
 class virtual interpreter p =
-  let coord = (* makes suffix for coordination *)
-    if p.w_dim = 1 then fun _ -> "" else index
-  in
-  let put_var (k, i) =
-    puts ("x" ^ index (k+1) ^ coord (i+1))
-  in
+  let coord = if p.w_dim = 1 then fun _ -> "" else coord in
+  let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
+  let put_var = fun (k, i) -> puts ("x" ^ index (k+1) ^ coord (i+1)) in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> Dp.dg -> unit
 
@@ -263,16 +271,22 @@ class virtual interpreter p =
       puts "]"
 
      method output_sym_template :
-      'o 'f. ('o -> unit) -> (#sym as 'f) -> ('o -> unit) -> (#printer as 'o) -> unit =
-      fun prefix f infix pr ->
+      'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
+      fun f pr ->
+      pr#puts "  ";
+      f#output pr;
+      let punct = ref ":\t[ " in
       Array.iteri (fun i wexp ->
-        (prefix << puts (coord (i+1)) << infix << put_wexp put_var wexp) pr
+        pr#puts !punct;
+        punct := ",\n\t  ";
+        put_wexp put_var wexp pr;
       ) (x#encode_sym f);
+      pr#puts " ]"
   end
 
 exception Continue
 
-class enc_pos_info s m = object
+class template_mode s m = object
   val mutable in_sum : bool = s
   val mutable in_max : bool = m
   method set_sum b = in_sum <- b
@@ -281,51 +295,80 @@ class enc_pos_info s m = object
   method in_max = in_max
 end
 
+class virtual template_heuristic =
+object
+  method virtual sym_mode : 'f. (#sym as 'f) -> template_mode
+  method virtual arg_mode : 'f. (#sym as 'f) -> int -> template_mode
+end
+
+let sum_mode = new template_mode true false
+let max_mode = new template_mode false true
+
+let sum_heuristic =
+object (x)
+  inherit template_heuristic
+  method sym_mode f = sum_mode
+  method arg_mode f i = sum_mode
+end;;
+
+let max_heuristic =
+object (x)
+  inherit template_heuristic
+  method sym_mode f = max_mode
+  method arg_mode f i = max_mode
+end;;
 
 let maxpoly_heuristic (trs:trs) (dg:Dp.dg) either all =
 object (x)
+  inherit template_heuristic
+  val sym_table : (string, template_mode) Hashtbl.t = Hashtbl.create 64
+  val arg_table : (string, template_mode array) Hashtbl.t = Hashtbl.create 64
 
-  val table = Hashtbl.create 64
-
-  method private get : 'f. (#sym as 'f) -> _ =
+  method sym_mode f =
+    try Hashtbl.find sym_table f#name
+    with Not_found ->
+      let ret = new template_mode true false in
+      Hashtbl.add sym_table f#name ret;
+      ret
+  method private get_arg : 'f. (#sym as 'f) -> _ =
   fun f ->
-    try Hashtbl.find table f#name
+    try Hashtbl.find arg_table f#name
     with Not_found ->
       let ret =
-        (Array.init (trs#find_sym f)#arity (fun k -> new enc_pos_info true false))
+        Array.init (trs#find_sym f)#arity (fun k -> new template_mode true false)
       in
-      Hashtbl.add table f#name ret;
+      Hashtbl.add arg_table f#name ret;
       ret
-
-  method info f k = (x#get f).(k-1)
-
+  method arg_mode f k = (x#get_arg f).(k-1)
   initializer
     let summarize_term test =
       let summarize_sym f =
-        let arr = x#get f in
+        let sym = x#sym_mode f in
+        let arg = x#get_arg f in
         let set_max i =
-	  arr.(i)#set_max true;
-	  if either then arr.(i)#set_sum false;
-	in
+          arg.(i)#set_max true;
+          sym#set_max true;
+          if either then arg.(i)#set_sum false
+        in
         let rec sub acc i = function
-	  | [] -> acc
-	  | vs::vss ->
-	    if arr.(i)#in_max then
-	      sub (Mset.join acc vs) (i+1) vss
-	    else
-	      let acc' = Mset.union acc vs in
-	      if test acc' then
-	        sub acc' (i+1) vss
-	      else (
-	        debug2 (puts "prefer max for " << puts f#name << puts " in " << put_int i << endl);
-	        if all then
-	          for j = 0 to i + List.length vss do
-	            set_max j;
-	          done
-	        else
-	          set_max i;
-	        raise Continue
-	      )
+        | [] -> acc
+        | vs::vss ->
+          if arg.(i)#in_max then
+            sub (Mset.join acc vs) (i+1) vss
+          else
+            let acc' = Mset.union acc vs in
+            if test acc' then
+              sub acc' (i+1) vss
+            else (
+              debug2 (puts "prefer max for " << puts f#name << puts " in " << put_int i << endl);
+              if all then
+                for j = 0 to i + List.length vss do
+                  set_max j;
+                done
+              else
+                set_max i;
+              raise Continue
+            )
         in
         sub Mset.empty 0
       in
@@ -348,10 +391,10 @@ object (x)
     loop ()
 end;;
 
+
 class pol_interpreter p =
-  let coord = (* makes suffix for coordination *)
-    if p.w_dim = 1 then fun _ -> "" else index
-  in
+  let coord = if p.w_dim = 1 then fun _ -> "" else coord in
+  let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
   let ref_weight = ref_number p.w_mode in
   let ref_coeff = ref_number p.sc_mode in
   let bind_upper =
@@ -367,81 +410,89 @@ class pol_interpreter p =
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
       fun solver trs dg ->
-        let arg_mode =
-          let use_max = new enc_pos_info p.max_poly true in
-          let no_max = new enc_pos_info true false in
-          let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
+        let use_max = new template_mode p.max_poly true in
+        let no_max = new template_mode true false in
+        let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
+        let heuristic =
           if Array.exists use_dup coord_params then
-            let info = maxpoly_heuristic trs dg (not p.max_poly) true in
-            fun f k i ->
-            if f#arity < 2 then no_max
-            else
-              let t = coord_params.(i-1) in
-              if t = TEMP_max then use_max
-              else if use_dup t then info#info f k
-              else no_max
+            maxpoly_heuristic trs dg (not p.max_poly) true
+          else sum_heuristic
+        in
+        let sym_mode f i =
+          if f#arity < 2 && p.w_dim < 2 then no_max
           else
-            fun f _ i ->
-            if f#arity < 2 && p.w_dim < 2 then no_max
-            else if coord_params.(i-1) = TEMP_max then use_max else no_max
+            let t = coord_params.(i-1) in
+            if t = TEMP_max then use_max
+            else if use_dup t then heuristic#sym_mode f
+            else no_max
+        in
+        let arg_mode f k i =
+          if f#arity < 2 && p.w_dim < 2 then no_max
+          else
+            let t = coord_params.(i-1) in
+            if t = TEMP_max then use_max
+            else if use_dup t then heuristic#arg_mode f k
+            else no_max
         in
         let w f = "w_" ^ f#name in
         let c f k = "c_" ^ f#name ^ index k in
         let d f k = "d_" ^ f#name ^ index k in
         let a f k = "a_" ^ f#name ^ index k in
         let weight f i =
-          ref_weight (w f ^ coord i)
+          if not (sym_mode f i)#in_max then
+            ref_weight (w f ^ coord i)
+          else
+            LI 0
         in
         let coeff_sum f k i j =
           if (arg_mode f k i)#in_sum then
-            ref_coeff (c f k ^ coord i ^ coord j)
-            +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
+            ref_coeff (c f k ^ coord2 i j) +^
+            LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else
             LI 0
         in
         let coeff_max f k i j =
           if (arg_mode f k i)#in_max then
-            ref_coeff (d f k ^ coord i ^ coord j)
+            ref_coeff (d f k ^ coord2 i j)
             +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
-          else
-            LI 0
+          else LI 0
         in
         let addend_max f k i j =
-          if (arg_mode f k i)#in_max then
-            ref_weight (a f k ^ coord i ^ coord j)
-          else
-            LI 0
+          if (arg_mode f k i)#in_max then ref_weight (a f k ^ coord2 i j)
+          else LI 0
         in
         trs#iter_funs (fun f ->
           for i = 1 to p.w_dim do
+            if not (sym_mode f i)#in_max then begin
               let w_i = w f ^ coord i in
               add_number p.w_mode solver w_i;
               if not p.w_neg || f#arity = 0 then begin
                 solver#add_assertion (ref_weight w_i >=^ LI 0);
-              end;
-              for k = 1 to f#arity do
-                let c_ki = c f k ^ coord i in
-                let d_ki = d f k ^ coord i in
-                let a_ki = a f k ^ coord i in
-                if (arg_mode f k i)#in_sum then
-                  for j = 1 to p.w_dim do
-                    let c_kij = c_ki ^ coord j in
-                    add_number p.sc_mode solver c_kij;
-                    bind_upper solver (ref_coeff c_kij);
-                    solver#add_assertion (ref_coeff c_kij >=^ LI 0);
-                  done;
-                if (arg_mode f k i)#in_max then
-                  for j = 1 to p.w_dim do
-                    let d_kij = d_ki ^ coord j in
-                    let a_kij = a_ki ^ coord j in
-                    add_number p.sc_mode solver d_kij;
-                    bind_upper solver (ref_coeff d_kij);
-                    solver#add_assertion (ref_coeff d_kij >=^ LI 0);
-                    add_number p.w_mode solver a_kij;
-                    if not p.w_neg then begin
-                      solver#add_assertion (ref_weight a_kij >=^ LI 0);
-                    end;
-                  done;
+              end
+            end;
+            for k = 1 to f#arity do
+              let c_k = c f k in
+              let d_k = d f k in
+              let a_k = a f k in
+              if (arg_mode f k i)#in_sum then
+                for j = 1 to p.w_dim do
+                  let c_kij = c_k ^ coord2 i j in
+                  add_number p.sc_mode solver c_kij;
+                  bind_upper solver (ref_coeff c_kij);
+                  solver#add_assertion (ref_coeff c_kij >=^ LI 0);
+                done;
+              if (arg_mode f k i)#in_max then
+                for j = 1 to p.w_dim do
+                  let d_kij = d_k ^ coord2 i j in
+                  let a_kij = a_k ^ coord2 i j in
+                  add_number p.sc_mode solver d_kij;
+                  bind_upper solver (ref_coeff d_kij);
+                  solver#add_assertion (ref_coeff d_kij >=^ LI 0);
+                  add_number p.w_mode solver a_kij;
+                  if not p.w_neg then begin
+                    solver#add_assertion (ref_weight a_kij >=^ LI 0);
+                  end;
+                done;
               done
             done;
             Hashtbl.add table f#name {
@@ -457,19 +508,19 @@ class pol_interpreter p =
                   )
                 in
                 let maxed =
-                  List.map (fun k ->
-                    wexp_sum (
+                  List.concat (
+                    List.map (fun k ->
                       List.map (fun j ->
-                        wexp_prod [
-                          wexp_smt (coeff_max f k i j);
-                          wexp_sum [
-                            wexp_smt (addend_max f k i j);
+                        wexp_sum [
+                          wexp_smt (addend_max f k i j);
+                          wexp_prod [
+                            wexp_smt (coeff_max f k i j);
                             wexp_bvar (k-1,j-1)
                           ]
                         ]
                       ) (int_list 1 p.w_dim)
-                    )
-                  ) (int_list 1 f#arity)
+                    ) (int_list 1 f#arity)
+                  )
                 in
                 match coord_params.(i-1) with
                 | TEMP_max_sum_dup ->
@@ -480,11 +531,19 @@ class pol_interpreter p =
                 | _ ->
                   make_positive (wexp_sum (w :: wexp_max maxed :: added))
               ) (int_array 1 p.w_dim);
-              no_weight = smt_for_all (fun i -> weight f i =^ LI 0) (int_list 1 p.w_dim);
+              no_weight =
+                smt_for_all (fun i ->
+                  weight f i =^ LI 0 &^
+                  smt_for_all (fun j ->
+                    smt_for_all (fun k ->
+                      addend_max f k i j =^ LI 0
+                    ) (int_list 1 f#arity)
+                  ) (int_list 1 p.w_dim)
+                ) (int_list 1 p.w_dim);
               pos_info = Array.map (
                 fun k ->
                 let ck = c f k in
-                let con = solver#refer Bool (
+                let const = solver#refer Bool (
                     smt_for_all (fun i ->
                       smt_for_all (fun j ->
                         (coeff_sum f k i j =^ LI 0) &^
@@ -496,13 +555,16 @@ class pol_interpreter p =
                 let slin =
                   smt_for_all (fun i ->
                     smt_for_all (fun j ->
-                      coeff_sum f k i j =^ LI (if i = j then 1 else 0)
+                      ( if (arg_mode f k i)#in_sum then coeff_sum f k i j
+                        else coeff_max f k i j
+                      ) =^ LI (if i = j then 1 else 0) &^
+                      (addend_max f k i j =^ LI 0)
                     ) (int_list 1 p.w_dim) &^
                     (weight f i =^ LI 0)
                   ) (int_list 1 p.w_dim)
                 in
                 {
-                  const = con;
+                  const = const;
                   strict_linear = slin;
                   weak_simple =
                     smt_for_all (fun i ->
@@ -514,11 +576,14 @@ class pol_interpreter p =
             }
           );
 debug2 (
-  puts "Weight template:" <<
+  endl << puts "Weight template:" << endl <<
   (fun os ->
-    trs#iter_funs (fun f -> (x#output_sym_template (endl << puts "  " << f#output) f (puts ":\t") os))
+    trs#iter_funs (fun f ->
+     x#output_sym_template f os;
+     endl os
+    )
   )
 );
-  end
+end
 
 
