@@ -15,28 +15,25 @@ let wexp_bvar name = Node(BVar name, [])
 let wexp_smt exp = Node(Smt exp, [])
 
 let wexp_sum ss =
-  let ss = List.filter ((<>) (wexp_smt (LI 0))) ss in
-  match ss with
+  match List.filter ((<>) (wexp_smt (LI 0))) ss with
   | [] -> wexp_smt (LI 0)
   | [s] -> s
-  | _ -> Node(Add, ss)
+  | ss' -> Node(Add, ss')
 
 let wexp_prod ss =
   if List.exists ((=) (wexp_smt (LI 0))) ss then
     wexp_smt (LI 0)
   else
-    let ss = List.filter ((<>) (wexp_smt (LI 1))) ss in
-    match ss with
+    match List.filter ((<>) (wexp_smt (LI 1))) ss with
     | [] -> wexp_smt (LI 1)
     | [s] -> s
-    | _ -> Node(Mul, ss)
+    | ss' -> Node(Mul, ss')
 
 let wexp_max ss =
-  let ss = remdups ss in
-  match ss with
+  match remdups ss with
   | [] -> wexp_smt (LI 0)
   | [s] -> s
-  | _ -> Node(Max, ss)
+  | ss' -> Node(Max, ss')
 
 let put_wexp var e (os : #printer) =
   let rec sub =
@@ -256,11 +253,11 @@ class virtual interpreter p =
       't 'o 'f. (#solver as 't) -> (#sym_detailed as 'f) -> (#printer as 'o) -> unit =
       fun solver f ->
       puts "[" << (fun pr ->
-	let punct = ref "" in
-	Array.iteri (fun i wexp ->
+        let punct = ref "" in
+        Array.iteri (fun i wexp ->
           pr#puts !punct;
           (put_wexp put_var (eval_wexp solver wexp)) pr;
-	  punct := ", "
+          punct := ", "
         ) (x#encode_sym f);
       ) <<
       puts "]"
@@ -405,6 +402,7 @@ class pol_interpreter p =
         let coeff_max f k i j =
           if (arg_mode f k i)#in_max then
             ref_coeff (d f k ^ coord i ^ coord j)
+            +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else
             LI 0
         in
@@ -448,6 +446,7 @@ class pol_interpreter p =
             done;
             Hashtbl.add table f#name {
               encodings = Array.map (fun i ->
+                let w = wexp_smt (weight f i) in
                 let added =
                   List.concat (
                     List.map (fun k ->
@@ -472,7 +471,6 @@ class pol_interpreter p =
                     )
                   ) (int_list 1 f#arity)
                 in
-                let w = wexp_smt (weight f i) in
                 match coord_params.(i-1) with
                 | TEMP_max_sum_dup ->
                   wexp_max (

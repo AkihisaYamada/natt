@@ -173,6 +173,7 @@ class processor =
       let sub_perm fname finfo n =
         match finfo#status_mode with
         | S_empty -> finfo#set_perm (fun _ _ -> LB false)
+        | S_none -> finfo#set_perm (fun i k -> LB (i = k))
         | _ ->
           let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
           let perm_e i k = EV(perm_v i k) in
@@ -187,6 +188,8 @@ class processor =
         match finfo#status_mode with
         | S_empty ->
           finfo#set_permed (fun i -> LB false)
+        | S_none ->
+          finfo#set_permed (fun i -> LB true)
         | _ ->
           let permed_v i = supply_index ("permed_" ^ fname) i in
           let permed_e i = EV(permed_v i) in
