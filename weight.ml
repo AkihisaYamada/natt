@@ -67,7 +67,7 @@ let eval_wexp solver =
   in
   sub
 
-(* Weight as a map from var list to exp *)
+(* Polynomial as a map from var list to exp *)
 
 let et_smt exp = StrListMap.singleton [] exp
 
@@ -95,14 +95,23 @@ let et_ge et1 et2 =
   smt_for_all (fun (vs,e2) -> et_find vs et1 >=^ e2) (StrListMap.bindings et2)
 
 let et_order solver et1 et2 =
-  let pre =
+  let pre = (* tests >= for all coefficients but the constant part *)
     smt_for_all
         (fun (vs,e2) -> if vs = [] then LB true else et_find vs et1 >=^ e2)
         (StrListMap.bindings et2)
   in
+  let pre = solver#refer Bool pre in
   let e1 = et_find [] et1 in
   let e2 = et_find [] et2 in
-  (pre &^ (e1 >=^ e2), e1 >^ e2)
+  (pre &^ (e1 >=^ e2), pre &^ (e1 >^ e2))
+
+let put_et et pr =
+  let init = ref true in
+  StrListMap.iter (fun vs e ->
+    if !init then init := false else pr#puts " + ";
+    put_exp e pr; List.iter (fun v -> pr#puts "*"; pr#puts v) vs
+  ) et
+
 
 (* Max are expanded as lists *)
 
@@ -135,7 +144,18 @@ let ets_order solver ets1 ets2 =
   (LB true, LB true)
   ets2
 
+let put_ets ets pr =
+  match ets with
+  | [] -> pr#puts "oo";
+  | [et] -> put_et et pr;
+  | et::ets' -> pr#puts "max{"; put_et et pr; List.iter (fun et' -> pr#puts ", "; put_et et' pr;) ets'; pr#puts "}";
+
 (* weight is array (vector) of such *)
+
+type w_t = exp StrListMap.t list array
+
+let put_w w pr =
+  pr#puts "[ "; Array.map (fun ets -> put_ets ets pr; pr#puts "; ") w; pr#puts "]"
 
 let add = Array.map2 (fun ets1 ets2 -> ets_sum [ets1;ets2])
 
@@ -151,8 +171,6 @@ let order dim w1 w2 =
   )
 
 let index i = "_" ^ string_of_int i
-
-type w_t = exp StrListMap.t list array
 
 let make_tri a b =
   smt_if a (smt_if b (LI 2) (LI 1)) (LI 0)
@@ -251,10 +269,11 @@ class virtual interpreter p =
       else Array.map sub (x#encode_sym f)
 
     method annotate : 't 'b. (#context as 't) -> (#sym as 'b) term -> ('b,w_t) wterm =
-      fun solver (Node(f,ss)) ->
+      fun solver (Node(f,ss) as t) ->
       let ts = List.map (x#annotate solver) ss in
       let w = x#interpret f (List.map get_weight ts) in
       let w = Array.map (List.map (StrListMap.map solver#refer_base)) w in
+      debug2 (endl << put_term t << puts " weight: " << put_w w);
       WT(f,ts,w)
 
     method output_sym :
@@ -270,7 +289,7 @@ class virtual interpreter p =
       ) <<
       puts "]"
 
-     method output_sym_template :
+    method output_sym_template :
       'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
       fun f pr ->
       pr#puts "  ";

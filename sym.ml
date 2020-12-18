@@ -50,19 +50,10 @@ class sym_unmarked ty0 name = object (x:'x)
     else Xml.enclose_inline "name" x#output
 end
 
-let escape c = " " ^ String.make 1 c
-
-let mark_name name = escape '#' ^ name
+let mark_name name = "♯" ^ name
+let marked_name name = String.sub name 0 2 = "♯"
 let unmark_name name = String.sub name 2 (String.length name - 2)
-let string_prefix s t =
-  let n = String.length t in
-  String.length s >= n &&
-  let rec sub i =
-    i >= n || s.[i] = t.[i] && sub (i+1)
-  in
-  sub 0
 
-let marked_name name = string_prefix name (escape '#')
 
 class sym_marked ty0 name0 = object
   inherit sym ty0
@@ -74,7 +65,7 @@ end
 
 let mark_sym (f:#sym) = new sym_marked f#ty f#name
 
-let freeze_name fname gname i = fname ^ escape '^' ^ string_of_int i ^ "_" ^ gname
+let freeze_name fname gname i = fname ^ "❆" ^ string_of_int i ^ "_" ^ gname
 
 class sym_freezed (f:#sym) (g:#sym) i =
   let name = freeze_name f#name g#name i in
@@ -89,7 +80,7 @@ class sym_freezed (f:#sym) (g:#sym) i =
   end
 
 class sym_fresh ty i =
-  let name = escape '_' ^ string_of_int i in
+  let name = "†" ^ string_of_int i in
   object (x:'x)
     inherit sym ty
     method name = name

@@ -97,12 +97,13 @@ clean:
 # Consistency test
 test: $(TARG_OPT)
 	TOOL=$(PWD)/NaTT.sh; \
+	BENCH=$(PWD)/tpdb_info/nonterm.list; \
 	cd ~/TPDB/TRS_Standard; \
 	if [ -e tmp_result ]; then rm tmp_result; fi; \
 	while read f; do \
 		$$TOOL -V $$f | tee -a tmp_result; \
 		if grep -q YES tmp_result; then echo WRONG!; exit 1; fi;\
-	done < nonterm.list; \
+	done < $$BENCH; \
 	grep -c NO tmp_result; \
 	rm tmp_result
 
