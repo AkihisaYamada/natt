@@ -271,20 +271,73 @@ let smt_let ty e f =
 let smt_let_base e f =
   if is_simple e then f e else Delay(fun context -> f (context#refer_base e))
 
+module StringPair = struct
+  type t = string * string
+  let compare (x0,y0) (x1,y1) =
+    match Stdlib.compare x0 x1 with
+      | 0 -> Stdlib.compare y0 y1
+      | c -> c
+  end
 
-let rec simplify_under e1 e2 =
+module BoolKnow = Map.Make(String)
+module OrderKnow = Map.Make(StringPair)
+
+let rec simplify_knowing kn e =
+  match e with
+  | LB _
+  | LI _
+  | LR _ -> e
+  | EV v -> (try LB (BoolKnow.find v kn) with _ -> e)
+  | Not e -> smt_not (simplify_knowing kn e)
+  | And(e1,e2) -> (
+    match simplify_knowing kn e1 with
+    | LB b -> if b then simplify_knowing kn e2 else LB false
+    | e1 -> (
+      match simplify_knowing (assume_true e1 kn) e2 with
+      | LB b -> if b then e1 else LB false
+      | e2 -> And(e1,e2)
+    )
+  )
+  | Or(e1,e2) -> (
+    match simplify_knowing kn e1 with
+    | LB b -> if b then LB true else simplify_knowing kn e2
+    | e1 -> (
+      match simplify_knowing (assume_false e1 kn) e2 with
+      | LB b -> if b then LB true else e1
+      | e2 -> Or(e1,e2)
+    )
+  )
+  | Add(e1,e2) -> simplify_knowing kn e1 +^ simplify_knowing kn e2
+  | Mul(e1,e2) -> simplify_knowing kn e1 *^ simplify_knowing kn e2
+  | If(c,t,e,p) -> (
+    match simplify_knowing kn c with
+    | LB b -> if b then simplify_knowing kn t else simplify_knowing kn e
+    | c -> If(c, simplify_knowing (assume_true c kn) t, simplify_knowing (assume_false c kn) e, p)
+  )
+  | _ -> e
+and assume_true e kn =
+  match e with
+  | EV v -> BoolKnow.add v true kn
+  | Not e -> assume_false e kn
+  | And(e1,e2) -> assume_true e2 (assume_true e1 kn)
+  | _ -> kn
+and assume_false e kn =
+  match e with
+  | EV v -> BoolKnow.add v false kn
+  | Not e -> assume_true e kn
+  | Or(e1,e2) -> assume_false e2 (assume_false e1 kn)
+  | _ -> kn
+and simplify_under e1 e2 =
   match e1, e2 with
-  | LB b, _ -> if b then e2 else e1
-  | And(e3,e4), _ -> e2 (*simplify_under e3 (simplify_under e4 e2)*)
-  | Or _, _ -> e2
+  | LB _, _
   | _, LB _
   | _, LI _
   | _, LR _ -> e2
-  | _, Add(e3,e4) -> simplify_under e1 e3 +^ simplify_under e1 e4
-  | _, Mul(e3,e4) -> simplify_under e1 e3 *^ simplify_under e1 e4
-  | EV v1, EV v2 -> if v1 = v2 then LB true else e2
-  | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
+  | _ -> simplify_knowing (assume_true e1 BoolKnow.empty) e2
+(*  | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
   | Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
+  | And(e3,e4), _ -> simplify_under e4 (simplify_under e3 e2)
+  | Or _, _ -> e2
   | Not(EV v1), Not(EV v2) -> if v1 = v2 then LB true else e2
   | _, And(e3,e4) -> (
     let e3 = simplify_under e1 e3 in
@@ -349,7 +402,7 @@ let rec simplify_under e1 e2 =
     if l2 >=^ l1 = LB true && r1 >=^ r2 = LB true then LB true
     else if r2 >=^ l1 = LB true && r1 >=^ l2 = LB true then LB false
     else l2 >=^ r2
-(*  | Ge(l1,r1), Ge(l2,r2) ->
+  | Ge(l1,r1), Ge(l2,r2) ->
     let l2 = simplify_under e1 l2 in
     let r2 = simplify_under e1 r2 in
     if l2 >=^ l1 = LB true && r1 >=^ r2 = LB true then LB true
@@ -360,7 +413,8 @@ let rec simplify_under e1 e2 =
     let r2 = simplify_under e1 r2 in
     if r2 >=^ l1 = LB true && r1 >=^ l2 = LB true then LB false
     else l2 >^ r2
-*)  | _ -> e2
+  | _ -> e2
+*)
 and (&^) e1 e2 =
   match e1 with
   | LB b -> if b then e2 else e1

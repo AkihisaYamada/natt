@@ -67,7 +67,7 @@ let eval_wexp solver =
   in
   sub
 
-(* Polynomial as a map from var list to exp *)
+(* Polynomial as a map from var list to coefficients *)
 
 let et_smt exp = StrListMap.singleton [] exp
 
@@ -420,10 +420,6 @@ class pol_interpreter p =
     if p.w_max = 0 then fun _ _ -> ()
     else fun solver fw -> solver#add_assertion (fw <=^ LI p.w_max)
   in
-  let make_positive =
-    if p.w_neg then fun e -> wexp_max [wexp_smt (LI 0); e]
-    else fun e -> e
-  in
   let coord_params = Array.of_list p.w_params in
   object (x)
     inherit interpreter p
@@ -458,10 +454,7 @@ class pol_interpreter p =
         let d f k = "d_" ^ f#name ^ index k in
         let a f k = "a_" ^ f#name ^ index k in
         let weight f i =
-          if not (sym_mode f i)#in_max then
             ref_weight (w f ^ coord i)
-          else
-            LI 0
         in
         let coeff_sum f k i j =
           if (arg_mode f k i)#in_sum then
@@ -482,12 +475,10 @@ class pol_interpreter p =
         in
         trs#iter_funs (fun f ->
           for i = 1 to p.w_dim do
-            if not (sym_mode f i)#in_max then begin
-              let w_i = w f ^ coord i in
-              add_number p.w_mode solver w_i;
-              if not p.w_neg || f#arity = 0 then begin
-                solver#add_assertion (ref_weight w_i >=^ LI 0);
-              end
+            let w_i = w f ^ coord i in
+            add_number p.w_mode solver w_i;
+            if not p.w_neg || (f#arity = 0 && i = 1) then begin
+              solver#add_assertion (ref_weight w_i >=^ LI 0);
             end;
             for k = 1 to f#arity do
               let c_k = c f k in
@@ -529,26 +520,26 @@ class pol_interpreter p =
                 let maxed =
                   List.concat (
                     List.map (fun k ->
-                      List.map (fun j ->
-                        wexp_sum [
-                          wexp_smt (addend_max f k i j);
-                          wexp_prod [
-                            wexp_smt (coeff_max f k i j);
-                            wexp_bvar (k-1,j-1)
-                          ]
-                        ]
-                      ) (int_list 1 p.w_dim)
+                      List.concat (
+                        List.map (fun j ->
+                          let c = coeff_max f k i j in
+                          if c = LI 0 then []
+                          else
+                            [ wexp_prod [
+                                wexp_smt c;
+                                wexp_sum [ wexp_smt (addend_max f k i j); wexp_bvar (k-1,j-1) ]
+                              ]
+                            ]
+                        ) (int_list 1 p.w_dim)
+                      )
                     ) (int_list 1 f#arity)
                   )
                 in
-                match coord_params.(i-1) with
-                | TEMP_max_sum_dup ->
-                  wexp_max (
-                    (if p.w_neg && f#arity > 0 then [wexp_smt (LI 0)] else []) @
-                    wexp_sum (w :: added) :: maxed
-                  )
-                | _ ->
-                  make_positive (wexp_sum (w :: wexp_max maxed :: added))
+                wexp_max (
+                  (if p.w_neg && f#arity > 0 && i = 1 (* Only the first dimension need be positive *)
+                   then [wexp_smt (LI 0)] else []) @
+                  wexp_sum (w :: added) :: maxed
+                )
               ) (int_array 1 p.w_dim);
               no_weight =
                 smt_for_all (fun i ->
@@ -594,7 +585,7 @@ class pol_interpreter p =
               ) (int_array 1 f#arity);
             }
           );
-debug2 (
+debug (
   endl << puts "Weight template:" << endl <<
   (fun os ->
     trs#iter_funs (fun f ->
