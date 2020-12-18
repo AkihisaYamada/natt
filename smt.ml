@@ -348,8 +348,8 @@ let rec simplify_under e1 e2 =
     let r2 = simplify_under e1 r2 in
     if l2 >=^ l1 = LB true && r1 >=^ r2 = LB true then LB true
     else if r2 >=^ l1 = LB true && r1 >=^ l2 = LB true then LB false
-    else l2 >^ r2
-  | Ge(l1,r1), Ge(l2,r2) ->
+    else l2 >=^ r2
+(*  | Ge(l1,r1), Ge(l2,r2) ->
     let l2 = simplify_under e1 l2 in
     let r2 = simplify_under e1 r2 in
     if l2 >=^ l1 = LB true && r1 >=^ r2 = LB true then LB true
@@ -360,7 +360,7 @@ let rec simplify_under e1 e2 =
     let r2 = simplify_under e1 r2 in
     if r2 >=^ l1 = LB true && r1 >=^ l2 = LB true then LB false
     else l2 >^ r2
-  | _ -> e2
+*)  | _ -> e2
 and (&^) e1 e2 =
   match e1 with
   | LB b -> if b then e2 else e1
