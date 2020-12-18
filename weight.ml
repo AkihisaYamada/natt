@@ -472,8 +472,8 @@ class pol_interpreter p =
         in
         let coeff_max f k i j =
           if (arg_mode f k i)#in_max then
-            ref_coeff (d f k ^ coord2 i j)
-            +^ LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
+            ref_coeff (d f k ^ coord2 i j) +^
+            LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else LI 0
         in
         let addend_max f k i j =

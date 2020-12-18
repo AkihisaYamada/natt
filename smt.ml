@@ -285,7 +285,7 @@ let rec simplify_under e1 e2 =
   | EV v1, EV v2 -> if v1 = v2 then LB true else e2
   | EV v1, Not(EV v2) -> if v1 = v2 then LB false else e2
   | Not(EV v1), EV v2 -> if v1 = v2 then LB false else e2
-  | Not(EV v1), Not(EV v2) -> if v1 = v2 then LB false else e2
+  | Not(EV v1), Not(EV v2) -> if v1 = v2 then LB true else e2
   | _, And(e3,e4) -> (
     let e3 = simplify_under e1 e3 in
     if e3 = LB false then e3

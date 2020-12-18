@@ -77,6 +77,8 @@ class pretty_printer (base : #outputter) maxdepth =
       if depth < maxdepth then begin
         base#endl;
         indent <- x#indent;
+      end else begin
+        base#putc ' ';
       end
     method private indent () =
       for i = 1 to min depth maxdepth do

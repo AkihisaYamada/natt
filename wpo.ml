@@ -297,21 +297,23 @@ class processor =
  (* collapsing argument filters *)
   let add_collapse =
     if p.collapse then
-      fun finfo to_n ->
-        let f = finfo#base in
-        let v = "col_" ^ f#name in
-        solver#add_variable v Bool;
-        finfo#set_collapse (EV v);
-        solver#add_assertion (EV v =>^ interpreter#no_weight f);
-        solver#add_assertion (EV v =>^ ES1(List.map finfo#permed to_n));
-        for i = 1 to f#arity do
-          solver#add_assertion
-            (smt_not (EV v) |^ (finfo#permed i =^ interpreter#depend_on f i));
-          solver#add_assertion
-            (smt_not (EV v) |^ smt_not (finfo#permed i) |^ interpreter#strict_linear_at f i);
-        done
+      fun finfo n to_n ->
+        if n = 0 then finfo#set_collapse (LB false)
+        else
+          let f = finfo#base in
+          let v = "col_" ^ f#name in
+          solver#add_variable v Bool;
+          finfo#set_collapse (EV v);
+          solver#add_assertion (EV v =>^ interpreter#no_weight f);
+          solver#add_assertion (EV v =>^ ES1(List.map finfo#permed to_n));
+          for i = 1 to f#arity do
+            solver#add_assertion
+              (EV v =>^ (finfo#permed i =^ interpreter#depend_on f i));
+            solver#add_assertion
+              (smt_not (EV v) |^ smt_not (finfo#permed i) |^ interpreter#strict_linear_at f i);
+          done
     else
-      fun finfo _ -> finfo#set_collapse (LB false)
+      fun finfo _ _ -> finfo#set_collapse (LB false)
   in
 
 (*** preparing for function symbols ***)
@@ -323,12 +325,11 @@ class processor =
 
     add_perm fname finfo to_n;
 
-    add_collapse finfo to_n;
+    add_collapse finfo n to_n;
 
     (* for status *)
     add_mset_status fname finfo;
 
-    let col = finfo#collapse in
     let fp = finfo#prec in
 
     for i = 1 to n do
@@ -347,7 +348,7 @@ class processor =
       if finfo#status_mode = S_partial && p.mincons then begin
         let v = "qconst_" ^ fname in
         solver#add_definition v Bool
-          (smt_not col &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
+          (smt_not finfo#collapse &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
         finfo#set_is_quasi_const (EV v);
       end else begin
         finfo#set_is_quasi_const (EV v);
@@ -657,7 +658,7 @@ class processor =
       let rec sub j =
         function
         | [] -> LB true
-        | t::ts -> (interpreter#depend_on ginfo#base j =>^ var_eq xname t) &^ sub (j+1) ts
+        | t::ts -> (ginfo#permed j =>^ var_eq xname t) &^ sub (j+1) ts
       in
       is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
   in
@@ -679,21 +680,21 @@ class processor =
       else wpo3 s t
   and wpo3 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     let finfo = lookup f in
+    let live_f = smt_not finfo#collapse in
     smt_split (order_by_some_arg wpo finfo ss t)
     (fun some_ge some_gt ->
       smt_let Bool some_ge
       (fun some_ge ->
-        let col_f = finfo#collapse in
-        let some_gt = smt_if col_f some_gt some_ge in
+        let some_gt = smt_if live_f some_ge some_gt in
         if some_gt = LB true then
           strictly_ordered
         else if g#is_var then
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
+          let col_g = ginfo#collapse in
           smt_split (order_all_args wpo s ginfo ts)
           (fun all_ge all_gt ->
-            let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
@@ -701,9 +702,9 @@ class processor =
               (fun rest_ge rest_gt ->
                 smt_let Bool all_gt
                 (fun all_gt ->
-                  let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
-                  let ge = some_ge |^ (col_g &^ all_ge) |^ (cond &^ rest_ge) in
-                  let gt = some_gt |^ (col_g &^ all_gt) |^ (cond &^ rest_gt) in
+                  let cond = live_f &^ smt_not col_g &^ all_gt in 
+                  let ge = some_ge |^ (cond &^ rest_ge) |^ (col_g &^ all_ge) in
+                  let gt = some_gt |^ (cond &^ rest_gt) |^ (col_g &^ all_gt) in
                   Cons(ge,gt)
                 )
               )
