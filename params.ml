@@ -30,7 +30,7 @@ type status_mode =
 type mcw_mode = (* minimum weight for constants *)
 | MCW_num (* integer variable *)
 | MCW_bool (* 0 or 1 *)
-| MCW_const (* constant *)
+| MCW_const of int (* constant *)
 type sort_mode =
 | SORT_asc
 | SORT_desc
@@ -57,41 +57,45 @@ type mode =
 | MODE_through
 | MODE_higher_xml
 | MODE_xml
-type mat_mode =
-| MAT_full
-| MAT_upper
-| MAT_lower
 type w_template =
 | TEMP_sum
 | TEMP_max
 | TEMP_max_sum_dup
 | TEMP_sum_max_dup
 
-type smt_tool = string * string list
-
-type order_params =
-{
-  mutable dp : bool;
+type w_params = {
+  mutable template : w_template;
   mutable w_mode : w_mode;
   mutable w_neg : bool;
+  mutable sc_mode : w_mode;
+  mutable sc_max : int;
+  mutable max_poly : bool;
+  mutable sp_mode : w_mode;
+  mutable mcw_mode : mcw_mode;
+}
+
+let w_default = {
+  template = TEMP_sum;
+  w_mode = W_num;
+  w_neg = false;
+  sc_mode = W_bool;
+  sc_max = 0;
+  max_poly = false;
+  sp_mode = W_num;
+  mcw_mode = MCW_const 0;
+}
+type smt_tool = string * string list
+
+type order_params = {
+  mutable dp : bool;
+  mutable w_params : w_params array;
   mutable w_dim : int;
-  mutable mat_mode : mat_mode;
-  mutable w_max : int;
-  mutable w_params : w_template list;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
   mutable status_copy : bool;
   mutable status_nest : int;
-  mutable sc_mode : w_mode;
-  mutable sc_max : int;
-  mutable max_nest : int;
-  mutable max_poly_nest : int;
-  mutable max_poly : bool;
-  mutable sp_mode : w_mode;
   mutable prec_mode : prec_mode;
-  mutable mcw_mode : mcw_mode;
-  mutable mcw_val : int;
   mutable mincons : bool;
   mutable maxcons : bool;
   mutable ac_w : bool;
@@ -116,35 +120,21 @@ let cvc4cmd = ("cvc4", ["--lang=smt2"; "--incremental";"--produce-models"])
 (* checks monotonicity *)
 let nonmonotone p =
   p.dp ||
-  p.w_neg ||
   p.collapse ||
   p.status_mode = S_partial ||
   p.status_mode = S_empty && p.prec_mode <> PREC_none
 
-let order_default =
-{
+let order_default = {
   dp = false;
   base_ty = TY_real;
-  w_mode = W_num;
+  w_params = Array.make 0 w_default;
   w_dim = 0;
-  mat_mode = MAT_full;
-  w_max = 0;
-  w_neg = false;
-  w_params = [];
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
   status_nest = 0;
   status_copy = false;
-  sc_mode = W_none;
-  sc_max = 0;
-  max_nest = 0;
-  max_poly = false;
-  max_poly_nest = 0;
-  sp_mode = W_num;
   prec_mode = PREC_quasi;
-  mcw_mode = MCW_const;
-  mcw_val = 0;
   mincons = false;
   maxcons = false;
   ac_w = true;
@@ -173,33 +163,16 @@ let name_order p =
   let prec =
     if p.prec_mode = PREC_quasi then "Q" else ""
   in
-  let base =
-    if p.w_dim > 1 then
-      "Mat" ^ string_of_int p.w_dim ^
-      match p.sc_mode with
-      | W_none -> "?"
-      | W_num  -> ""
-      | W_bool -> "b"
-      | W_tri  -> "t"
-      | W_quad  -> "q"
-    else
-      match p.sc_mode with
-      | W_none -> "Sum"
-      | W_num  -> "Pol"
-      | W_bool -> if p.dp then "Sum" else "bPol"
-      | W_tri  -> "tPol"
-      | W_quad  -> "qPol"
-  in
   let algebra =
-    let elem = function
+    let elem wp = match wp.template with
       | TEMP_sum -> "Pol"
       | TEMP_max -> "Max"
       | TEMP_max_sum_dup -> "MaxPol"
       | TEMP_sum_max_dup -> "PolMax"
     in
-    "[" ^ Util.foldl_nonnil "" elem (fun acc t -> acc ^ "," ^ elem t) p.w_params ^ "]"
+    "[" ^ Util.foldl_nonnil "" elem (fun acc wp -> acc ^ "," ^ elem wp) (Array.to_list p.w_params) ^ "]"
   in
-  if p.w_mode = W_none then
+  if Array.length p.w_params = 0 then
     prec ^ (
       match p.ext_lex, p.ext_mset with
       | true, true -> "RPO" ^ status
@@ -212,8 +185,7 @@ let name_order p =
   else
     prec ^ "WPO" ^ status ^ "(" ^ algebra ^ ")"
 
-type params_type =
-{
+type params_type = {
   mutable mode : mode;
   mutable file : string;
   mutable dp : bool;
@@ -243,8 +215,7 @@ type params_type =
   mutable naive_C : bool;
 };;
 
-let params =
-{
+let params = {
   mode = MODE_order;
   file = "";
   dp = false;
@@ -290,7 +261,7 @@ let prerr_help () =
   pe "Checks termination of TRS specified by FILE (stdin by default).";
   pe "";
   pe "Global OPTIONs:";
-  pe "  -v:<n>           set verbosity (0 to 5, default: 3).";
+  pe "  -v:<n>           set verbosity (0 to 6, default: 3).";
   pe "  --smt \"CMD\"      calls \"CMD\" as the back-end SMT solver.";
   pe "  --peek[-in|-out] dump transactions with the SMT solver.";
   pe "";
@@ -299,7 +270,7 @@ let prerr_help () =
   pe "";
   pe "Options for orders:";
   pe "  -u/-U        enable/disable usable rules (after EDG, enabled by default).";
-  pe "  -w[:<n>]/-W  enable/disable weights (with bound <n>).";
+  pe "  -w/-W        enable/disable weights (with bound <n>).";
   pe "  -w:neg       enable negative constants (after EDG).";
   pe "  -c[:<n>]     enable coefficients (with bound <n>). Requires QF_NIA solver.";
   pe "  -c:b         enable binary coefficients (default after EDG).";
@@ -313,6 +284,7 @@ let prerr_help () =
 in
 let i = ref 1 in
 let pp = ref order_default in
+let wpp = ref w_default in
 let register_order p =
   if params.dp then begin
     params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
@@ -322,51 +294,41 @@ let register_order p =
     pp := params.orders_removal.(Array.length params.orders_removal - 1);
   end;
 in
-let register_weight t =
-  (!pp).w_params <- (!pp).w_params @ [t];
-  (!pp).w_dim <- (!pp).w_dim + 1;
+let register_weight wp =
+  (!pp).w_params <- Array.append (!pp).w_params (Array.make 1 wp);
+  wpp := (!pp).w_params.(Array.length (!pp).w_params - 1);
 in
 let apply_edg () =
   if params.dp then err "'EDG' cannot be applied twice!";
   params.dp <- true;
   order_default.dp <- true;
-  order_default.sc_mode <- W_bool;
   order_default.collapse <- not params.cpf;
   order_default.status_mode <- S_partial;
   pp := order_default;
 in
 let apply_polo () =
-  register_order
-  {
+  register_order {
     order_default with
     ext_lex = false;
     ext_mset = false;
     status_mode = S_empty;
     prec_mode = PREC_none;
-    w_mode = W_num;
     collapse = false;
     usable_w = false;
     base_ty = TY_real;
-    sc_mode = W_bool;
   };
 in
 let apply_lpo () =
   register_order {
     order_default with
     ext_lex = true;
-    w_mode = W_none;
-    sp_mode = W_none;
     status_mode = S_total;
-    w_params = [TEMP_max];
-    w_dim = 1;
   };
 in
 let apply_wpo () =
-  register_order
-  {
+  register_order {
     order_default with
     ext_lex = true;
-    w_mode = W_num;
   };
 in
 let erro str = err ("unknown option: " ^ str ^ "!") in
@@ -374,6 +336,7 @@ let safe_atoi s arg = (try int_of_string s with _ -> erro arg) in
 let default = ref true in
 while !i < argc do
   let p = !pp in
+  let wp = !wpp in
   let arg = argv.(!i) in
   if arg.[0] = '-' then begin
     let (opt,optarg) =
@@ -463,10 +426,6 @@ while !i < argc do
         | _ -> ();
       end;
 
-    | "m", Some s -> p.max_nest <- safe_atoi s arg;
-
-    | "-upper", None -> p.mat_mode <- MAT_upper;
-    | "-lower", None -> p.mat_mode <- MAT_lower;
     | "f", None -> p.collapse <- true;
     | "F", None -> p.collapse <- false;
     | "u", None -> if not p.dp then err "-u cannot be applied here!"; p.usable <- true;
@@ -475,20 +434,17 @@ while !i < argc do
     | "Uw", None -> p.usable_w <- false;
     | "ur", None -> params.relative_usable <- true;
     | "Ur", None -> params.relative_usable <- false;
-
-    | "s", _ ->
-      begin
-        match optarg with
-        | Some "t" -> p.status_mode <- S_total;
-        | Some "e" -> p.status_mode <- S_empty;
-        | Some "p" -> p.status_mode <- S_partial;
-        | None -> p.status_mode <- if p.dp then S_partial else S_total;
-        | _ -> erro arg;
-      end;
+    | "s", _ -> (
+      match optarg with
+      | Some "t" -> p.status_mode <- S_total;
+      | Some "e" -> p.status_mode <- S_empty;
+      | Some "p" -> p.status_mode <- S_partial;
+      | None -> p.status_mode <- if p.dp then S_partial else S_total;
+      | _ -> erro arg;
+    )
     | "S", None -> p.status_mode <- S_none;
     | "-mset", None -> p.ext_mset <- true;
     | "-Lex", None -> p.ext_lex <- false;
-
     | "p", _ ->
       begin
         match optarg with
@@ -499,47 +455,36 @@ while !i < argc do
         | _ -> erro arg;
       end;
     | "P", None -> p.prec_mode <- PREC_none;
+    | "w", _ -> (
+      default := false;
+      match optarg with
+      | Some "neg" -> wp.w_mode <- W_num; wp.w_neg <- true;
+      | Some "b" -> wp.w_mode <- W_bool;
+      | None -> wp.w_mode <- W_num;
+      | _ -> erro arg;
+    )
+    | "W", None -> wp.w_mode <- W_none;
 
-    | "w", _ ->
-      begin
-        match optarg with
-        | Some "arc" -> p.w_mode <- W_arc;
-        | Some "neg" -> p.w_mode <- W_num; p.w_neg <- true;
-        | Some "b" -> p.w_mode <- W_bool;
-        | Some s -> p.w_max <- safe_atoi s arg; p.w_mode <- W_num;
-        | None -> p.w_mode <- W_num;
-      end;
-    | "W", None -> p.w_mode <- W_none;
-
-    | "c", _ ->
-      begin
-        match optarg with
-        | Some "b" -> p.sc_mode <- W_bool;
-        | Some "t" -> p.sc_mode <- W_tri;
-        | Some "q" -> p.sc_mode <- W_quad;
-        | Some s -> p.sc_mode <- W_num; p.sc_max <- safe_atoi s arg;
-        | None -> p.sc_mode <- W_num;
-      end;
-    | "C", None -> p.sc_mode <- W_none;
-
-    | "-min", None -> p.mincons <- true;
-    | "z", None -> p.mcw_val <- 0;
-    | "Z", None -> p.mcw_val <- 1;
-
+    | "c", _ -> (
+      default := false;
+      match optarg with
+      | Some "b" -> wp.sc_mode <- W_bool;
+      | Some "t" -> wp.sc_mode <- W_tri;
+      | Some "q" -> wp.sc_mode <- W_quad;
+      | Some s -> wp.sc_mode <- W_num; wp.sc_max <- safe_atoi s arg;
+      | None -> wp.sc_mode <- W_num;
+    )
+    | "C", None -> wp.sc_mode <- W_none;
     | "-w0", _ ->
       begin
         match optarg with
-        | None -> p.mcw_mode <- MCW_num;
-        | Some "b" -> p.mcw_mode <- MCW_bool;
-        | Some "c" -> p.mcw_mode <- MCW_const;
-        | _ -> erro arg;
+        | None -> wp.mcw_mode <- MCW_num;
+        | Some "b" -> wp.mcw_mode <- MCW_bool;
+        | Some s -> wp.mcw_mode <- MCW_const (safe_atoi s arg);
       end;
-
+    | "-min", None -> p.mincons <- true;
     | "-ty", Some "real" -> p.base_ty <- TY_real;
     | "-ty", Some "int" -> p.base_ty <- TY_int;
-
-    | "Sp", None -> p.sp_mode <- W_none;
-
     | "n", _ ->
       begin
         match optarg with
@@ -563,31 +508,29 @@ while !i < argc do
       end;
     | "-Reset", None -> p.use_scope <- true; p.use_scope_ratio <- 0;
     | "-reboot", None -> p.reset_mode <- RESET_reboot;
-    | "-smt", _ ->
-      begin
-        let cmd =
-          match optarg with
-          | None -> i := !i + 1; argv.(!i)
-          | Some s -> s
-        in
-        match Str.split (Str.regexp "[ \t]+") cmd with
-        | tool::options -> p.smt_tool <- (tool,options);
-        | _ -> err "Please specify a valid SMT solver!";
-      end;
+    | "-smt", _ -> (
+      let cmd =
+        match optarg with
+        | None -> i := !i + 1; argv.(!i)
+        | Some s -> s
+      in
+      match Str.split (Str.regexp "[ \t]+") cmd with
+      | tool::options -> p.smt_tool <- (tool,options);
+      | _ -> err "Please specify a valid SMT solver!";
+    )
     | "-z3", None -> p.smt_tool <- z3cmd;
     | "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
     | "-dup", None -> default := false; params.mode <- MODE_dup;
     | "-tcap", None -> params.edge_mode <- E_tcap;
     | "-edge", Some s -> params.edge_length <- safe_atoi s arg;
-    | "t", mode ->
+    | "t", mode -> (
       default := false;
-      begin
-        match mode with
-        | Some "ho" -> params.mode <- MODE_higher_xml;
-        | Some "x" -> params.mode <- MODE_xml;
-        | Some str -> err ("Unknown transformation mode: " ^ str ^ "!");
-        | _ -> params.mode <- MODE_through;
-      end
+      match mode with
+      | Some "ho" -> params.mode <- MODE_higher_xml;
+      | Some "x" -> params.mode <- MODE_xml;
+      | Some str -> err ("Unknown transformation mode: " ^ str ^ "!");
+      | _ -> params.mode <- MODE_through;
+    )
     | _ -> erro arg;
   end else begin
     match arg with
@@ -610,47 +553,41 @@ while !i < argc do
       apply_lpo ();
     | "MPO" ->
       default := false;
-      register_order
-      {
+      register_order {
         order_default with
         ext_lex = false;
         ext_mset = true;
-        sp_mode = W_none;
         status_mode = S_total;
-        w_params = [TEMP_max];
         w_dim = 1;
       };
     | "RPO" ->
       default := false;
-      register_order
-      {
+      register_order {
         order_default with
         ext_lex = true;
         ext_mset = true;
-        sp_mode = W_none;
         status_mode = S_total;
-        w_params = [TEMP_max];
         w_dim = 1;
       };
     | "POLO" ->
       default := false;
       apply_polo ();
-      register_weight TEMP_sum;
+      register_weight { w_default with template = TEMP_sum; };
     | "O" ->
       default := false;
       apply_polo ();
     | "p" ->
       default := false;
-      register_weight TEMP_sum;
+      register_weight { w_default with template = TEMP_sum; };
     | "m" ->
       default := false;
-      register_weight TEMP_max;
+      register_weight { w_default with template = TEMP_max; };
     | "mp" ->
       default := false;
-      register_weight TEMP_max_sum_dup;
+      register_weight { w_default with template = TEMP_max_sum_dup; };
     | "pm" ->
       default := false;
-      register_weight TEMP_sum_max_dup;
+      register_weight { w_default with template = TEMP_sum_max_dup; };
     | _ ->
       if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
       params.file <- arg;
@@ -660,24 +597,23 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
-  register_weight TEMP_sum;
+  register_weight { w_default with template = TEMP_sum; };
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;
   apply_polo ();
-  register_weight TEMP_sum;
+  register_weight { w_default with template = TEMP_sum; };
   apply_polo ();
-  register_weight TEMP_max;
+  register_weight { w_default with template = TEMP_max; };
   apply_lpo ();
   apply_polo ();
-  register_weight TEMP_max_sum_dup;
-  !pp.w_neg <- true;
+  register_weight { w_default with template = TEMP_max_sum_dup; w_neg = true; };
   apply_wpo ();
-  register_weight TEMP_max_sum_dup;
+  register_weight { w_default with template = TEMP_max_sum_dup; };
   !pp.status_mode <- S_partial;
   apply_polo ();
-  register_weight TEMP_sum;
-  register_weight TEMP_sum;
+  register_weight { w_default with template = TEMP_sum; };
+  register_weight { w_default with template = TEMP_sum; };
   (* certified nontermination not supported *)
   if not params.cpf then params.max_loop <- 3;
 end

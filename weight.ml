@@ -161,14 +161,17 @@ let add = Array.map2 (fun ets1 ets2 -> ets_sum [ets1;ets2])
 
 let smult exp = Array.map (List.map (et_mul_one [] exp))
 
-let order dim w1 w2 =
-  Delay (fun solver ->
-    let (ge,gt) = ets_order solver w1.(0) w2.(0) in
-    let ge_rest =
-      (smt_for_all (fun i -> ets_ge w1.(i) w2.(i)) (int_list 1 (dim-1)))
-    in
-    Cons(ge &^ ge_rest, gt)
-  )
+let order p =
+  let dim = Array.length p.w_params in
+  if dim = 0 then fun _ _ -> weakly_ordered
+  else fun  w1 w2 ->
+    Delay (fun solver ->
+      let (ge,gt) = ets_order solver w1.(0) w2.(0) in
+      let ge_rest =
+        (smt_for_all (fun i -> ets_ge w1.(i) w2.(i)) (int_list 1 (dim-1)))
+      in
+      Cons(ge &^ ge_rest, gt)
+    )
 
 let index i = "_" ^ string_of_int i
 
@@ -412,41 +415,39 @@ end;;
 
 
 class pol_interpreter p =
-  let coord = if p.w_dim = 1 then fun _ -> "" else coord in
-  let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
-  let ref_weight = ref_number p.w_mode in
-  let ref_coeff = ref_number p.sc_mode in
-  let bind_upper =
-    if p.w_max = 0 then fun _ _ -> ()
-    else fun solver fw -> solver#add_assertion (fw <=^ LI p.w_max)
-  in
-  let coord_params = Array.of_list p.w_params in
+  let dim = Array.length p.w_params in
+  let coord = if dim = 1 then fun _ -> "" else coord in
+  let coord2 = if dim = 1 then fun _ _ -> "" else coord2 in
+  let ref_weight i = ref_number p.w_params.(i).w_mode in
+  let ref_coeff i = ref_number p.w_params.(i).sc_mode in
   object (x)
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
       fun solver trs dg ->
-        let use_max = new template_mode p.max_poly true in
+        let use_max = new template_mode false true in
         let no_max = new template_mode true false in
-        let use_dup t = t = TEMP_max_sum_dup || t = TEMP_sum_max_dup in
+        let use_dup cp =
+          match cp.template with TEMP_max_sum_dup | TEMP_sum_max_dup -> true | _ -> false
+        in
         let heuristic =
-          if Array.exists use_dup coord_params then
-            maxpoly_heuristic trs dg (not p.max_poly) true
+          if Array.exists use_dup p.w_params then
+            maxpoly_heuristic trs dg true true
           else sum_heuristic
         in
         let sym_mode f i =
           if f#arity < 2 && p.w_dim < 2 then no_max
           else
-            let t = coord_params.(i-1) in
-            if t = TEMP_max then use_max
-            else if use_dup t then heuristic#sym_mode f
+            let cp = p.w_params.(i-1) in
+            if cp.template = TEMP_max then use_max
+            else if use_dup cp then heuristic#sym_mode f
             else no_max
         in
         let arg_mode f k i =
           if f#arity < 2 && p.w_dim < 2 then no_max
           else
-            let t = coord_params.(i-1) in
-            if t = TEMP_max then use_max
-            else if use_dup t then heuristic#arg_mode f k
+            let cp = p.w_params.(i-1) in
+            if cp.template = TEMP_max then use_max
+            else if use_dup cp then heuristic#arg_mode f k
             else no_max
         in
         let w f = "w_" ^ f#name in
@@ -454,137 +455,138 @@ class pol_interpreter p =
         let d f k = "d_" ^ f#name ^ index k in
         let a f k = "a_" ^ f#name ^ index k in
         let weight f i =
-            ref_weight (w f ^ coord i)
+            ref_weight i (w f ^ coord i)
         in
         let coeff_sum f k i j =
           if (arg_mode f k i)#in_sum then
-            ref_coeff (c f k ^ coord2 i j) +^
+            ref_coeff i (c f k ^ coord2 i j) +^
             LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else
             LI 0
         in
         let coeff_max f k i j =
           if (arg_mode f k i)#in_max then
-            ref_coeff (d f k ^ coord2 i j) +^
+            ref_coeff i (d f k ^ coord2 i j) +^
             LI (if not p.dp && i = 1 && j = 1 then 1 else 0)
           else LI 0
         in
         let addend_max f k i j =
-          if (arg_mode f k i)#in_max then ref_weight (a f k ^ coord2 i j)
+          if (arg_mode f k i)#in_max then ref_weight i (a f k ^ coord2 i j)
           else LI 0
         in
         trs#iter_funs (fun f ->
           for i = 1 to p.w_dim do
             let w_i = w f ^ coord i in
-            add_number p.w_mode solver w_i;
-            if not p.w_neg || (f#arity = 0 && i = 1) then begin
-              solver#add_assertion (ref_weight w_i >=^ LI 0);
+            let cp = p.w_params.(i-1) in
+            add_number cp.w_mode solver w_i;
+            if not cp.w_neg || f#arity = 0 then begin
+              solver#add_assertion (ref_weight i w_i >=^ LI 0);
             end;
             for k = 1 to f#arity do
               let c_k = c f k in
               let d_k = d f k in
               let a_k = a f k in
               if (arg_mode f k i)#in_sum then
-                for j = 1 to p.w_dim do
+                for j = 1 to dim do
                   let c_kij = c_k ^ coord2 i j in
-                  add_number p.sc_mode solver c_kij;
-                  bind_upper solver (ref_coeff c_kij);
-                  solver#add_assertion (ref_coeff c_kij >=^ LI 0);
+                  add_number cp.sc_mode solver c_kij;
+                  if cp.sc_mode = W_num && cp.sc_max > 0 then
+                    solver#add_assertion (LI cp.sc_max >=^ ref_coeff i c_kij);
+                  solver#add_assertion (ref_coeff i c_kij >=^ LI 0);
                 done;
               if (arg_mode f k i)#in_max then
-                for j = 1 to p.w_dim do
+                for j = 1 to dim do
                   let d_kij = d_k ^ coord2 i j in
                   let a_kij = a_k ^ coord2 i j in
-                  add_number p.sc_mode solver d_kij;
-                  bind_upper solver (ref_coeff d_kij);
-                  solver#add_assertion (ref_coeff d_kij >=^ LI 0);
-                  add_number p.w_mode solver a_kij;
-                  if not p.w_neg then begin
-                    solver#add_assertion (ref_weight a_kij >=^ LI 0);
+                  add_number cp.sc_mode solver d_kij;
+                  if cp.sc_mode = W_num && cp.sc_max > 0 then
+                    solver#add_assertion (LI cp.sc_max >=^ ref_coeff i d_kij);
+                  solver#add_assertion (ref_coeff i d_kij >=^ LI 0);
+                  add_number cp.w_mode solver a_kij;
+                  if not cp.w_neg then begin
+                    solver#add_assertion (ref_weight i a_kij >=^ LI 0);
                   end;
                 done;
-              done
-            done;
-            Hashtbl.add table f#name {
-              encodings = Array.map (fun i ->
-                let w = wexp_smt (weight f i) in
-                let added =
-                  List.concat (
-                    List.map (fun k ->
-                      List.map (fun j ->
-                        wexp_prod [wexp_smt (coeff_sum f k i j); wexp_bvar (k-1,j-1)]
-                      ) (int_list 1 p.w_dim)
-                    ) (int_list 1 f#arity)
-                  )
-                in
-                let maxed =
-                  List.concat (
-                    List.map (fun k ->
-                      List.concat (
-                        List.map (fun j ->
-                          let c = coeff_max f k i j in
-                          if c = LI 0 then []
-                          else
-                            [ wexp_prod [
-                                wexp_smt c;
-                                wexp_sum [ wexp_smt (addend_max f k i j); wexp_bvar (k-1,j-1) ]
-                              ]
-                            ]
-                        ) (int_list 1 p.w_dim)
-                      )
-                    ) (int_list 1 f#arity)
-                  )
-                in
-                wexp_max (
-                  (if p.w_neg && f#arity > 0 && i = 1 (* Only the first dimension need be positive *)
-                   then [wexp_smt (LI 0)] else []) @
-                  wexp_sum (w :: added) :: maxed
+            done
+          done;
+          Hashtbl.add table f#name {
+            encodings = Array.map (fun i ->
+              let w = wexp_smt (weight f i) in
+              let added =
+                List.concat (
+                  List.map (fun k ->
+                    List.map (fun j ->
+                      wexp_prod [wexp_smt (coeff_sum f k i j); wexp_bvar (k-1,j-1)]
+                    ) (int_list 1 dim)
+                  ) (int_list 1 f#arity)
                 )
-              ) (int_array 1 p.w_dim);
-              no_weight =
+              in
+              let maxed =
+                List.concat (
+                  List.map (fun k ->
+                    List.concat (
+                      List.map (fun j ->
+                        let c = coeff_max f k i j in
+                        if c = LI 0 then []
+                        else
+                          [ wexp_prod [
+                              wexp_smt c;
+                              wexp_sum [ wexp_smt (addend_max f k i j); wexp_bvar (k-1,j-1) ]
+                            ]
+                          ]
+                      ) (int_list 1 dim)
+                    )
+                  ) (int_list 1 f#arity)
+                )
+              in
+              wexp_max (
+                (if p.w_params.(i-1).w_neg && f#arity > 0 then [wexp_smt (LI 0)] else []) @
+                wexp_sum (w :: added) :: maxed
+              )
+            ) (int_array 1 dim);
+            no_weight =
+              smt_for_all (fun i ->
+                weight f i =^ LI 0 &^
+                smt_for_all (fun j ->
+                  smt_for_all (fun k ->
+                    addend_max f k i j =^ LI 0
+                  ) (int_list 1 f#arity)
+                ) (int_list 1 dim)
+              ) (int_list 1 dim);
+            pos_info = Array.map (fun k ->
+              let ck = c f k in
+              let const = solver#refer Bool (
                 smt_for_all (fun i ->
-                  weight f i =^ LI 0 &^
                   smt_for_all (fun j ->
-                    smt_for_all (fun k ->
-                      addend_max f k i j =^ LI 0
-                    ) (int_list 1 f#arity)
-                  ) (int_list 1 p.w_dim)
-                ) (int_list 1 p.w_dim);
-              pos_info = Array.map (
-                fun k ->
-                let ck = c f k in
-                let const = solver#refer Bool (
-                    smt_for_all (fun i ->
-                      smt_for_all (fun j ->
-                        (coeff_sum f k i j =^ LI 0) &^
-                        (coeff_max f k i j =^ LI 0)
-                      ) (int_list 1 p.w_dim)
-                    ) (int_list 1 p.w_dim)
-                  )
-                in
-                let slin =
+                    (coeff_sum f k i j =^ LI 0) &^
+                    (coeff_max f k i j =^ LI 0)
+                  ) (int_list 1 dim)
+                ) (int_list 1 dim)
+              )
+              in
+              let slin =
+                smt_for_all (fun i ->
+                  smt_for_all (fun j ->
+                    ( if (arg_mode f k i)#in_sum then coeff_sum f k i j
+                      else coeff_max f k i j
+                    ) =^ LI (if i = j then 1 else 0) &^
+                    (addend_max f k i j =^ LI 0)
+                  ) (int_list 1 dim) &^
+                  (weight f i =^ LI 0)
+                ) (int_list 1 dim)
+              in
+              {
+                const = const;
+                strict_linear = slin;
+                weak_simple =
                   smt_for_all (fun i ->
-                    smt_for_all (fun j ->
-                      ( if (arg_mode f k i)#in_sum then coeff_sum f k i j
-                        else coeff_max f k i j
-                      ) =^ LI (if i = j then 1 else 0) &^
-                      (addend_max f k i j =^ LI 0)
-                    ) (int_list 1 p.w_dim) &^
-                    (weight f i =^ LI 0)
-                  ) (int_list 1 p.w_dim)
-                in
-                {
-                  const = const;
-                  strict_linear = slin;
-                  weak_simple =
-                    smt_for_all (fun i ->
-                      (if p.w_neg then weight f i >=^ LI 0 else LB true) &^
-                      ( (coeff_max f k i i >=^ LI 1) |^ (coeff_sum f k i i >=^ LI 1) )
-                    ) (int_list 1 p.w_dim);
-                }
-              ) (int_array 1 f#arity);
-            }
-          );
+                    (if p.w_params.(i-1).w_neg then weight f i >=^ LI 0 else LB true) &^
+                    ( (coeff_max f k i i >=^ LI 1) |^ (coeff_sum f k i i >=^ LI 1) )
+                  ) (int_list 1 dim);
+              }
+            ) (int_array 1 f#arity);
+          }
+        );
 debug (
   endl << puts "Weight template:" << endl <<
   (fun os ->

@@ -57,12 +57,7 @@ class processor =
 
   (* weight order *)
   let interpreter = new Weight.pol_interpreter p in
-  let wo =
-    if p.w_mode = W_none then
-      fun _ _ -> weakly_ordered
-    else
-      Weight.order p.w_dim
-  in
+  let wo = Weight.order p in
 
 (*** Precedence ***)
   let pmin = LI 0 in
@@ -172,9 +167,10 @@ class processor =
     let sub_lex =
       let sub_perm fname finfo n =
         match finfo#status_mode with
-        | S_empty -> finfo#set_perm (fun _ _ -> LB false)
         | S_none -> finfo#set_perm (fun i k -> LB (i = k))
-        | _ ->
+        | S_empty -> finfo#set_perm (fun _ _ -> LB false)
+        | S_total
+        | S_partial ->
           let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
           let perm_e i k = EV(perm_v i k) in
           for i = 1 to n do
@@ -186,11 +182,10 @@ class processor =
       in
       let sub_permed fname finfo n =
         match finfo#status_mode with
-        | S_empty ->
-          finfo#set_permed (fun i -> LB false)
-        | S_none ->
-          finfo#set_permed (fun i -> LB true)
-        | _ ->
+        | S_none
+        | S_total -> finfo#set_permed (k_comb (LB true))
+        | S_empty -> finfo#set_permed (k_comb (LB false))
+        | S_partial ->
           let permed_v i = supply_index ("permed_" ^ fname) i in
           let permed_e i = EV(permed_v i) in
           for i = 1 to n do
@@ -200,18 +195,17 @@ class processor =
       in
       let sub_mapped fname finfo n to_n =
         match finfo#status_mode with
+        | S_none
+        | S_total -> finfo#set_mapped (k_comb (LB true));
         | S_empty -> finfo#set_mapped (k_comb (LB false));
-        | _ ->
-          if p.dp && (p.sc_mode <> W_none || finfo#status_mode = S_partial) then
-            let mapped_v k = supply_index ("mapped_" ^ fname) k in
-            let mapped_e k = EV(mapped_v k) in
-            for k = 1 to n do
-              solver#add_variable (mapped_v k) Bool;
-            done;
-            solver#add_assertion (OD (List.map mapped_e to_n));
-            finfo#set_mapped mapped_e;
-          else
-            finfo#set_mapped (k_comb (LB true))
+        | S_partial ->
+          let mapped_v k = supply_index ("mapped_" ^ fname) k in
+          let mapped_e k = EV(mapped_v k) in
+          for k = 1 to n do
+            solver#add_variable (mapped_v k) Bool;
+          done;
+          solver#add_assertion (OD (List.map mapped_e to_n));
+          finfo#set_mapped mapped_e;
       in
       fun fname finfo n to_n ->
         sub_perm fname finfo n;
@@ -265,7 +259,7 @@ class processor =
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
-          if List.for_all (fun t -> t = TEMP_sum || p.sp_mode <> W_none) p.w_params
+          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.sp_mode <> W_none) p.w_params
           then begin
             sub_c fname finfo;
           end else begin
@@ -337,27 +331,11 @@ class processor =
       (* permed position must be weakly simple *)
       solver#add_assertion (smt_not pi |^ interpreter#weak_simple_at finfo#base i);
     done;
-
-    if n > 0 && p.dp && p.sc_mode <> W_none &&
-      (p.w_neg || p.mincons)
-    then begin
-      let v = "const_" ^ fname in
+    if finfo#status_mode = S_partial && p.mincons then begin
+      let v = "qconst_" ^ fname in
       solver#add_definition v Bool
-        (smt_for_all (interpreter#constant_at finfo#base) to_n);
-      finfo#set_is_const (EV v);
-      if finfo#status_mode = S_partial && p.mincons then begin
-        let v = "qconst_" ^ fname in
-        solver#add_definition v Bool
-          (smt_not finfo#collapse &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n);
-        finfo#set_is_quasi_const (EV v);
-      end else begin
-        finfo#set_is_quasi_const (EV v);
-      end;
-    end;
-
-    let qc = finfo#is_quasi_const in
-    if p.mincons then begin
-      solver#add_assertion (qc =>^ (fp >=^ pmin));
+        (smt_not finfo#collapse &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n &^ (fp >=^ pmin));
+      finfo#set_is_quasi_const (EV v);
     end;
   in
 
@@ -736,7 +714,7 @@ object (x)
     debug (puts " Initializing.");
     solver#set_logic
     ( "QF_" ^
-      (if p.sc_mode = W_num then "N" else "L") ^
+      (if Array.exists (fun cp -> cp.sc_mode = W_num) p.w_params then "N" else "L") ^
       (if weight_ty = Real then "R" else "I") ^
       "A"
     );
@@ -764,11 +742,6 @@ object (x)
       Hashtbl.add sigma f#name (new wpo_sym f);
     in
     trs#iter_funs iterer;
-
-    (* count nesting *)
-    if p.max_nest > 0 || p.status_nest > 0 || p.max_poly_nest > 0 then begin
-      trs#count_nest;
-    end;
 
     if p.prec_mode <> PREC_none then
       (* set max precedence *)
@@ -822,7 +795,7 @@ object (x)
         Weight.add acc w
       in
       let rw = prule#fold_rs folder (Array.make p.w_dim (Weight.ets_smt (LI 0))) in
-      let (ge,gt) = split (Weight.order p.w_dim lw rw) solver in
+      let (ge,gt) = split (wo lw rw) solver in
       if p.remove_all then begin
         solver#add_assertion gt;
       end else begin
