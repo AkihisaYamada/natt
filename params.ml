@@ -89,7 +89,6 @@ type smt_tool = string * string list
 type order_params = {
   mutable dp : bool;
   mutable w_params : w_params array;
-  mutable w_dim : int;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -128,7 +127,6 @@ let order_default = {
   dp = false;
   base_ty = TY_real;
   w_params = Array.make 0 w_default;
-  w_dim = 0;
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
@@ -558,7 +556,6 @@ while !i < argc do
         ext_lex = false;
         ext_mset = true;
         status_mode = S_total;
-        w_dim = 1;
       };
     | "RPO" ->
       default := false;
@@ -567,7 +564,6 @@ while !i < argc do
         ext_lex = true;
         ext_mset = true;
         status_mode = S_total;
-        w_dim = 1;
       };
     | "POLO" ->
       default := false;

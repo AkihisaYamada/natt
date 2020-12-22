@@ -10,6 +10,7 @@ open Wpo_info
 (*** Printing proofs ***)
 
 class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
+  let dim = Array.length p.w_params in
   let status_is_used =
     p.ext_mset && p.ext_lex ||
     p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
@@ -208,10 +209,10 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
         end;
         Xml.enter "interpretation" pr;
         Xml.enclose "type" (
-          if p.w_dim > 1 then
+          if dim > 1 then
             Xml.enclose "matrixInterpretation" (
               Xml.enclose_inline "domain" (Xml.tag "naturals") <<
-              Xml.enclose_inline "dimension" (put_int p.w_dim) <<
+              Xml.enclose_inline "dimension" (put_int dim) <<
               Xml.enclose_inline "strictDimension" (puts "1")
             )
           else

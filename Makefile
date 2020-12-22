@@ -3,10 +3,10 @@ TARG_OPT=./NaTT.exe
 # Use ocamlfind, if it is found...
 ifneq ("$(shell which ocamlfind 2> /dev/null)","")
 	PACKS=ocamlgraph
-	OCAMLC=ocamlfind ocamlc -package $(PACKS)
+	OCAMLC=ocamlfind ocamlc -g -package $(PACKS)
 	OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
 else
-	OCAMLC=ocamlc -I +ocamlgraph
+	OCAMLC=ocamlc -g -I +ocamlgraph
 	OCAMLOPT=ocamlopt -I +ocamlgraph
 endif
 OCAMLDEP=ocamldep

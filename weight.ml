@@ -223,8 +223,9 @@ let coord2 i j =
   ^ String.make 1 (char_of_int (int_of_char 'a' + j - 1))
 
 class virtual interpreter p =
-  let coord = if p.w_dim = 1 then fun _ -> "" else coord in
-  let coord2 = if p.w_dim = 1 then fun _ _ -> "" else coord2 in
+  let dim = Array.length p.w_params in
+  let coord = if dim = 1 then fun _ -> "" else coord in
+  let coord2 = if dim = 1 then fun _ _ -> "" else coord2 in
   let put_var = fun (k, i) -> puts ("x" ^ index (k+1) ^ coord (i+1)) in
   object (x)
     method virtual init : 't. (#context as 't) -> trs -> Dp.dg -> unit
@@ -268,7 +269,7 @@ class virtual interpreter p =
         | Max        -> ets_max ws
       in
       if f#is_var then
-        Array.map (fun i -> ets_bvar (f#name ^ coord i)) (int_array 0 (p.w_dim - 1))
+        Array.map (fun i -> ets_bvar (f#name ^ coord i)) (int_array 0 (dim - 1))
       else Array.map sub (x#encode_sym f)
 
     method annotate : 't 'b. (#context as 't) -> (#sym as 'b) term -> ('b,w_t) wterm =
@@ -418,8 +419,8 @@ class pol_interpreter p =
   let dim = Array.length p.w_params in
   let coord = if dim = 1 then fun _ -> "" else coord in
   let coord2 = if dim = 1 then fun _ _ -> "" else coord2 in
-  let ref_weight i = ref_number p.w_params.(i).w_mode in
-  let ref_coeff i = ref_number p.w_params.(i).sc_mode in
+  let ref_weight i = ref_number p.w_params.(i-1).w_mode in
+  let ref_coeff i = ref_number p.w_params.(i-1).sc_mode in
   object (x)
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
@@ -435,7 +436,7 @@ class pol_interpreter p =
           else sum_heuristic
         in
         let sym_mode f i =
-          if f#arity < 2 && p.w_dim < 2 then no_max
+          if f#arity < 2 && dim < 2 then no_max
           else
             let cp = p.w_params.(i-1) in
             if cp.template = TEMP_max then use_max
@@ -443,7 +444,7 @@ class pol_interpreter p =
             else no_max
         in
         let arg_mode f k i =
-          if f#arity < 2 && p.w_dim < 2 then no_max
+          if f#arity < 2 && dim < 2 then no_max
           else
             let cp = p.w_params.(i-1) in
             if cp.template = TEMP_max then use_max
@@ -475,7 +476,7 @@ class pol_interpreter p =
           else LI 0
         in
         trs#iter_funs (fun f ->
-          for i = 1 to p.w_dim do
+          for i = 1 to dim do
             let w_i = w f ^ coord i in
             let cp = p.w_params.(i-1) in
             add_number cp.w_mode solver w_i;

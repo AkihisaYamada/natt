@@ -794,7 +794,7 @@ object (x)
         let w = Weight.smult (LI coeff) w in
         Weight.add acc w
       in
-      let rw = prule#fold_rs folder (Array.make p.w_dim (Weight.ets_smt (LI 0))) in
+      let rw = prule#fold_rs folder (Array.make (Array.length p.w_params) (Weight.ets_smt (LI 0))) in
       let (ge,gt) = split (wo lw rw) solver in
       if p.remove_all then begin
         solver#add_assertion gt;
