@@ -298,7 +298,8 @@ class virtual interpreter p =
       fun f pr ->
       pr#puts "  ";
       f#output pr;
-      let punct = ref ":\t[ " in
+      pr#puts ":\t[";
+      let punct = ref " " in
       Array.iteri (fun i wexp ->
         pr#puts !punct;
         punct := ",\n\t  ";
@@ -420,7 +421,8 @@ class pol_interpreter p =
   let coord = if dim = 1 then fun _ -> "" else coord in
   let coord2 = if dim = 1 then fun _ _ -> "" else coord2 in
   let ref_weight i = ref_number p.w_params.(i-1).w_mode in
-  let ref_coeff i = ref_number p.w_params.(i-1).sc_mode in
+  let ref_addend i = ref_number p.w_params.(i-1).addend_mode in
+  let ref_coeff i = ref_number p.w_params.(i-1).coeff_mode in
   object (x)
     inherit interpreter p
     method init : 't. (#context as 't) -> trs -> Dp.dg -> unit =
@@ -472,13 +474,13 @@ class pol_interpreter p =
           else LI 0
         in
         let addend_max f k i j =
-          if (arg_mode f k i)#in_max then ref_weight i (a f k ^ coord2 i j)
+          if (arg_mode f k i)#in_max then ref_addend i (a f k ^ coord2 i j)
           else LI 0
         in
         trs#iter_funs (fun f ->
           for i = 1 to dim do
-            let w_i = w f ^ coord i in
             let cp = p.w_params.(i-1) in
+            let w_i = w f ^ coord i in
             add_number cp.w_mode solver w_i;
             if not cp.w_neg || f#arity = 0 then begin
               solver#add_assertion (ref_weight i w_i >=^ LI 0);
@@ -490,22 +492,22 @@ class pol_interpreter p =
               if (arg_mode f k i)#in_sum then
                 for j = 1 to dim do
                   let c_kij = c_k ^ coord2 i j in
-                  add_number cp.sc_mode solver c_kij;
-                  if cp.sc_mode = W_num && cp.sc_max > 0 then
-                    solver#add_assertion (LI cp.sc_max >=^ ref_coeff i c_kij);
+                  add_number cp.coeff_mode solver c_kij;
+                  if cp.coeff_mode = W_num && cp.coeff_max > 0 then
+                    solver#add_assertion (LI cp.coeff_max >=^ ref_coeff i c_kij);
                   solver#add_assertion (ref_coeff i c_kij >=^ LI 0);
                 done;
               if (arg_mode f k i)#in_max then
                 for j = 1 to dim do
                   let d_kij = d_k ^ coord2 i j in
                   let a_kij = a_k ^ coord2 i j in
-                  add_number cp.sc_mode solver d_kij;
-                  if cp.sc_mode = W_num && cp.sc_max > 0 then
-                    solver#add_assertion (LI cp.sc_max >=^ ref_coeff i d_kij);
+                  add_number cp.coeff_mode solver d_kij;
+                  if cp.coeff_mode = W_num && cp.coeff_max > 0 then
+                    solver#add_assertion (LI cp.coeff_max >=^ ref_coeff i d_kij);
                   solver#add_assertion (ref_coeff i d_kij >=^ LI 0);
-                  add_number cp.w_mode solver a_kij;
+                  add_number cp.addend_mode solver a_kij;
                   if not cp.w_neg then begin
-                    solver#add_assertion (ref_weight i a_kij >=^ LI 0);
+                    solver#add_assertion (ref_addend i a_kij >=^ LI 0);
                   end;
                 done;
             done

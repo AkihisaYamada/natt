@@ -67,10 +67,10 @@ type w_params = {
   mutable template : w_template;
   mutable w_mode : w_mode;
   mutable w_neg : bool;
-  mutable sc_mode : w_mode;
-  mutable sc_max : int;
+  mutable coeff_mode : w_mode;
+  mutable coeff_max : int;
   mutable max_poly : bool;
-  mutable sp_mode : w_mode;
+  mutable addend_mode : w_mode;
   mutable mcw_mode : mcw_mode;
 }
 
@@ -78,10 +78,10 @@ let w_default = {
   template = TEMP_sum;
   w_mode = W_num;
   w_neg = false;
-  sc_mode = W_bool;
-  sc_max = 0;
+  coeff_mode = W_bool;
+  coeff_max = 0;
   max_poly = false;
-  sp_mode = W_num;
+  addend_mode = W_num;
   mcw_mode = MCW_const 0;
 }
 type smt_tool = string * string list
@@ -316,16 +316,16 @@ let apply_polo () =
     base_ty = TY_real;
   };
 in
-let apply_lpo () =
-  register_order {
-    order_default with
-    ext_lex = true;
-    status_mode = S_total;
-  };
-in
 let apply_wpo () =
   register_order {
     order_default with
+    ext_lex = true;
+  };
+in
+let apply_lpo () =
+  register_order {
+    order_default with
+    status_mode = if params.dp then S_partial else S_total;
     ext_lex = true;
   };
 in
@@ -349,16 +349,14 @@ while !i < argc do
     | "-all", None -> p.remove_all <- true;
     | "-Tempvar", None -> params.tmpvar <- false;
     | "-Sort", None -> params.sort_scc <- SORT_none;
-    | "-sort", _ ->
-      begin
-        match optarg with
-        | None -> params.sort_scc <- SORT_asc;
-        | Some "desc" -> params.sort_scc <- SORT_desc;
-        | _ -> erro arg;
-      end
+    | "-sort", _ -> (
+      match optarg with
+      | None -> params.sort_scc <- SORT_asc;
+      | Some "desc" -> params.sort_scc <- SORT_desc;
+      | _ -> erro arg;
+    )
     | "-naive-C", None -> params.naive_C <- true;
-    | "-ac", Some s ->
-      begin
+    | "-ac", Some s -> (
         match s with
         | "new" -> params.acdp_mode <- ACDP_new;
         | "union" -> params.acdp_mode <- ACDP_union;
@@ -366,19 +364,18 @@ while !i < argc do
         | "m" -> params.ac_mark_mode <- AC_mark;
         | "g" -> params.ac_mark_mode <- AC_guard;
         | _ -> erro arg;
-      end;
-    | "-rdp", Some s ->
-      begin
-        match s with
-        | "naive" -> params.rdp_mode <- RDP_naive;
-        | _ -> erro arg;
-      end;
+    )
+    | "-rdp", Some s -> (
+      match s with
+      | "naive" -> params.rdp_mode <- RDP_naive;
+      | _ -> erro arg;
+    )
     | "V", None ->
       params.warning <- false;
       params.comment <- false;
       params.problem <- false;
       params.proof <- false;
-    | "v", Some s -> begin
+    | "v", Some s -> (
       match s with
       | "p" | "problem" -> params.problem <- true;
       | "l" | "log" -> params.log <- true;
@@ -392,7 +389,7 @@ while !i < argc do
         params.log <- v > 3;
         params.debug <- v > 4;
         params.debug2 <- v > 5;
-      end;
+    )
     | "x", None ->
       params.result <- false;
       params.warning <- false;
@@ -407,23 +404,20 @@ while !i < argc do
       params.cpf_to <- open_out file;
       params.naive_C <- true;
       params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
-    | "-peek", _ ->
-      begin
+    | "-peek", _ -> (
         p.peek_in <- true;
         p.peek_out <- true;
         match optarg with
         | Some file -> p.peek_to <- open_out file;
         | _ -> ();
-      end;
+    )
     | "-peek-in", None -> p.peek_in <- true;
-    | "-peek-out", _ ->
-      begin
-        p.peek_out <- true;
-        match optarg with
-        | Some file -> p.peek_to <- open_out file;
-        | _ -> ();
-      end;
-
+    | "-peek-out", _ -> (
+      p.peek_out <- true;
+      match optarg with
+      | Some file -> p.peek_to <- open_out file;
+      | _ -> ();
+    )
     | "f", None -> p.collapse <- true;
     | "F", None -> p.collapse <- false;
     | "u", None -> if not p.dp then err "-u cannot be applied here!"; p.usable <- true;
@@ -443,15 +437,14 @@ while !i < argc do
     | "S", None -> p.status_mode <- S_none;
     | "-mset", None -> p.ext_mset <- true;
     | "-Lex", None -> p.ext_lex <- false;
-    | "p", _ ->
-      begin
-        match optarg with
-        | Some "q" -> p.prec_mode <- PREC_quasi;
-        | Some "s" -> p.prec_mode <- PREC_strict;
-        | Some "p" -> p.prec_mode <- PREC_partial;
-        | None -> p.prec_mode <- PREC_quasi;
-        | _ -> erro arg;
-      end;
+    | "p", _ -> (
+      match optarg with
+      | Some "q" -> p.prec_mode <- PREC_quasi;
+      | Some "s" -> p.prec_mode <- PREC_strict;
+      | Some "p" -> p.prec_mode <- PREC_partial;
+      | None -> p.prec_mode <- PREC_quasi;
+      | _ -> erro arg;
+    )
     | "P", None -> p.prec_mode <- PREC_none;
     | "w", _ -> (
       default := false;
@@ -462,17 +455,26 @@ while !i < argc do
       | _ -> erro arg;
     )
     | "W", None -> wp.w_mode <- W_none;
-
     | "c", _ -> (
       default := false;
       match optarg with
-      | Some "b" -> wp.sc_mode <- W_bool;
-      | Some "t" -> wp.sc_mode <- W_tri;
-      | Some "q" -> wp.sc_mode <- W_quad;
-      | Some s -> wp.sc_mode <- W_num; wp.sc_max <- safe_atoi s arg;
-      | None -> wp.sc_mode <- W_num;
+      | Some "b" -> wp.coeff_mode <- W_bool;
+      | Some "t" -> wp.coeff_mode <- W_tri;
+      | Some "q" -> wp.coeff_mode <- W_quad;
+      | Some s -> wp.coeff_mode <- W_num; wp.coeff_max <- safe_atoi s arg;
+      | None -> wp.coeff_mode <- W_num;
     )
-    | "C", None -> wp.sc_mode <- W_none;
+    | "C", None -> wp.coeff_mode <- W_none;
+    | "a", _ -> (
+      default := false;
+      match optarg with
+      | Some "b" -> wp.addend_mode <- W_bool;
+      | Some "t" -> wp.addend_mode <- W_tri;
+      | Some "q" -> wp.addend_mode <- W_quad;
+      | None -> wp.coeff_mode <- W_num;
+      | _ -> erro arg;
+    )
+    | "A", None -> wp.addend_mode <- W_none;
     | "-w0", _ ->
       begin
         match optarg with
@@ -555,7 +557,7 @@ while !i < argc do
         order_default with
         ext_lex = false;
         ext_mset = true;
-        status_mode = S_total;
+        status_mode = if params.dp then S_partial else S_total;
       };
     | "RPO" ->
       default := false;
@@ -563,7 +565,7 @@ while !i < argc do
         order_default with
         ext_lex = true;
         ext_mset = true;
-        status_mode = S_total;
+        status_mode = if params.dp then S_partial else S_total;
       };
     | "POLO" ->
       default := false;

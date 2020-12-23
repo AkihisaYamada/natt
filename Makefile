@@ -98,7 +98,7 @@ clean:
 test: $(TARG_OPT)
 	TOOL=$(PWD)/NaTT.sh; \
 	BENCH=$(PWD)/tpdb_info/nonterm.list; \
-	cd ~/TPDB/TRS_Standard; \
+	cd ../TPDB/TRS_Standard; \
 	if [ -e tmp_result ]; then rm tmp_result; fi; \
 	while read f; do \
 		$$TOOL -V $$f | tee -a tmp_result; \

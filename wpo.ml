@@ -259,7 +259,7 @@ class processor =
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
-          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.sp_mode <> W_none) p.w_params
+          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.addend_mode <> W_none) p.w_params
           then begin
             sub_c fname finfo;
           end else begin
@@ -648,14 +648,13 @@ class processor =
   and wpo2 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     if f#is_var then
       Cons(var_eq f#name t, LB false)
-    else
-      if f#equals g then
-        match ss,ts with
-        | [s1], [t1] ->
-          let fltp = (lookup f)#permed 1 in
-          smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
-        | _ -> wpo3 s t
-      else wpo3 s t
+    else if f#equals g then
+      match ss,ts with
+      | [s1], [t1] ->
+        let fltp = (lookup f)#permed 1 in
+        smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
+      | _ -> wpo3 s t
+    else wpo3 s t
   and wpo3 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     let finfo = lookup f in
     let live_f = smt_not finfo#collapse in
@@ -714,7 +713,7 @@ object (x)
     debug (puts " Initializing.");
     solver#set_logic
     ( "QF_" ^
-      (if Array.exists (fun cp -> cp.sc_mode = W_num) p.w_params then "N" else "L") ^
+      (if Array.exists (fun cp -> cp.coeff_mode = W_num) p.w_params then "N" else "L") ^
       (if weight_ty = Real then "R" else "I") ^
       "A"
     );
@@ -812,14 +811,13 @@ object (x)
       let rule = trs#find_rule i in
       debug2 (puts "  Initializing rule " << put_int i << endl);
       let (WT(_,_,lw) as la) = interpreter#annotate solver rule#l in
-debug2 (puts "." << flush);
+      debug2 (puts "." << flush);
       let (WT(_,_,rw) as ra) = interpreter#annotate solver rule#r in
-debug2 (puts "." << flush);
+      debug2 (puts "." << flush);
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion
-            (usable_w i =>^ set_usable
- (fun finfo -> interpreter#depend_on finfo#base) usable_w rule#r);
+            (usable_w i =>^ set_usable (fun finfo -> interpreter#depend_on finfo#base) usable_w rule#r);
           solver#add_assertion
             (usable i =>^ set_usable (fun finfo -> finfo#permed) usable rule#r);
           let wge, wgt = split (wo lw rw) solver in
@@ -834,10 +832,9 @@ debug2 (puts "." << flush);
             solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
           end;
         end else if p.usable then begin
-          solver#add_assertion
-            (usable i =>^ set_usable (fun finfo -> interpreter#depend_on finfo#base) usable rule#r);
-          solver#add_assertion 
-            (usable i =>^ weakly (frame la ra));
+          let filt finfo i = interpreter#depend_on finfo#base i |^ finfo#permed i in
+          solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
+          solver#add_assertion (usable i =>^ weakly (frame la ra));
         end else begin
           solver#add_assertion (weakly (frame la ra));
         end;
@@ -866,7 +863,8 @@ debug2 (puts "." << flush);
         solver#add_assertion (set_usable (fun finfo -> interpreter#depend_on finfo#base) usable_w dp#r);
         solver#add_assertion (set_usable (fun finfo -> finfo#permed) usable dp#r);
       end else begin
-        solver#add_assertion (set_usable (fun finfo -> interpreter#depend_on finfo#base) usable dp#r);
+        let filt finfo i = interpreter#depend_on finfo#base i |^ finfo#permed i in
+        solver#add_assertion (set_usable filt usable dp#r);
       end;
     end;
 
