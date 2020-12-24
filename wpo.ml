@@ -815,11 +815,11 @@ object (x)
       let (WT(_,_,rw) as ra) = interpreter#annotate solver rule#r in
       debug2 (puts "." << flush);
       if p.dp then begin
+        let depend finfo = finfo#permed in
+        let depend_w finfo = interpreter#depend_on finfo#base in
         if p.usable_w then begin
-          solver#add_assertion
-            (usable_w i =>^ set_usable (fun finfo -> interpreter#depend_on finfo#base) usable_w rule#r);
-          solver#add_assertion
-            (usable i =>^ set_usable (fun finfo -> finfo#permed) usable rule#r);
+          solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
+          solver#add_assertion (usable i =>^ set_usable depend usable rule#r);
           let wge, wgt = split (wo lw rw) solver in
           let wge = solver#refer Bool wge in
           solver#add_assertion (usable_w i =>^ wge);
@@ -832,7 +832,10 @@ object (x)
             solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
           end;
         end else if p.usable then begin
-          let filt finfo i = interpreter#depend_on finfo#base i |^ finfo#permed i in
+          let filt =
+            if Array.length p.w_params = 0 then depend (* trivial weight *)
+            else depend_w
+          in
           solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
           solver#add_assertion (usable i =>^ weakly (frame la ra));
         end else begin
