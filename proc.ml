@@ -1,5 +1,3 @@
-open Params
-
 exception Dead of string
 
 class finalized finalizer =

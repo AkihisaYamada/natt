@@ -1,4 +1,3 @@
-open Params
 open Io
 open Sym
 open Term

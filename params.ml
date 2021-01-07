@@ -1,8 +1,7 @@
+open WeightTemplate
+
 let version = "1.8";
 
-type base_ty =
-| TY_int
-| TY_real
 type prec_mode =
 | PREC_none
 | PREC_strict
@@ -64,7 +63,7 @@ type w_template =
 | TEMP_sum_max_dup
 
 type w_params = {
-  mutable template : w_template;
+  mutable template : WeightTemplate.sym Term.term;
   mutable w_mode : w_mode;
   mutable w_neg : bool;
   mutable coeff_mode : w_mode;
@@ -75,7 +74,7 @@ type w_params = {
 }
 
 let w_default = {
-  template = TEMP_sum;
+  template = const 0;
   w_mode = W_num;
   w_neg = false;
   coeff_mode = W_bool;
@@ -89,6 +88,7 @@ type smt_tool = string * string list
 type order_params = {
   mutable dp : bool;
   mutable w_params : w_params array;
+  mutable base_ty : Smt.ty;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -99,7 +99,6 @@ type order_params = {
   mutable maxcons : bool;
   mutable ac_w : bool;
   mutable strict_equal : bool;
-  mutable base_ty : base_ty;
   mutable collapse : bool;
   mutable usable : bool;
   mutable usable_w : bool;
@@ -125,7 +124,7 @@ let nonmonotone p =
 
 let order_default = {
   dp = false;
-  base_ty = TY_real;
+  base_ty = Smt.Real;
   w_params = Array.make 0 w_default;
   ext_lex = false;
   ext_mset = false;
@@ -161,15 +160,6 @@ let name_order p =
   let prec =
     if p.prec_mode = PREC_quasi then "Q" else ""
   in
-  let algebra =
-    let elem wp = match wp.template with
-      | TEMP_sum -> "Pol"
-      | TEMP_max -> "Max"
-      | TEMP_max_sum_dup -> "MaxPol"
-      | TEMP_sum_max_dup -> "PolMax"
-    in
-    "[" ^ Util.foldl_nonnil "" elem (fun acc wp -> acc ^ "," ^ elem wp) (Array.to_list p.w_params) ^ "]"
-  in
   if Array.length p.w_params = 0 then
     prec ^ (
       match p.ext_lex, p.ext_mset with
@@ -179,9 +169,9 @@ let name_order p =
       | _ -> "???"
     )
   else if p.status_mode = S_empty && p.prec_mode = PREC_none then
-    algebra
+    "Interpretation"
   else
-    prec ^ "WPO" ^ status ^ "(" ^ algebra ^ ")"
+    prec ^ "WPO" ^ status
 
 type params_type = {
   mutable mode : mode;
@@ -268,13 +258,11 @@ let prerr_help () =
   pe "";
   pe "Options for orders:";
   pe "  -u/-U        enable/disable usable rules (after EDG, enabled by default).";
-  pe "  -w/-W        enable/disable weights (with bound <n>).";
-  pe "  -w:neg       enable negative constants (after EDG).";
+  pe "  -w:<temp>    introduce a weight template.";
+  pe "  -neg         enable negative constants (after EDG).";
   pe "  -c[:<n>]     enable coefficients (with bound <n>). Requires QF_NIA solver.";
   pe "  -c:b         enable binary coefficients (default after EDG).";
   pe "  -C           disable coefficients.";
-  pe "  --dim:<n>    matrix interpretations of dimension <n>.";
-  pe "  -a:<alg>     specify a template algebra in {pol,max,mpol}.";
   pe "  -p[:s]/-P    enable/disable [strict] precedences.";
   pe "  -s:{t/p/e}   use total/partial/empty statuses";
   pe "  -S           disable statuses.";
@@ -313,7 +301,7 @@ let apply_polo () =
     prec_mode = PREC_none;
     collapse = false;
     usable_w = false;
-    base_ty = TY_real;
+    base_ty = Smt.Real;
   };
 in
 let apply_wpo () =
@@ -446,35 +434,11 @@ while !i < argc do
       | _ -> erro arg;
     )
     | "P", None -> p.prec_mode <- PREC_none;
-    | "w", _ -> (
+    | "neg", None -> wp.w_neg <- true;
+    | "w", Some str -> (
       default := false;
-      match optarg with
-      | Some "neg" -> wp.w_mode <- W_num; wp.w_neg <- true;
-      | Some "b" -> wp.w_mode <- W_bool;
-      | None -> wp.w_mode <- W_num;
-      | _ -> erro arg;
+      wp.template <- WeightTemplate.of_string str;
     )
-    | "W", None -> wp.w_mode <- W_none;
-    | "c", _ -> (
-      default := false;
-      match optarg with
-      | Some "b" -> wp.coeff_mode <- W_bool;
-      | Some "t" -> wp.coeff_mode <- W_tri;
-      | Some "q" -> wp.coeff_mode <- W_quad;
-      | Some s -> wp.coeff_mode <- W_num; wp.coeff_max <- safe_atoi s arg;
-      | None -> wp.coeff_mode <- W_num;
-    )
-    | "C", None -> wp.coeff_mode <- W_none;
-    | "a", _ -> (
-      default := false;
-      match optarg with
-      | Some "b" -> wp.addend_mode <- W_bool;
-      | Some "t" -> wp.addend_mode <- W_tri;
-      | Some "q" -> wp.addend_mode <- W_quad;
-      | None -> wp.coeff_mode <- W_num;
-      | _ -> erro arg;
-    )
-    | "A", None -> wp.addend_mode <- W_none;
     | "-w0", _ ->
       begin
         match optarg with
@@ -483,8 +447,8 @@ while !i < argc do
         | Some s -> wp.mcw_mode <- MCW_const (safe_atoi s arg);
       end;
     | "-min", None -> p.mincons <- true;
-    | "-ty", Some "real" -> p.base_ty <- TY_real;
-    | "-ty", Some "int" -> p.base_ty <- TY_int;
+    | "-ty", Some "real" -> p.base_ty <- Smt.Real;
+    | "-ty", Some "int" -> p.base_ty <- Smt.Int;
     | "n", _ ->
       begin
         match optarg with
@@ -570,22 +534,22 @@ while !i < argc do
     | "POLO" ->
       default := false;
       apply_polo ();
-      register_weight { w_default with template = TEMP_sum; };
+      register_weight { w_default with
+        template = if params.dp then sum_template else mono_sum_template;
+      };
     | "O" ->
       default := false;
       apply_polo ();
-    | "p" ->
+    | "sum" ->
       default := false;
-      register_weight { w_default with template = TEMP_sum; };
-    | "m" ->
+      register_weight { w_default with
+        template = if params.dp then sum_template else mono_sum_template;
+      };
+    | "max" ->
       default := false;
-      register_weight { w_default with template = TEMP_max; };
-    | "mp" ->
-      default := false;
-      register_weight { w_default with template = TEMP_max_sum_dup; };
-    | "pm" ->
-      default := false;
-      register_weight { w_default with template = TEMP_sum_max_dup; };
+      register_weight { w_default with
+        template = if params.dp then max_template else mono_max_template;
+      };
     | _ ->
       if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
       params.file <- arg;
@@ -595,23 +559,27 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
-  register_weight { w_default with template = TEMP_sum; };
+  register_weight { w_default with template = mono_poly_template; };
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;
   apply_polo ();
-  register_weight { w_default with template = TEMP_sum; };
+  register_weight { w_default with template = sum_template; };
   apply_polo ();
-  register_weight { w_default with template = TEMP_max; };
+  register_weight { w_default with template = max_template; };
   apply_lpo ();
   apply_polo ();
-  register_weight { w_default with template = TEMP_max_sum_dup; w_neg = true; };
+  register_weight { w_default with template = sum_template; w_neg = true; };
   apply_wpo ();
-  register_weight { w_default with template = TEMP_max_sum_dup; };
+  register_weight { w_default with template = sum_template; };
   !pp.status_mode <- S_partial;
   apply_polo ();
-  register_weight { w_default with template = TEMP_sum; };
-  register_weight { w_default with template = TEMP_sum; };
+  register_weight { w_default with
+    template = sum [sum_args (sum [choice [const 0; arg 0]; choice [const 0; arg 1]]); var];
+  };
+  register_weight { w_default with
+    template = sum [sum_args (sum [choice [const 0; arg 0]; choice [const 0; arg 1]]); var];
+  };
   (* certified nontermination not supported *)
   if not params.cpf then params.max_loop <- 3;
 end

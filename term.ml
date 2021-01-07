@@ -1,5 +1,4 @@
 open Util
-open Params
 open Io
 open Sym
 
@@ -22,6 +21,12 @@ let size : 'a term -> int =
 
 let var vname = Node((new sym_unmarked Var vname :> sym), [])
 let app f args = Node((f:>sym), args)
+
+let rename r (Node(f,ss)) = Node(r f, ss)
+
+let subst a (Node(f,ss)) =
+  let Node(g,ts) = a f in
+  Node(g,ts@ss)
 
 (* equality *)
 let rec term_eq (Node((f:#sym),ss)) (Node(g,ts)) =
@@ -165,18 +170,18 @@ let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wt
 let rec output_xml_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
   let rec sub =
     function
-    | []  -> Xml.leave "arg" pr; Xml.leave "funapp" pr;
-    | t::ts -> Xml.leave "arg" pr; Xml.enter "arg" pr; output_xml_term pr t; sub ts
+    | []  -> MyXML.leave "arg" pr; MyXML.leave "funapp" pr;
+    | t::ts -> MyXML.leave "arg" pr; MyXML.enter "arg" pr; output_xml_term pr t; sub ts
   in
   fun (Node(f,ts)) ->
     if f#is_var then begin
       f#output_xml pr;
     end else begin
-      Xml.enter "funapp" pr;
+      MyXML.enter "funapp" pr;
       f#output_xml pr;
       match ts with
-      | []  -> if f#is_fun then Xml.leave "funapp" pr;
-      | t::ts -> Xml.enter "arg" pr; output_xml_term pr t; sub ts
+      | []  -> if f#is_fun then MyXML.leave "funapp" pr;
+      | t::ts -> MyXML.enter "arg" pr; output_xml_term pr t; sub ts
     end
 
 (*** rules ***)
@@ -209,9 +214,9 @@ class rule s (l : sym term) (r : sym term) =
         | _ -> " ->? ");
       output_term pr r
     method output_xml : 'b. (#printer as 'b) -> unit =
-      Xml.enclose "rule" (
-        Xml.enclose "lhs" (fun pr -> output_xml_term pr l) <<
-        Xml.enclose "rhs" (fun pr -> output_xml_term pr r)
+      MyXML.enclose "rule" (
+        MyXML.enclose "lhs" (fun pr -> output_xml_term pr l) <<
+        MyXML.enclose "rhs" (fun pr -> output_xml_term pr r)
       )
   end
 
@@ -269,9 +274,9 @@ class prule (l : sym term) (d : (int * sym term) list) =
       x#iter_rs iterer;
       pr#leave 2;
     method output_xml : 'b. (#printer as 'b) -> unit =
-      Xml.enclose "rule" (
-        Xml.enclose "lhs" (fun pr -> output_xml_term pr l) <<
-        Xml.enclose "rhs" (fun pr ->
+      MyXML.enclose "rule" (
+        MyXML.enclose "lhs" (fun pr -> output_xml_term pr l) <<
+        MyXML.enclose "rhs" (fun pr ->
           let iterer i r = output_xml_term pr r in
           x#iter_rs iterer
         )

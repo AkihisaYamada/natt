@@ -1,5 +1,4 @@
 open Util
-open Params
 
 type ty = Nat | Int | Real | Bool | Prod of ty * ty
 
@@ -680,7 +679,7 @@ let smt_split e f =
 
 ;;
 
-class virtual context =
+class virtual context tmpvar =
 
   object (x:'t)
     inherit [exp,dec] base
@@ -688,7 +687,7 @@ class virtual context =
     method virtual private add_assertion_body : exp -> unit
     method virtual private add_declaration_body : dec -> unit
 
-    method private branch = new subcontext
+    method private branch = new subcontext tmpvar
 
     val mutable consistent = true
 
@@ -729,7 +728,7 @@ class virtual context =
       x#new_variable x#temp_name ty
 
     method private refer_sub ty e =
-      if not params.tmpvar || not consistent || is_simple e then e
+      if not tmpvar || not consistent || is_simple e then e
       else
         match e with
           (* Impure formula will not be represented by a variable *)
@@ -986,9 +985,9 @@ class virtual context =
       | Delay f   -> x#expand_delay f
       | e         -> raise (Invalid_formula ("expand",e))
   end
-and subcontext =
+and subcontext tmpvar =
   object (x)
-    inherit context
+    inherit context tmpvar
     val mutable assertion = LB true
     val mutable declarations = []
     method private add_assertion_body e = assertion <- e &^ assertion
@@ -1007,9 +1006,9 @@ and subcontext =
       ForAll(declarations,assertion =>^ e)
   end
 
-class virtual solver =
+class virtual solver tmpvar =
   object
-    inherit context
+    inherit context tmpvar
     method virtual init : unit
     method virtual set_logic : string -> unit
     method virtual check : unit
@@ -1130,10 +1129,10 @@ let rec smt_eval_int e =
 let test_sat str = Str.string_match (Str.regexp "sat.*") str 0
 let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 
-class virtual smt_lib_2_0 =
+class virtual smt_lib_2_0 tmpvar =
   object (x)
     inherit Io.t
-    inherit solver
+    inherit solver tmpvar
     inherit sexp_printer
     inherit parser
     inherit Proc.finalized (fun y -> y#exit)
@@ -1294,9 +1293,9 @@ class virtual smt_lib_2_0 =
       | d::ds -> x#puts "("; pr_d d; x#puts ") "; x#pr_ds ds;
   end
 
-let create_solver debug_to debug_in debug_out command options =
+let create_solver tmpvar debug_to debug_in debug_out command options =
   object (x)
-    inherit smt_lib_2_0
+    inherit smt_lib_2_0 tmpvar
     val main = new Proc.t command options
     val dout = if debug_out then new Io.pretty_wrap_out debug_to else (Io.null :> Io.printer)
     val din = if debug_in then new Io.pretty_wrap_out debug_to else (Io.null :> Io.printer)
@@ -1320,6 +1319,4 @@ let create_solver debug_to debug_in debug_out command options =
       din#endl;
       s
   end
-
-let debug_exp e = if params.debug2 then (prerr_exp e; e) else e
 

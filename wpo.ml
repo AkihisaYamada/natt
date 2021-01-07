@@ -56,10 +56,10 @@ class processor =
   let lookup f = lookup_name f#name in
 
   (* weight order *)
-  let interpreter = new Weight.pol_interpreter p in
+  let interpreter = new Weight.interpreter p in
   let wo = Weight.order p in
 
-(*** Precedence ***)
+  (*** Precedence ***)
   let pmin = LI 0 in
   let pmax = ref (LI 0) in
   let add_prec_default fname finfo =
@@ -112,7 +112,7 @@ class processor =
       else spo (lookup f) (lookup g)
   in
 
-(*** Usable rules ***)
+  (*** Usable rules ***)
   let usable =
     if (if p.dp then dg#minimal && p.usable else not p.remove_all) then
       fun i -> EV(usable_v i)
@@ -162,7 +162,7 @@ class processor =
         solver#add_variable (usable_p_v i) Bool;
   in
 
-(*** Status ***)
+  (*** Status ***)
   let add_perm =
     let sub_lex =
       let sub_perm fname finfo n =
@@ -288,7 +288,7 @@ class processor =
       | _ -> if finfo#base#arity > 1 then finfo#set_mset_status (sub fname);
   in
 
- (* collapsing argument filters *)
+  (* collapsing argument filters *)
   let add_collapse =
     if p.collapse then
       fun finfo n to_n ->
@@ -310,7 +310,7 @@ class processor =
       fun finfo _ _ -> finfo#set_collapse (LB false)
   in
 
-(*** preparing for function symbols ***)
+  (*** preparing for function symbols ***)
   let add_symbol fname (finfo:wpo_sym) =
     let n = finfo#base#arity in
     let to_n = int_list 1 n in
@@ -339,7 +339,7 @@ class processor =
     end;
   in
 
-(*** argument comparison ***)
+  (*** argument comparison ***)
   let lexperm_compargs =
     match p.Params.status_mode with
     | S_empty ->
@@ -394,7 +394,7 @@ class processor =
       fun _ _ _ _ _ -> weakly_ordered
   in
 
-(*** compargs for AC symbols ***)
+  (*** compargs for AC symbols ***)
 
   let small_head spo hinfo (WT(f,_,_)) =
     if f#is_var then LB false else strictly (spo hinfo (lookup f))

@@ -1,14 +1,8 @@
 TARG=./NaTT
 TARG_OPT=./NaTT.exe
-# Use ocamlfind, if it is found...
-ifneq ("$(shell which ocamlfind 2> /dev/null)","")
-	PACKS=ocamlgraph
-	OCAMLC=ocamlfind ocamlc -g -package $(PACKS)
-	OCAMLOPT=ocamlfind ocamlopt -package $(PACKS)
-else
-	OCAMLC=ocamlc -g -I +ocamlgraph
-	OCAMLOPT=ocamlopt -I +ocamlgraph
-endif
+PACKS=unix,str,ocamlgraph,xml-light
+OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg
 OCAMLDEP=ocamldep
 OCAMLYACC=ocamlyacc
 OCAMLLEX=ocamllex
@@ -23,7 +17,9 @@ OCAML_SRCS=\
 	read.ml \
 	util.ml \
 	io.ml \
-	xml.ml \
+	txtr.ml \
+	MyXML.ml \
+	WeightTemplate.ml \
 	matrix.ml \
 	params.ml \
 	proc.ml \
@@ -45,16 +41,11 @@ OCAML_SRCS=\
 	nonterm.ml \
 	main.ml
 
-OCAML_CMAS=\
-	graph.cma unix.cma str.cma
-
 OCAML_MLS=$(patsubst %.mll,%.ml,$(OCAML_SRCS:%.mly=%.ml))
 
 OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
 
 OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
-
-OCAML_CMXAS=$(OCAML_CMAS:%.cma=%.cmxa)
 
 ## If you need a statically linked binary
 #OCAMLFLAGS= -cclib '-static'
@@ -66,10 +57,10 @@ install: all
 	cp -f $(TARG_OPT) xtc2tpdb.xml /usr/local/bin/
 
 $(TARG_OPT): $(OCAML_CMXS)
-	$(OCAMLOPT) -o $@ $(OCAML_CMXAS) $(OCAMLFLAGS) $^
+	$(OCAMLOPT) -o $@ $(OCAMLFLAGS) $^
 
 $(TARG): $(OCAML_CMOS)
-	$(OCAMLC) -o $@ $(OCAML_CMAS) $(OCAMLFLAGS) $^
+	$(OCAMLC) -o $@ $(OCAMLFLAGS) $^
 
 # Common rules
 .SUFFIXES: .ml .mli .cmo .cmi .cmx .mll .mly

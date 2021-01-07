@@ -351,67 +351,67 @@ class trs =
         | _ -> ()
       in
       if Ths.mem "AC" ths || Ths.mem "A" ths then begin
-        Xml.enclose "Asymbols" (fun _ -> x#iter_syms iterer_A) pr;
+        MyXML.enclose "Asymbols" (fun _ -> x#iter_syms iterer_A) pr;
       end else begin
-        Xml.tag "Asymbols" pr; (* TODO refine CPF *)
+        MyXML.tag "Asymbols" pr; (* TODO refine CPF *)
       end;
       if Ths.mem "AC" ths || Ths.mem "C" ths then begin
-        Xml.enclose "Csymbols" (fun _ -> x#iter_syms iterer_C) pr;
+        MyXML.enclose "Csymbols" (fun _ -> x#iter_syms iterer_C) pr;
       end else begin
-        Xml.tag "Csymbols" pr;
+        MyXML.tag "Csymbols" pr;
       end;
     method output_xml_rules : 'a. (#Io.printer as 'a) -> unit =
-      Xml.enclose "rules" (fun pr ->
+      MyXML.enclose "rules" (fun pr ->
 (*        x#iter_rules (fun _ rule -> rule#output_xml pr)
 *)        for i = 1 to rule_cnt do
           (x#find_rule i)#output_xml pr;
         done
       )
     method output_xml : 'a. (#Io.printer as 'a) -> unit =
-      Xml.enclose "trs" x#output_xml_rules << x#output_xml_ths
+      MyXML.enclose "trs" x#output_xml_rules << x#output_xml_ths
 
     method output_xml_ho_signature : 'a. (#Io.printer as 'a) -> unit = fun pr ->
-      Xml.enter "higherOrderSignature" pr;
+      MyXML.enter "higherOrderSignature" pr;
       let first = ref true in
       let iterer_var (v:#sym) =
         if v#is_var then begin
           if !first then begin
-            Xml.enter "variableTypeInfo" pr;
+            MyXML.enter "variableTypeInfo" pr;
             first := false;
           end;
-          Xml.enclose "varDeclaration" (
+          MyXML.enclose "varDeclaration" (
             v#output_xml <<
-            Xml.enclose "type" (Xml.enclose "basic" (puts "o"))
+            MyXML.enclose "type" (MyXML.enclose "basic" (puts "o"))
           ) pr;
         end;
       in
       x#iter_syms iterer_var;
       if not !first then
-        Xml.leave "variableTypeInfo" pr;
+        MyXML.leave "variableTypeInfo" pr;
       first := true;
       let iterer_fun (f:#sym) =
         if f#is_fun then begin
           if !first then begin
-            Xml.enter "functionSymbolTypeInfo" pr;
+            MyXML.enter "functionSymbolTypeInfo" pr;
             first := false;
           end;
-          Xml.enter "funcDeclaration" pr;
+          MyXML.enter "funcDeclaration" pr;
           f#output_xml pr;
-          Xml.enter "typeDeclaration" pr;
+          MyXML.enter "typeDeclaration" pr;
           for i = 0 to f#arity do
-            Xml.enclose "type" (Xml.enclose "basic" (putc 'o')) pr;
+            MyXML.enclose "type" (MyXML.enclose "basic" (putc 'o')) pr;
           done;
-          Xml.leave "typeDeclaration" pr;
-          Xml.leave "funcDeclaration" pr;
+          MyXML.leave "typeDeclaration" pr;
+          MyXML.leave "funcDeclaration" pr;
         end;
       in
       x#iter_syms iterer_fun;
       if not !first then begin
-        Xml.leave "functionSymbolTypeInfo" pr;
+        MyXML.leave "functionSymbolTypeInfo" pr;
       end;
-      Xml.leave "higherOrderSignature" pr;
+      MyXML.leave "higherOrderSignature" pr;
     method output_xml_ho : 'a. (#Io.printer as 'a) -> unit =
-      Xml.enclose "trs" ( x#output_xml_rules << x#output_xml_ho_signature )
+      MyXML.enclose "trs" ( x#output_xml_rules << x#output_xml_ho_signature )
   end;;
 
 type path = int * (int list)
