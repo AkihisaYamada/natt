@@ -1,3 +1,13 @@
+let verbosity = Array.make 7 false
+
+let warning m = if verbosity.(0) then m Io.cerr else ()
+let comment m = if verbosity.(1) then m Io.cerr else ()
+let problem m = if verbosity.(2) then m Io.cerr else ()
+let proof m = if verbosity.(3) then m Io.cerr else ()
+let log m = if verbosity.(4) then m Io.cerr else ()
+let debug m = if verbosity.(5) then m Io.cerr else ()
+let debug2 m = if verbosity.(6) then m Io.cerr else ()
+
 module Int =
   struct
     type t = int
@@ -81,11 +91,11 @@ let begins s t =
   sub 0
 
 (* direct product of lists *)
-let map_prod f =
+let list_prod_filter f =
   let rec sub1 zs x =
     function
     | []  -> zs
-    | y::ys -> sub1 (f x y::zs) x ys
+    | y::ys -> sub1 (match f x y with Some z -> z::zs | None -> zs) x ys
   in
   let rec sub2 zs xs ys =
     match xs with
@@ -93,8 +103,14 @@ let map_prod f =
     | x::xs -> sub2 (sub1 zs x ys) xs ys
   in
   sub2 []
-let list_product lists =
-  List.fold_right (map_prod (fun x xs -> x::xs)) lists [[]]
+
+let list_prod f = list_prod_filter (fun x y -> Some (f x y))
+
+let list_times = list_prod (,)
+
+let list_product_fold_filter f lists = List.fold_right (list_prod_filter f) lists [[]]
+
+let list_product lists = List.fold_right (list_prod (::)) lists [[]]
 
 (* length n sublists *)
 let rec subsequences xs =

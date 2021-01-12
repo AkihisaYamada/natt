@@ -1,3 +1,4 @@
+open Util
 open WeightTemplate
 
 let version = "1.8";
@@ -358,32 +359,26 @@ while !i < argc do
       | "naive" -> params.rdp_mode <- RDP_naive;
       | _ -> erro arg;
     )
-    | "V", None ->
-      params.warning <- false;
-      params.comment <- false;
-      params.problem <- false;
-      params.proof <- false;
     | "v", Some s -> (
       match s with
-      | "p" | "problem" -> params.problem <- true;
-      | "l" | "log" -> params.log <- true;
-      | "d" | "debug" -> params.debug <- true;
-      | "d2" | "debug2" -> params.debug2 <- true;
+      | "p" | "problem" -> verbosity.(3) <- true;
+      | "l" | "log" -> verbosity.(4) <- true;
+      | "d" | "debug" -> verbosity.(5) <- true;
+      | "d2" | "debug2" -> verbosity.(6) <- true;
       | _ ->
         let v = safe_atoi s arg in
-        params.comment <- v > 0;
-        params.problem <- v > 1;
-        params.proof <- v > 2;
-        params.log <- v > 3;
-        params.debug <- v > 4;
-        params.debug2 <- v > 5;
+        for i = 0 to Array.length verbosity - 1 do
+          verbosity.(i) <- v > i;
+        done
     )
+    | "V", None ->
+      for i = 0 to Array.length verbosity - 1 do
+        verbosity.(i) <- false;
+      done
     | "x", None ->
-      params.result <- false;
-      params.warning <- false;
-      params.comment <- false;
-      params.problem <- false;
-      params.proof <- false;
+      for i = 0 to Array.length verbosity - 1 do
+        verbosity.(i) <- false;
+      done;
       params.cpf <- true;
       params.naive_C <- true;
       params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
@@ -584,26 +579,8 @@ if !default then begin
   if not params.cpf then params.max_loop <- 3;
 end
 
-type comment_type =
-| CMT_error
-| CMT_frame
-| CMT_proof
-| CMT_debug
-
-let guard test os =
-  if test then
-    fun proc -> proc os
-  else
-    fun _ -> ()
-let warning = guard params.warning Io.cerr
-let comment = guard params.comment Io.cerr
-let problem = guard params.problem Io.cerr
 let cpf =
   if params.cpf then
     let os = new Io.pretty_wrap_out params.cpf_to in
     fun proc -> proc os
   else fun _ -> ()
-let proof = guard params.proof Io.cerr
-let log = guard params.log Io.cerr
-let debug = guard params.debug Io.cerr
-let debug2 = guard params.debug2 Io.cerr

@@ -1,3 +1,5 @@
+open Util
+
 exception Dead of string
 
 class finalized finalizer =
