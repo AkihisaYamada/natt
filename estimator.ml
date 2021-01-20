@@ -16,7 +16,7 @@ let connects_and a b =
 	| Connects aa, Connects bb -> Connects (aa@bb)
 
 (* symbol transition graph *)
-module SymG = Graph.Imperative.Digraph.Concrete(StrHashed)
+module SymG = Graph.Imperative.Digraph.Concrete(Hashed(String))
 module SymGoper = Graph.Oper.I(SymG)
 
 let output_path path os =

@@ -90,6 +90,7 @@ type order_params = {
   mutable dp : bool;
   mutable w_params : w_params array;
   mutable base_ty : Smt.ty;
+  mutable temp_var : bool;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -126,6 +127,7 @@ let nonmonotone p =
 let order_default = {
   dp = false;
   base_ty = Smt.Real;
+  temp_var = true;
   w_params = Array.make 0 w_default;
   ext_lex = false;
   ext_mset = false;

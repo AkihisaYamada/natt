@@ -58,13 +58,13 @@ let add_marked_symbols_ac trs =
 
 
 
-module DG = Graph.Imperative.Digraph.Concrete(Int)
+module DG = Graph.Imperative.Digraph.Concrete(Hashed(Int))
 module Components = Graph.Components.Make(DG)
 module Topological = Graph.Topological.Make(DG)
 
 module SubDG = struct
 	type t = DG.t * IntSet.t
-	module V = Int
+	module V = Hashed(Int)
 	let iter_vertex f (g,vs) = IntSet.iter f vs
 	let iter_succ f (g,vs) = DG.iter_succ (fun v2 -> if IntSet.mem v2 vs then f v2) g
 	let fold_succ f (g,vs) v a =

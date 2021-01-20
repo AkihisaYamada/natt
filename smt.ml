@@ -642,13 +642,13 @@ let smt_xor e1 e2 =
   | _ ->
     match e1 =^ e2 with LB b -> LB (not b) | _ -> Xor(e1,e2)
 
+let smt_conjunction = List.fold_left (&^) (LB true)
+let smt_disjunction = List.fold_left (|^) (LB false)
 
 let smt_for_all f = List.fold_left (fun ret e -> ret &^ f e) (LB true)
-
-let smt_for_all2 f = List.fold_left2 (fun ret e1 e2 -> ret &^ f e1 e2) (LB true)
-
 let smt_exists f = List.fold_left (fun ret e -> ret |^ f e) (LB false)
 
+let smt_for_all2 f = List.fold_left2 (fun ret e1 e2 -> ret &^ f e1 e2) (LB true)
 let smt_exists2 f = List.fold_left2 (fun ret e1 e2 -> ret |^ f e1 e2) (LB false)
 
 let smt_mod e1 e2 = Mod(e1,e2)

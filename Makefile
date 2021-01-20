@@ -15,8 +15,8 @@ OCAML_SRCS=\
 	trs_lexer.mll \
 	trs_sem.ml \
 	read.ml \
-	util.ml \
 	io.ml \
+	util.ml \
 	txtr.ml \
 	MyXML.ml \
 	WeightTemplate.ml \

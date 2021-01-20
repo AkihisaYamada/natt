@@ -113,14 +113,14 @@ let rule_remove (trs : #trs) next =
       let rules = trs#fold_rules (fun i _ is -> i::is) [] in
       comment (puts "Number of strict rules: " << put_int trs#get_size_strict << endl);
       if trs#get_size_strict = 0 then (
-        cpf (Xml.tag "acRIsEmpty");
+        cpf (MyXML.tag "acRIsEmpty");
         YES
       ) else (
         if remove_strict rules then (
-          cpf (Xml.enter "acTerminationProof");
+          cpf (MyXML.enter "acTerminationProof");
           let ret = loop () in
-          cpf(Xml.leave "acTerminationProof");
-          cpf (Xml.leave "acRuleRemoval");
+          cpf(MyXML.leave "acTerminationProof");
+          cpf (MyXML.leave "acRuleRemoval");
           ret
         ) else (
           comment (puts " failed." << endl);
@@ -213,9 +213,9 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
   in
 
   let rec dg_proc n_reals n_dps sccs =
-    cpf (Xml.enter "acDPTerminationProof" << Xml.enter "acDepGraphProc");
+    cpf (MyXML.enter "acDPTerminationProof" << MyXML.enter "acDepGraphProc");
     let ret = loop n_reals n_dps sccs in
-    cpf (Xml.leave "acDepGraphProc" << Xml.leave "acDPTerminationProof");
+    cpf (MyXML.leave "acDepGraphProc" << MyXML.leave "acDPTerminationProof");
     ret
   and loop n_reals n_dps sccs =
     comment (puts "Number of SCCs: " << put_int n_reals << puts ", DPs: " << put_int n_dps << endl);
@@ -223,22 +223,22 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
   and loop_silent n_reals n_dps = function
     | [] -> YES
     | scc::sccs ->
-      cpf (Xml.enter "component");
-      cpf (Xml.enclose "dps" (Xml.enclose "rules" (dg#output_scc_xml scc)));
+      cpf (MyXML.enter "component");
+      cpf (MyXML.enclose "dps" (MyXML.enclose "rules" (dg#output_scc_xml scc)));
       if dg#triv_scc scc then (
-        cpf (Xml.enclose_inline "realScc" (puts "false"));
-        cpf (Xml.leave "component");
+        cpf (MyXML.enclose_inline "realScc" (puts "false"));
+        cpf (MyXML.leave "component");
         loop_silent n_reals n_dps sccs
       ) else (
         comment (puts "  SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
-        cpf (Xml.enclose_inline "realScc" (puts "true"));
+        cpf (MyXML.enclose_inline "realScc" (puts "true"));
         if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
           comment (puts "only weak rules." << endl);
-          cpf (Xml.enclose "acDPTerminationProof" (Xml.tag "acTrivialProc"));
-          cpf (Xml.leave "component");
+          cpf (MyXML.enclose "acDPTerminationProof" (MyXML.tag "acTrivialProc"));
+          cpf (MyXML.leave "component");
           loop (n_reals - 1) (n_dps - List.length scc) sccs
         ) else (
-          cpf (Xml.enter "acDPTerminationProof");
+          cpf (MyXML.enter "acDPTerminationProof");
           let sccref = ref scc in
           let n_dps = n_dps - List.length scc in
           let n_reals = n_reals - 1 in
@@ -249,15 +249,15 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
             let subsccs = scc_sorter subsccs in
             let n_subdps = count_dps real_subsccs in
             let ret = dg_proc (n_reals + List.length real_subsccs) (n_dps + n_subdps) subsccs in
-            cpf (Xml.leave "acRedPairProc" << Xml.leave "acDPTerminationProof");
-            cpf (Xml.leave "component");
+            cpf (MyXML.leave "acRedPairProc" << MyXML.leave "acDPTerminationProof");
+            cpf (MyXML.leave "component");
             if ret = YES then loop_silent n_reals n_dps sccs else ret
           ) else (
             comment (puts "failed." << endl);
             Nonterm.find_loop params.max_loop trs estimator dg scc;
-            cpf (Xml.enclose "unknownProof" (Xml.enclose "description" (puts "Failed!")));
-            cpf (Xml.leave "acDPTerminationProof");
-            cpf (Xml.leave "component");
+            cpf (MyXML.enclose "unknownProof" (MyXML.enclose "description" (puts "Failed!")));
+            cpf (MyXML.leave "acDPTerminationProof");
+            cpf (MyXML.leave "component");
             MAYBE
           )
         )
@@ -299,28 +299,28 @@ let dp_prove (trs : #trs) =
   in
   debug estimator#output;
 
-  cpf (Xml.enter "acDependencyPairs");
-(*  cpf (Xml.enclose "markedSymbols" (fun os -> output_string os "true");
+  cpf (MyXML.enter "acDependencyPairs");
+(*  cpf (MyXML.enclose "markedSymbols" (fun os -> output_string os "true");
 *)  let dg = new dg trs estimator in
   dg#init;
   cpf (
-    Xml.enclose "equations" (
-      Xml.enclose "rules" (fun pr ->
+    MyXML.enclose "equations" (
+      MyXML.enclose "rules" (fun pr ->
         trs#iter_rules (fun _ rule -> if rule#is_weak then rule#output_xml pr;)
       )
     ) <<
-    Xml.enclose "dpEquations" (
-      Xml.enclose "rules" (fun pr ->
+    MyXML.enclose "dpEquations" (
+      MyXML.enclose "rules" (fun pr ->
         dg#iter_dps (fun _ dp -> if dp#is_weak then dp#output_xml pr;)
       )
     ) <<
-    Xml.enclose "dps" (
-      Xml.enclose "rules" (fun pr ->
+    MyXML.enclose "dps" (
+      MyXML.enclose "rules" (fun pr ->
         dg#iter_dps (fun _ dp -> if dp#is_strict then dp#output_xml pr;)
       )
     ) <<
-    Xml.enclose "extensions" (
-      Xml.enclose "rules" (fun (pr:#printer) ->
+    MyXML.enclose "extensions" (
+      MyXML.enclose "rules" (fun (pr:#printer) ->
         let iterer i (rule:rule) =
           if rule#is_strict && trs#weakly_defines (root rule#l) then begin
             List.iter (fun (rule:#rule) -> rule#output_xml pr) (extended_rules rule);
@@ -335,7 +335,7 @@ let dp_prove (trs : #trs) =
   log (dg#output_debug << endl);
 
   let ret = dp_remove trs estimator dg in
-  cpf (Xml.leave "acDependencyPairs");
+  cpf (MyXML.leave "acDependencyPairs");
   ret;;
 
 
@@ -343,9 +343,9 @@ let dp_prove (trs : #trs) =
 let prove_termination (trs : #trs) =
   problem (puts "Input TRS:" << endl << enter 4 << trs#output << leave 4);
   cpf (
-    Xml.enclose_inline "cpfVersion" (puts "2.2") <<
-    Xml.enter "proof" <<
-    Xml.enter "acTerminationProof"
+    MyXML.enclose_inline "cpfVersion" (puts "2.2") <<
+    MyXML.enter "proof" <<
+    MyXML.enter "acTerminationProof"
   );
 
   let ret =
@@ -366,13 +366,13 @@ let prove_termination (trs : #trs) =
     | Nonterm -> NO
   in
   cpf (
-    Xml.leave "acTerminationProof" <<
-    Xml.leave "proof" <<
-    Xml.enclose "origin" (
-      Xml.enclose "proofOrigin" (
-        Xml.enclose "tool" (
-          Xml.enclose_inline "name" (puts "NaTT") <<
-          Xml.enclose_inline "version" (puts version)
+    MyXML.leave "acTerminationProof" <<
+    MyXML.leave "proof" <<
+    MyXML.enclose "origin" (
+      MyXML.enclose "proofOrigin" (
+        MyXML.enclose "tool" (
+          MyXML.enclose_inline "name" (puts "NaTT") <<
+          MyXML.enclose_inline "version" (puts version)
         )
       )
     )
@@ -399,7 +399,7 @@ object (x)
     cpf (
       puts "<?xml version=\"1.0\"?>" << endl <<
       puts "<?xml-stylesheet type=\"text/xsl\" href=\"cpfHTML.xsl\"?>" <<
-      Xml.enter "certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\""
+      MyXML.enter "certificationProblem xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cpf.xsd\""
     );
 
     begin match params.mode with
@@ -428,7 +428,7 @@ object (x)
             err "Rule removal processor must be monotone";
         ) params.orders_removal;
       let ans = prove_termination trs in
-        cpf (Xml.leave "certificationProblem" << endl);
+        cpf (MyXML.leave "certificationProblem" << endl);
       if params.result then
         print_endline
         (  match ans with

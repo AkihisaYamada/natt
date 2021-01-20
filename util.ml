@@ -8,9 +8,9 @@ let log m = if verbosity.(4) then m Io.cerr else ()
 let debug m = if verbosity.(5) then m Io.cerr else ()
 let debug2 m = if verbosity.(6) then m Io.cerr else ()
 
-module Int =
+module Hashed = functor (Base : sig type t end) ->
   struct
-    type t = int
+    type t = Base.t
     let compare = compare
     let hash = Hashtbl.hash
     let equal = (=)
@@ -19,14 +19,6 @@ module Int =
 module IntSet = Set.Make(Int)
 
 module StrSet = Set.Make(String)
-
-module StrHashed =
-  struct
-    type t = string
-    let compare = compare
-    let hash = Hashtbl.hash
-    let equal = (=)
-  end
 
 module LexList = functor (Elt : Map.OrderedType) ->
   struct
@@ -106,11 +98,11 @@ let list_prod_filter f =
 
 let list_prod f = list_prod_filter (fun x y -> Some (f x y))
 
-let list_times = list_prod (,)
+let list_times xs ys = list_prod (fun x y -> (x,y)) xs ys (* don't eta-expand as OCaml's type inference won't work *)
 
-let list_product_fold_filter f lists = List.fold_right (list_prod_filter f) lists [[]]
+let list_product_fold_filter f = List.fold_right (list_prod_filter f)
 
-let list_product lists = List.fold_right (list_prod (::)) lists [[]]
+let list_product lists = List.fold_right (list_prod (fun x y -> x :: y)) lists [[]]
 
 (* length n sublists *)
 let rec subsequences xs =

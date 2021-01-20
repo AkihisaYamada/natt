@@ -85,69 +85,69 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
     (* Print CPF proof *)
     method output_cpf : 'pr. (#printer as 'pr) -> unit =
       let put_status finfo pr =
-        Xml.enter "status" pr;
+        MyXML.enter "status" pr;
         let n = finfo#base#arity in
         for j = 1 to n do
           for i = 1 to n do
             if solver#get_bool (finfo#perm i j) then begin
-              Xml.enclose_inline "position" (put_int i) pr;
+              MyXML.enclose_inline "position" (put_int i) pr;
             end;
           done;
         done;
-        Xml.leave "status" pr;
+        MyXML.leave "status" pr;
       in
       let put_prec finfo =
-        Xml.enclose "precedence" (put_int (smt_eval_int (solver#get_value finfo#prec)))
+        MyXML.enclose "precedence" (put_int (smt_eval_int (solver#get_value finfo#prec)))
       in
       let pr_precstat pr _ (finfo:wpo_sym) =
-        Xml.enclose "precedenceStatusEntry" (
+        MyXML.enclose "precedenceStatusEntry" (
           finfo#base#output_xml <<
-          Xml.enclose_inline "arity" (put_int finfo#base#arity) <<
+          MyXML.enclose_inline "arity" (put_int finfo#base#arity) <<
           put_prec finfo <<
           put_status finfo
         ) pr
       in
       let put_inte e =
-        Xml.enclose_inline "coefficient" (Xml.enclose_inline "integer" (put_int (smt_eval_int e)))
+        MyXML.enclose_inline "coefficient" (MyXML.enclose_inline "integer" (put_int (smt_eval_int e)))
       in
       let put_vec es =
-        Xml.enclose "vector" (fun pr -> List.iter (fun e -> put_inte e pr) es)
+        MyXML.enclose "vector" (fun pr -> List.iter (fun e -> put_inte e pr) es)
       in
       let put_mat ess =
-        Xml.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) (Matrix.trans ess))
+        MyXML.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) (Matrix.trans ess))
       in
       let put_coef e =
-        Xml.enclose "polynomial" (put_inte e)
+        MyXML.enclose "polynomial" (put_inte e)
       in
       let pr_interpret pr _ (finfo:wpo_sym) =
-        Xml.enter "interpret" pr;
+        MyXML.enter "interpret" pr;
 (*
         finfo#base#output_xml pr;
         let n = finfo#base#arity in
-        Xml.enclose_inline "arity" (put_int n) pr;
+        MyXML.enclose_inline "arity" (put_int n) pr;
         let sc =
           if finfo#base#ty = Fun then finfo#subterm_coef
           else k_comb (finfo#subterm_coef 1)
         in
         let put_sum pr =
-          Xml.enter "polynomial" pr;
-          Xml.enter "sum" pr;
+          MyXML.enter "polynomial" pr;
+          MyXML.enter "sum" pr;
           for i = 1 to n do
             let coef = solver#get_value (sc i) in
             if is_zero coef then begin
               (* nothing *)
             end else if is_one coef then begin
-              Xml.enclose "polynomial" (
-                Xml.enclose_inline "variable" (
+              MyXML.enclose "polynomial" (
+                MyXML.enclose_inline "variable" (
                   put_int i
                 )
               ) pr;
             end else begin
-              Xml.enclose "polynomial" (
-                Xml.enclose "product" (
+              MyXML.enclose "polynomial" (
+                MyXML.enclose "product" (
                   put_coef coef <<
-                  Xml.enclose "polynomial" (
-                    Xml.enclose_inline "variable" (
+                  MyXML.enclose "polynomial" (
+                    MyXML.enclose_inline "variable" (
                       put_int i
                     )
                   )
@@ -156,22 +156,22 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
             end;
           done;
           put_coef (solver#get_value finfo#weight) pr;
-          Xml.leave "sum" pr;
-          Xml.leave "polynomial" pr;
+          MyXML.leave "sum" pr;
+          MyXML.leave "polynomial" pr;
         in
         if finfo#max then begin
           let usemax = not (solver#get_bool finfo#collapse) in
           if usemax then begin
-            Xml.enter "polynomial" pr;
-            Xml.enter "max" pr;
+            MyXML.enter "polynomial" pr;
+            MyXML.enter "max" pr;
           end;
           for i = 1 to n do
             let pen = solver#get_value (finfo#subterm_penalty i) in
             if solver#get_bool (finfo#maxfilt i) then begin
-              Xml.enclose "polynomial" (
-                Xml.enclose "sum" (
-                  Xml.enclose "polynomial" (
-                    Xml.enclose_inline "variable" (put_int i)
+              MyXML.enclose "polynomial" (
+                MyXML.enclose "sum" (
+                  MyXML.enclose "polynomial" (
+                    MyXML.enclose_inline "variable" (put_int i)
                   ) <<
                   put_coef pen
                 )
@@ -182,12 +182,12 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
             put_sum pr;
           end;
           if usemax then begin
-            Xml.leave "max" pr;
-            Xml.leave "polynomial" pr;
+            MyXML.leave "max" pr;
+            MyXML.leave "polynomial" pr;
           end;
         end else if p.w_neg && not (solver#get_bool finfo#is_const) then begin
-          Xml.enclose "polynomial" (
-            Xml.enclose "max" (
+          MyXML.enclose "polynomial" (
+            MyXML.enclose "max" (
               put_sum <<
               put_coef (solver#get_value mcw)
             )
@@ -196,42 +196,42 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
           put_sum pr;
         end;
 *)
-        Xml.leave "interpret" pr;
+        MyXML.leave "interpret" pr;
       in
       fun pr ->
-        Xml.enter "orderingConstraintProof" pr;
-        Xml.enter "redPair" pr;
+        MyXML.enter "orderingConstraintProof" pr;
+        MyXML.enter "redPair" pr;
         if prec_is_used || status_is_used then begin
-          Xml.enter "weightedPathOrder" pr;
-          Xml.enter "precedenceStatus" pr;
+          MyXML.enter "weightedPathOrder" pr;
+          MyXML.enter "precedenceStatus" pr;
           Hashtbl.iter (pr_precstat pr) sigma;
-          Xml.leave "precedenceStatus" pr;
+          MyXML.leave "precedenceStatus" pr;
         end;
-        Xml.enter "interpretation" pr;
-        Xml.enclose "type" (
+        MyXML.enter "interpretation" pr;
+        MyXML.enclose "type" (
           if dim > 1 then
-            Xml.enclose "matrixInterpretation" (
-              Xml.enclose_inline "domain" (Xml.tag "naturals") <<
-              Xml.enclose_inline "dimension" (put_int dim) <<
-              Xml.enclose_inline "strictDimension" (puts "1")
+            MyXML.enclose "matrixInterpretation" (
+              MyXML.enclose_inline "domain" (MyXML.tag "naturals") <<
+              MyXML.enclose_inline "dimension" (put_int dim) <<
+              MyXML.enclose_inline "strictDimension" (puts "1")
             )
           else
-            Xml.enclose "polynomial" (
-              Xml.enclose_inline "domain" (Xml.tag "naturals") <<
-              Xml.enclose_inline "degree" (puts "1")
+            MyXML.enclose "polynomial" (
+              MyXML.enclose_inline "domain" (MyXML.tag "naturals") <<
+              MyXML.enclose_inline "degree" (puts "1")
             )
         ) pr;
         Hashtbl.iter (pr_interpret pr) sigma;
-        Xml.leave "interpretation" pr;
+        MyXML.leave "interpretation" pr;
         if prec_is_used || status_is_used then begin
-          Xml.leave "weightedPathOrder" pr;
+          MyXML.leave "weightedPathOrder" pr;
         end;
-        Xml.leave "redPair" pr;
-        Xml.leave "orderingConstraintProof" pr;
+        MyXML.leave "redPair" pr;
+        MyXML.leave "orderingConstraintProof" pr;
     method put_usables_cpf : 'pr. (int -> exp) -> (int * rule) list -> (#printer as 'pr) -> unit =
       fun usable usables pr ->
-        Xml.enclose "usableRules" (
-          Xml.enclose "rules" (fun (pr:#printer) ->
+        MyXML.enclose "usableRules" (
+          MyXML.enclose "rules" (fun (pr:#printer) ->
             let iterer (i, (rule:rule)) =
               if solver#get_bool (usable i) then rule#output_xml pr;
             in

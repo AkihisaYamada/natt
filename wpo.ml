@@ -36,16 +36,12 @@ class processor =
   let ge_p_v i = "geP" ^ string_of_int i in
   let supply_index v i = v ^ "_" ^ string_of_int i in
   fun p (trs : trs) (estimator : Estimator.t) (dg : dg) ->
-  let weight_ty =
-    match p.base_ty with
-    | TY_int -> Int
-    | TY_real -> Real
-  in
+  let weight_ty = p.base_ty in
   let usables = ref [] in
   let dplist = ref [] in
   let solver =
     let (tool,options) = p.smt_tool in
-    create_solver p.peek_to p.peek_in p.peek_out tool options
+    create_solver p.temp_var p.peek_to p.peek_in p.peek_out tool options
   in
   let () = solver#set_base_ty weight_ty in
   (* Signature as the set of function symbols with their informations. *)
@@ -57,7 +53,7 @@ class processor =
 
   (* weight order *)
   let interpreter = new Weight.interpreter p in
-  let wo = Weight.order p in
+  let wo = Weight.order_vec p solver in
 
   (*** Precedence ***)
   let pmin = LI 0 in
@@ -131,6 +127,8 @@ class processor =
     else
       k_comb (LB true)
   in
+  let depend finfo = finfo#permed in
+  let depend_w finfo i = smt_not (interpreter#constant_at finfo#base i) in
   let rec set_usable filt usable s =
     smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
   and set_usable_inner filt usable (Node(f,ss)) =
@@ -259,10 +257,10 @@ class processor =
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
-          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.addend_mode <> W_none) p.w_params
+(*          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.addend_mode <> W_none) p.w_params
           then begin
             sub_c fname finfo;
-          end else begin
+          end else *) begin
             (* in this case, we cannot ensure monotonicity... *)
             finfo#set_status_mode S_empty;
           end
@@ -298,14 +296,7 @@ class processor =
           let v = "col_" ^ f#name in
           solver#add_variable v Bool;
           finfo#set_collapse (EV v);
-          solver#add_assertion (EV v =>^ interpreter#no_weight f);
-          solver#add_assertion (EV v =>^ ES1(List.map finfo#permed to_n));
-          for i = 1 to f#arity do
-            solver#add_assertion
-              (EV v =>^ (finfo#permed i =^ interpreter#depend_on f i));
-            solver#add_assertion
-              (smt_not (EV v) |^ smt_not (finfo#permed i) |^ interpreter#strict_linear_at f i);
-          done
+          solver#add_assertion (EV v =>^ (smt_exists (fun i -> interpreter#collapses_at f i &^ finfo#permed i) to_n));
     else
       fun finfo _ _ -> finfo#set_collapse (LB false)
   in
@@ -793,7 +784,7 @@ object (x)
         let w = Weight.smult (LI coeff) w in
         Weight.add acc w
       in
-      let rw = prule#fold_rs folder (Array.make (Array.length p.w_params) (Weight.ets_smt (LI 0))) in
+      let rw = prule#fold_rs folder (Array.make (Array.length p.w_params) Weight.zero_w) in
       let (ge,gt) = split (wo lw rw) solver in
       if p.remove_all then begin
         solver#add_assertion gt;
@@ -815,8 +806,6 @@ object (x)
       let (WT(_,_,rw) as ra) = interpreter#annotate solver rule#r in
       debug2 (puts "." << flush);
       if p.dp then begin
-        let depend finfo = finfo#permed in
-        let depend_w finfo = interpreter#depend_on finfo#base in
         if p.usable_w then begin
           solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
           solver#add_assertion (usable i =>^ set_usable depend usable rule#r);
@@ -863,10 +852,10 @@ object (x)
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
       if p.usable_w then begin
-        solver#add_assertion (set_usable (fun finfo -> interpreter#depend_on finfo#base) usable_w dp#r);
-        solver#add_assertion (set_usable (fun finfo -> finfo#permed) usable dp#r);
+        solver#add_assertion (set_usable depend_w usable_w dp#r);
+        solver#add_assertion (set_usable depend usable dp#r);
       end else begin
-        let filt finfo i = interpreter#depend_on finfo#base i |^ finfo#permed i in
+        let filt finfo i = smt_not (interpreter#constant_at finfo#base i) |^ finfo#permed i in
         solver#add_assertion (set_usable filt usable dp#r);
       end;
     end;
@@ -926,8 +915,8 @@ object (x)
       solver#check;
       comment (puts " succeeded." << endl);
       proof (x#output_proof << x#output_usables usable !usables);
-      cpf (Xml.enter "acRedPairProc"); (* CAUTION: manually leave later *)
-      cpf (x#output_cpf << Xml.enter "dps" << Xml.enter "rules");
+      cpf (MyXML.enter "acRedPairProc"); (* CAUTION: manually leave later *)
+      cpf (x#output_cpf << MyXML.enter "dps" << MyXML.enter "rules");
       let folder i (cnt,rem_dps) =
         if solver#get_bool (EV(gt_v i)) then (
           cpf ((dg#find_dp i)#output_xml);
@@ -938,7 +927,7 @@ object (x)
       in
       let (cnt,rem_dps) = List.fold_right folder !sccref (0,[]) in
       proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
-      cpf (Xml.leave "rules" << Xml.leave "dps" << x#put_usables_cpf usable !usables);
+      cpf (MyXML.leave "rules" << MyXML.leave "dps" << x#put_usables_cpf usable !usables);
       x#pop;
       cnt
     with Inconsistent ->
@@ -965,9 +954,9 @@ object (x)
       comment (putc '.' << flush);
       solver#check;
 
-      cpf (Xml.enter "acRuleRemoval"); (* CAUTION: enter but won't leave *)
+      cpf (MyXML.enter "acRuleRemoval"); (* CAUTION: enter but won't leave *)
       cpf x#output_cpf;
-      cpf (Xml.enter "trs" << Xml.enter "rules");
+      cpf (MyXML.enter "trs" << MyXML.enter "rules");
       if p.remove_all then begin
         comment (puts " removes all." << endl);
         List.iter trs#remove_rule current_usables;
@@ -992,7 +981,7 @@ object (x)
         comment endl;
       end;
       proof x#output_proof;
-      cpf (Xml.leave "rules" << Xml.leave "trs");
+      cpf (MyXML.leave "rules" << MyXML.leave "trs");
       x#pop;
       true
     with Inconsistent -> x#pop; false
