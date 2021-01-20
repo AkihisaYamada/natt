@@ -48,19 +48,19 @@ let refer_w solver =
 
 let refer_vec solver = Array.map (refer_w solver)
 
-let put_w var =
+let put_w var : 'a t -> #printer -> unit =
   let paren l l' m = if l <= l' then m else putc '(' << m << putc ')' in
   let rec sub l w =
     match w with
     | BVar v -> var v
     | Smt e -> put_exp e
-    | Max ws -> puts "max{ " << punct_list (sub 0) (puts ", ") ws << puts " }"
-    | Sum ws -> paren l 1 (punct_list (sub 1) (puts " + ") ws)
-    | Prod ws -> paren l 2 (punct_list (sub 2) (puts " * ") ws)
+    | Max ws -> punct_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
+    | Sum ws -> paren l 1 (punct_list (sub 1) (puts " + ") (putc '0') ws)
+    | Prod ws -> paren l 2 (punct_list (sub 2) (puts " * ") (putc '1') ws)
   in
-  sub 0
+  fun w os -> (sub 0 w) os
 
-let put_vec var wa : #Io.outputter -> unit = puts "[ " << punct_list (put_w var) (puts "; ") (Array.to_list wa) << puts " ]"
+let put_vec var wa = puts "[ " << punct_list (put_w var) (puts "; ") (puts "-") (Array.to_list wa) << puts " ]"
 
 let eq_0_w =
   let rec sub w =
@@ -160,7 +160,7 @@ let weak_simple_on_w x =
 
 let vec_of_sym p solver f =
   let ty = p.base_ty in
-  let to_n = int_list 1 f#arity in
+  let to_n = int_list 0 (f#arity-1) in
   let rec sub k t =
     match t with
     | Node(WeightTemplate.Var,[]) -> Smt (solver#temp_variable ty)
@@ -392,11 +392,11 @@ class interpreter p =
       debug2 (endl << put_term t << puts " weight: " << put_vec put_var vec);
       WT(f, ts, refer_vec solver vec)
 
-    method output_sym : 't 'f 'o. (#solver as 't) -> (#sym as 'f) -> (#outputter as 'o) -> unit =
+    method output_sym : 't 'f 'o. (#solver as 't) -> (#sym as 'f) -> (#printer as 'o) -> unit =
       fun solver f os -> put_vec put_arg (eval_vec solver (x#encode_sym f)) os
 
-    method output_sym_template : 'o 'f. (#sym as 'f) -> (#outputter as 'o) -> unit =
-      fun f -> put_vec put_arg (x#encode_sym f)
+    method output_sym_template : 'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
+      fun f -> f#output << puts ": " << put_vec put_arg (x#encode_sym f)
   end
 
 

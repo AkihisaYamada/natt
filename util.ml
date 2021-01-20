@@ -56,14 +56,14 @@ let foldl_nonnil z one f =
   | [] -> z
   | x :: xs -> sub (one x) xs
 
-let punct_list elem punc list os =
+let punct_list elem punc emp list os =
   let rec sub = function
     | [] -> ()
-    | x::xs -> punc os; elem x; sub xs
+    | x::xs -> punc os; elem x os; sub xs
   in
   match list with
-  | [] -> ()
-  | x::xs -> elem x; sub xs
+  | [] -> emp os
+  | x::xs -> elem x os; sub xs
 
 let rec list_remove f =
   function

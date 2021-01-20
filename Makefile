@@ -1,8 +1,8 @@
 TARG=./NaTT
 TARG_OPT=./NaTT.exe
 PACKS=unix,str,ocamlgraph,xml-light
-OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg
-OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg
+OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg -g
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg -g
 OCAMLDEP=ocamldep
 OCAMLYACC=ocamlyacc
 OCAMLLEX=ocamllex

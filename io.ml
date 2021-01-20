@@ -123,6 +123,7 @@ let putc c pr = pr#putc c
 let put_int i pr = pr#put_int i
 let endl pr = pr#endl
 let flush pr = pr#flush
+let nop pr = pr
 let enter n pr = pr#enter n
 let leave n pr = pr#leave n
 
