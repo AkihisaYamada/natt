@@ -127,7 +127,7 @@ class processor =
     else
       k_comb (LB true)
   in
-  let depend finfo = finfo#permed in
+  let permed finfo = finfo#permed in
   let depend_w finfo i = smt_not (interpreter#constant_at finfo#base i) in
   let rec set_usable filt usable s =
     smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
@@ -808,7 +808,7 @@ object (x)
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
-          solver#add_assertion (usable i =>^ set_usable depend usable rule#r);
+          solver#add_assertion (usable i =>^ set_usable permed usable rule#r);
           let wge, wgt = split (wo lw rw) solver in
           let wge = solver#refer Bool wge in
           solver#add_assertion (usable_w i =>^ wge);
@@ -822,7 +822,7 @@ object (x)
           end;
         end else if p.usable then begin
           let filt =
-            if Array.length p.w_params = 0 then depend (* trivial weight *)
+            if Array.length p.w_params = 0 then permed (* trivial weight *)
             else depend_w
           in
           solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
@@ -851,12 +851,9 @@ object (x)
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
-      if p.usable_w then begin
-        solver#add_assertion (set_usable depend_w usable_w dp#r);
-        solver#add_assertion (set_usable depend usable dp#r);
-      end else begin
-        let filt finfo i = smt_not (interpreter#constant_at finfo#base i) |^ finfo#permed i in
-        solver#add_assertion (set_usable filt usable dp#r);
+      if p.usable then begin
+        solver#add_assertion (set_usable depend_w (if p.usable_w then usable_w else usable) dp#r);
+        solver#add_assertion (set_usable permed usable dp#r);
       end;
     end;
 
