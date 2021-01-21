@@ -54,9 +54,10 @@ let put_w var : 'a t -> #printer -> unit =
     match w with
     | BVar v -> var v
     | Smt e -> put_exp e
-    | Max ws -> punct_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
-    | Sum ws -> paren l 1 (punct_list (sub 1) (puts " + ") (putc '0') ws)
     | Prod ws -> paren l 2 (punct_list (sub 2) (puts " * ") (putc '1') ws)
+    | Sum ws -> paren l 1 (punct_list (sub 1) (puts " + ") (putc '0') ws)
+    | Max ws -> puts "max{ " << punct_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
+    | Cond(e,w1,w2) -> paren l 0 (put_exp e << puts " ? " << sub 1 w1 << puts " : " << sub 0 w2)
   in
   fun w os -> (sub 0 w) os
 
@@ -158,26 +159,9 @@ let weak_simple_on_w x =
     | w::ws -> (sub w &^ smt_for_all ge_0_w ws) |^ (ge_0_w w &^ sub_sum ws)
   in sub
 
-let vec_of_sym p solver f =
-  let ty = p.base_ty in
-  let to_n = int_list 0 (f#arity-1) in
-  let rec sub k t =
-    match t with
-    | Node(WeightTemplate.Var,[]) -> Smt (solver#temp_variable ty)
-    | Node(WeightTemplate.Choice,[s1;s2]) -> Cond(solver#temp_variable Bool, sub k s1, sub k s2)
-    | Node(WeightTemplate.Arg i,[]) -> BVar (k,i)
-    | Node(WeightTemplate.Const n,[]) -> Smt (LI n)
-    | Node(WeightTemplate.Max,ss) -> Max (List.map (sub k) ss)
-    | Node(WeightTemplate.Add,ss) -> Sum (List.map (sub k) ss)
-    | Node(WeightTemplate.Mul,ss) -> Prod (List.map (sub k) ss)
-    | Node(WeightTemplate.SumArgs,[s]) -> Sum (List.map (fun l -> sub l s) to_n)
-    | Node(WeightTemplate.MaxArgs,[s]) -> Max (List.map (fun l -> sub l s) to_n)
-  in
-  Array.map (fun cp -> sub (-1) cp.template) p.w_params
-
 let cw_op =
   let sub (c1,w1) (c2,ws) = match c1 &^ c2 with LB false -> None | c -> Some (c, w1 :: ws) in
-  fun f cws -> List.map (fun (c,ws) -> (c, f ws)) (list_product_fold_filter sub cws [])
+  fun f cws -> List.map (fun (c,ws) -> (c, f ws)) (list_product_fold_filter sub cws [(LB true,[])])
 
 let distrib_cond : 'a. 'a t -> (exp * 'a t) list =
   let rec sub c w =
@@ -189,6 +173,11 @@ let distrib_cond : 'a. 'a t -> (exp * 'a t) list =
     | Prod ws -> cw_op (fun ws -> Prod ws) (List.map (sub c) ws)
     | Cond(c1,w1,w2) -> sub (c &^ c1) w1 @ sub (c &^ smt_not c1) w2
   in fun w -> sub (LB true) w
+
+let put_cws var cws =
+  puts "{ " <<
+  punct_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n  ") (puts "??") cws <<
+  puts "}"
 
 let rec distrib_max w =
   match w with
@@ -259,7 +248,7 @@ let poly_order solver p1 p2 =
   in
   let e1 = poly_coeff [] p1 in
   let e2 = poly_coeff [] p2 in
-  (e1 >=^ e2 &^ pre, e1 >^ e2 &^ pre)
+  ((e1 >=^ e2) &^ pre, (e1 >^ e2) &^ pre)
 
 let epoly_order solver ep1 ep2 =
   List.fold_left (fun (all_ge,all_gt) p2 ->
@@ -286,7 +275,13 @@ let cepoly_order solver cep1 cep2 =
   let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
   List.fold_left folder (LB true, LB true) ords
 
-let order_w solver w1 w2 = cepoly_order solver (cepoly_of_w w1) (cepoly_of_w w2)
+let put_var (v,i) = puts v << putc '_' << put_int i
+
+let order_w solver w1 w2 =
+  let (ge,gt) = cepoly_order solver (cepoly_of_w w1) (cepoly_of_w w2) in
+  debug2(endl << puts "ordering " << put_w put_var w1 << puts "\n vs. " << put_w put_var w2 <<
+      endl << puts "ge: " << put_exp ge << endl << puts "gt: " << put_exp gt << endl);
+  (ge,gt)
 
 let order_vec param solver =
   let dim = Array.length param.w_params in
@@ -323,11 +318,28 @@ class interpreter p =
     (if dim = 0 then fun (s,_) -> puts s
     else fun (s,i) -> puts s << putc '_' << put_int i)
   in
+  let ty = p.base_ty in
   object (x)
     val table = Hashtbl.create 64
     method init : 't. (#context as 't) -> Trs.trs -> Dp.dg -> unit = fun solver trs dg ->
       let iterer f =
-        let vec = vec_of_sym p solver f in
+        let to_n = int_list 0 (f#arity-1) in
+        let rec sub k t =
+            match t with
+            | Node(WeightTemplate.Var,[]) ->
+              let v = solver#temp_variable ty in
+              solver#add_assertion (v >=^ LI 0);
+              Smt v
+            | Node(WeightTemplate.Choice,[s1;s2]) -> Cond(solver#temp_variable Bool, sub k s1, sub k s2)
+            | Node(WeightTemplate.Arg i,[]) -> BVar (k,i)
+            | Node(WeightTemplate.Const n,[]) -> Smt (LI n)
+            | Node(WeightTemplate.Max,ss) -> Max (List.map (sub k) ss)
+            | Node(WeightTemplate.Add,ss) -> Sum (List.map (sub k) ss)
+            | Node(WeightTemplate.Mul,ss) -> Prod (List.map (sub k) ss)
+            | Node(WeightTemplate.SumArgs,[s]) -> Sum (List.map (fun l -> sub l s) to_n)
+            | Node(WeightTemplate.MaxArgs,[s]) -> Max (List.map (fun l -> sub l s) to_n)
+        in
+        let vec = Array.map (fun cp -> sub (-1) cp.template) p.w_params in
         Hashtbl.add table f#name {
           encodings = vec;
           pos_info = Array.of_list (
@@ -389,7 +401,6 @@ class interpreter p =
       fun solver (Node(f,ss) as t) ->
       let ts = List.map (x#annotate solver) ss in
       let vec = x#interpret f (List.map get_weight ts) in
-      debug2 (endl << put_term t << puts " weight: " << put_vec put_var vec);
       WT(f, ts, refer_vec solver vec)
 
     method output_sym : 't 'f 'o. (#solver as 't) -> (#sym as 'f) -> (#printer as 'o) -> unit =
