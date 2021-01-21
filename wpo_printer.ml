@@ -72,7 +72,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
       Hashtbl.iter pr_symbol sigma;
     method output_usables : 'pr 'a. (int -> exp) -> (int * 'a) list -> (#printer as 'pr) -> unit =
       fun usable usables ->
-      if usable_is_used || params.debug then
+      if usable_is_used || verbosity.(6) then
         let folder is (i,_) =
           if solver#get_bool (usable i) then i::is else is
         in

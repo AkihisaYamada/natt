@@ -1,4 +1,4 @@
-let verbosity = Array.make 7 false
+let verbosity = Array.of_list [true;true;true;true;false;false;false]
 
 let warning m = if verbosity.(0) then m Io.cerr else ()
 let comment m = if verbosity.(1) then m Io.cerr else ()

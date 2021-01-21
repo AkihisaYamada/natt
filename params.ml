@@ -191,16 +191,9 @@ type params_type = {
   mutable ac_mark_mode : ac_mark_mode;
   mutable orders_removal : order_params array;
   mutable orders_dp : order_params array;
-  mutable warning : bool;
   mutable result : bool;
-  mutable comment : bool;
-  mutable problem : bool;
   mutable cpf : bool;
   mutable cpf_to : out_channel;
-  mutable proof : bool;
-  mutable log : bool;
-  mutable debug : bool;
-  mutable debug2 : bool;
   mutable tmpvar : bool;
   mutable relative_usable : bool;
   mutable naive_C : bool;
@@ -221,16 +214,9 @@ let params = {
   ac_mark_mode = AC_mark;
   orders_removal = Array.make 0 order_default;
   orders_dp = Array.make 0 order_default;
-  warning = true;
   result = true;
-  comment = true;
-  problem = true;
   cpf = false;
   cpf_to = stdout;
-  proof = true;
-  log = false;
-  debug = false;
-  debug2 = false;
   tmpvar = true;
   relative_usable = true;
   naive_C = false;
@@ -381,6 +367,7 @@ while !i < argc do
       for i = 0 to Array.length verbosity - 1 do
         verbosity.(i) <- false;
       done;
+      params.result <- false;
       params.cpf <- true;
       params.naive_C <- true;
       params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
