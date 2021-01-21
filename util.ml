@@ -56,13 +56,13 @@ let foldl_nonnil z one f =
   | [] -> z
   | x :: xs -> sub (one x) xs
 
-let punct_list elem punc emp list os =
+let put_list elem punc emp list os =
   let rec sub = function
     | [] -> ()
     | x::xs -> punc os; elem x os; sub xs
   in
   match list with
-  | [] -> emp os
+  | [] -> emp os; ()
   | x::xs -> elem x os; sub xs
 
 let rec list_remove f =
@@ -83,22 +83,28 @@ let begins s t =
   sub 0
 
 (* direct product of lists *)
-let list_prod_filter f =
-  let rec sub1 zs x =
-    function
-    | []  -> zs
-    | y::ys -> sub1 (match f x y with Some z -> z::zs | None -> zs) x ys
+let list_prod_filter : 'a 'b 'c. ('a -> 'b -> 'c option) -> 'a list -> 'b list -> 'c list =
+  let sub1 : 'b 'c. ('b -> 'c option) -> 'c list -> 'b list -> 'c list = fun fx ->
+    let rec sub zs ys =
+      match ys with
+      | []  -> zs
+      | y::ys -> sub (match fx y with Some z -> z::zs | None -> zs) ys
+    in sub
   in
-  let rec sub2 zs xs ys =
-    match xs with
-    | []  -> zs
-    | x::xs -> sub2 (sub1 zs x ys) xs ys
+  let sub2 : 'a 'b 'c. ('a -> 'b -> 'c option) -> 'b list -> 'c list -> 'a list -> 'c list = fun f ys ->
+    let rec sub zs xs =
+      match xs with
+      | []  -> zs
+      | x::xs -> sub (sub1 (f x) zs ys) xs
+    in sub
   in
-  sub2 []
+  fun f xs ys -> sub2 f ys [] xs
 
-let list_prod f = list_prod_filter (fun x y -> Some (f x y))
+let list_prod : 'a 'b 'c. ('a -> 'b -> 'c) -> 'a list -> 'b list -> 'c list =
+  fun f xs ys -> list_prod_filter (fun x y -> Some (f x y)) xs ys
 
-let list_times xs ys = list_prod (fun x y -> (x,y)) xs ys (* don't eta-expand as OCaml's type inference won't work *)
+let list_times : 'a 'b. 'a list -> 'b list -> ('a * 'b) list =
+  fun xs ys -> list_prod (fun x y -> (x,y)) xs ys
 
 let list_product_fold_filter f = List.fold_right (list_prod_filter f)
 

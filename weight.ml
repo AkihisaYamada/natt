@@ -54,14 +54,14 @@ let put_w var : 'a t -> #printer -> unit =
     match w with
     | BVar v -> var v
     | Smt e -> put_exp e
-    | Prod ws -> paren l 2 (punct_list (sub 2) (puts " * ") (putc '1') ws)
-    | Sum ws -> paren l 1 (punct_list (sub 1) (puts " + ") (putc '0') ws)
-    | Max ws -> puts "max{ " << punct_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
+    | Prod ws -> paren l 2 (put_list (sub 2) (puts " * ") (putc '1') ws)
+    | Sum ws -> paren l 1 (put_list (sub 1) (puts " + ") (putc '0') ws)
+    | Max ws -> puts "max{ " << put_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
     | Cond(e,w1,w2) -> paren l 0 (put_exp e << puts " ? " << sub 1 w1 << puts " : " << sub 0 w2)
   in
   fun w os -> (sub 0 w) os
 
-let put_vec var wa = puts "[ " << punct_list (put_w var) (puts "; ") (puts "-") (Array.to_list wa) << puts " ]"
+let put_vec var wa = puts "[ " << put_list (put_w var) (puts "; ") (puts "-") (Array.to_list wa) << puts " ]"
 
 let eq_0_w =
   let rec sub w =
@@ -176,7 +176,7 @@ let distrib_cond : 'a. 'a t -> (exp * 'a t) list =
 
 let put_cws var cws =
   puts "{ " <<
-  punct_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n  ") (puts "??") cws <<
+  put_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n  ") (puts "??") cws <<
   puts "}"
 
 let rec distrib_max w =
@@ -187,8 +187,9 @@ let rec distrib_max w =
   | Prod ws -> List.map (fun ws -> Prod ws) (
       list_product_fold_filter (fun x y ->
         match x with Smt e when is_zero e -> None | _ -> Some (x::y)
-      ) (List.map distrib_max ws) []
+      ) (List.map distrib_max ws) [[]]
     )
+let _ = debug (put_list (put_w puts) (puts ", ") (puts "???") (distrib_max (Prod[Max[BVar "aa"; BVar "bb"]; Smt(LI 2)])))
 
 let rec distrib_sum w =
   match w with
@@ -203,84 +204,101 @@ let rec distrib_sum w =
 (* A polynomial is represented by a map. *)
 module StrIntListMap = Map.Make(LexList(Hashed (struct type t = string * int end)))
 
+let put_var (v,i) = puts v << putc '_' << put_int i
+
 let poly_coeff vs p =
   match StrIntListMap.find_opt vs p with
   | Some e -> e
   | _ -> LI 0
 
-let poly_add = StrIntListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
+let put_poly p os =
+  StrIntListMap.iter (fun vs e -> os#puts " + "; put_exp e os; List.iter (fun v -> puts "*" os; put_var v os) vs) p
 
-let poly_sum = List.fold_left poly_add StrIntListMap.empty
+let put_epoly ep = puts "max {" << put_list put_poly (puts ", ") nop ep << puts "}"
 
-let monom_mul vs1 e1 =
+let add_poly = StrIntListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
+
+let sum_poly = List.fold_left add_poly StrIntListMap.empty
+
+let mul_monom vs1 e1 =
   let sub vs2 e2 acc = StrIntListMap.add (List.merge compare vs1 vs2) (e1 *^ e2) acc in
   fun p2 -> StrIntListMap.fold sub p2 StrIntListMap.empty
 
-let poly_mul = StrIntListMap.fold monom_mul
+let mul_poly = StrIntListMap.fold mul_monom
 
-let poly_prod = List.fold_left poly_mul (StrIntListMap.singleton [] (LI 1))
+let prod_poly = List.fold_left mul_poly (StrIntListMap.singleton [] (LI 1))
 
 let poly_of_w =
   let rec sub w =
     match w with
     | BVar v -> StrIntListMap.singleton [v] (LI 1)
     | Smt e -> StrIntListMap.singleton [] e
-    | Sum ws -> poly_sum (List.map sub ws)
-    | Prod ws -> poly_prod (List.map sub ws)
+    | Sum ws -> sum_poly (List.map sub ws)
+    | Prod ws -> prod_poly (List.map sub ws)
   in sub
 
-let epoly_of_w w = List.map poly_of_w (distrib_max w)
+let ge_poly p1 p2 = smt_for_all (fun (vs,e2) -> poly_coeff vs p1 >=^ e2) (StrIntListMap.bindings p2)
 
-let cepoly_of_w w = List.map (fun (c,w) -> (c, epoly_of_w w)) (distrib_cond w)
+let ge_max w1 w2 =
+  let ew1 = distrib_max w1 in
+  let ew2 = distrib_max w2 in
+  let ep1 = List.map poly_of_w ew1 in
+  let ep2 = List.map poly_of_w ew2 in
+  smt_for_all (fun p2 -> smt_exists (fun p1 -> ge_poly p1 p2) ep1) ep2
 
-let poly_ge p1 p2 = smt_for_all (fun (vs,e2) -> poly_coeff vs p1 >=^ e2) (StrIntListMap.bindings p2)
+let ge_w w1 w2 =
+  let cws1 = distrib_cond w1 in
+  let cws2 = distrib_cond w2 in
+  smt_conjunction (list_prod (fun(c1,w1) (c2,w2) -> (c1 &^ c2) =>^ ge_max w1 w2) cws1 cws2)
 
-let epoly_ge ep1 ep2 = smt_for_all (fun p2 -> smt_exists (fun p1 -> poly_ge p1 p2) ep1) ep2
-
-let cepoly_ge cep1 cep2 =
-  smt_conjunction (list_prod (fun (c1,ep1) (c2,ep2) -> (c1 &^ c2) =>^ epoly_ge ep1 ep2) cep1 cep2)
-
-let w_ge w1 w2 = cepoly_ge (cepoly_of_w w1) (cepoly_of_w w2)
-
-let poly_order solver p1 p2 =
+let order_poly solver p1 p2 =
   let pre = solver#refer Bool (
     smt_for_all (fun (vs,e2) -> if vs = [] then LB true else poly_coeff vs p1 >=^ e2) (StrIntListMap.bindings p2))
   in
   let e1 = poly_coeff [] p1 in
   let e2 = poly_coeff [] p2 in
+  debug2 (endl << puts "[order_poly] " << put_poly p1 << puts " vs. " << put_poly p2);
   ((e1 >=^ e2) &^ pre, (e1 >^ e2) &^ pre)
 
-let epoly_order solver ep1 ep2 =
-  List.fold_left (fun (all_ge,all_gt) p2 ->
-    let (ge,gt) =
-      List.fold_left (fun (ex_ge,ex_gt) p1 ->
-        let (ge,gt) = poly_order solver p1 p2 in
-        (ex_ge |^ ge, ex_gt |^ gt)
-      )
-      (LB false, LB false)
-      ep1
-    in
-    (all_ge &^ ge, all_gt &^ gt)
-  )
-  (LB true, LB true)
-  ep2
-
-let cepoly_order solver cep1 cep2 =
-  let ords = list_prod_filter (fun (c1,ep1) (c2,ep2) ->
-      match c1 &^ c2 with
-      | LB false -> None
-      | c -> let (ge,gt) = epoly_order solver ep1 ep2 in Some (c =>^ ge, c =>^ gt)
-    ) cep1 cep2
+let order_max solver w1 w2 =
+  let ew1 = distrib_max w1 in
+  let ew2 = distrib_max w2 in
+  let ep1 = List.map poly_of_w ew1 in
+  let ep2 = List.map poly_of_w ew2 in
+  let (ge,gt) =
+    List.fold_left (fun (all_ge,all_gt) p2 ->
+      let (ge,gt) =
+        List.fold_left (fun (ex_ge,ex_gt) p1 ->
+          let (ge,gt) = order_poly solver p1 p2 in
+          (ex_ge |^ ge, ex_gt |^ gt)
+        )
+        (LB false, LB false)
+        ep1
+      in
+      (all_ge &^ ge, all_gt &^ gt)
+    )
+    (LB true, LB true)
+    ep2
   in
-  let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
-  List.fold_left folder (LB true, LB true) ords
-
-let put_var (v,i) = puts v << putc '_' << put_int i
+  debug2(endl << puts "[order_max] " << put_w put_var w1 << puts " vs. " << put_w put_var w2 <<
+         endl << puts "    " << put_epoly ep1 << puts " vs. " << put_epoly ep2 << 
+         endl << puts "  ge: " << put_exp ge);
+  (ge,gt)
 
 let order_w solver w1 w2 =
-  let (ge,gt) = cepoly_order solver (cepoly_of_w w1) (cepoly_of_w w2) in
-  debug2(endl << puts "ordering " << put_w put_var w1 << puts "\n vs. " << put_w put_var w2 <<
-      endl << puts "ge: " << put_exp ge << endl << puts "gt: " << put_exp gt << endl);
+  let cws1 = distrib_cond w1 in
+  let cws2 = distrib_cond w2 in
+  let ords = list_prod_filter (fun (c1,w1) (c2,w2) ->
+      match c1 &^ c2 with
+      | LB false -> None
+      | c ->
+        let (ge,gt) = order_max solver w1 w2 in Some (c =>^ ge, c =>^ gt)
+    ) cws1 cws2
+  in
+  let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
+  let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
+  debug2(endl << puts "[order_w] " << put_cws put_var cws1 << puts "\n vs. " << put_cws put_var cws2 <<
+      endl << puts "    ge: " << put_exp ge << endl << puts "gt: " << put_exp gt << endl);
   (ge,gt)
 
 let order_vec param solver =
@@ -289,7 +307,7 @@ let order_vec param solver =
   else fun w1 w2 ->
     Delay (fun solver ->
       let (ge,gt) = order_w solver w1.(0) w2.(0) in
-      let ge_rest = smt_for_all (fun i -> w_ge w1.(i) w2.(i)) (int_list 1 (dim-1)) in
+      let ge_rest = smt_for_all (fun i -> ge_w w1.(i) w2.(i)) (int_list 1 (dim-1)) in
       let ge_rest = solver#refer Bool ge_rest in
       Cons(ge &^ ge_rest, gt &^ ge_rest)
     )

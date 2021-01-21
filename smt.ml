@@ -428,7 +428,12 @@ and (|^) e1 e2 =
     match simplify_under (smt_not e1) e2 with
     | LB b -> if b then LB true else e1
     | e2 -> Or(e1,e2)
-and (=>^) e1 e2 = smt_not e1 |^ e2
+and (=>^) e1 e2 =
+  match e1 with
+  | LB b -> if b then e2 else LB true
+  | _ -> match simplify_under e1 e2 with
+    | LB b -> if b then LB true else smt_not e1
+    | e2 -> Imp(e1,e2)
 and simple_eq e1 e2 =
   match e1, e2 with
   | LB b1, LB b2 -> Some (b1 = b2)
