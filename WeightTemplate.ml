@@ -26,10 +26,10 @@ let max_or_sum_args s = Node(MaxOrSumArgs,[s])
 
 let mono_sum_template = sum [sum_args (arg 0); var]
 let mono_poly_template = sum [sum_args (choice [arg 0; prod [const 2; arg 0]]); var]
-let mono_max_template = sum [max_args (arg 0); var]
+let mono_max_template = max_args (sum [(arg 0); var])
 let mono_max_or_sum_template = sum [max_or_sum_args (arg 0); var]
-let sum_template = sum [sum_args (choice [arg 0; const 0]); var]
-let max_template = sum [max_args (choice [arg 0; const 0]); var]
+let sum_template = sum [sum_args (choice [const 0;arg 0]); var]
+let max_template = max_args (sum [choice [const 0;arg 0;]; var])
 let max_or_sum_template = sum [max_or_sum_args (choice [arg 0; const 0]); var]
 
 let of_string =
