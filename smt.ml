@@ -306,6 +306,15 @@ let rec simplify_knowing kn e =
       | e2 -> Or(e1,e2)
     )
   )
+  | Imp(e1,e2) -> (
+    match simplify_knowing kn e1 with
+    | LB b -> if b then simplify_knowing kn e2 else LB true 
+    | e1 -> (
+      match simplify_knowing (assume_true e1 kn) e2 with
+      | LB b -> if b then LB true else e1
+      | e2 -> Imp(e1,e2)
+    )
+  )
   | Add(e1,e2) -> simplify_knowing kn e1 +^ simplify_knowing kn e2
   | Mul(e1,e2) -> simplify_knowing kn e1 *^ simplify_knowing kn e2
   | If(c,t,e,p) -> (

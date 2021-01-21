@@ -113,7 +113,7 @@ let ge_1_w =
 let const_on_w x =
   let rec sub w =
     match w with
-    | BVar v -> LB (x = v)
+    | BVar v -> LB (x <> v)
     | Smt e -> LB true
     | Prod ws -> smt_for_all sub ws |^ smt_exists eq_0_w ws
     | Sum ws -> smt_for_all sub ws
@@ -325,8 +325,8 @@ class interpreter p =
   let dim = Array.length p.w_params in
   let to_dim = int_list 0 (dim-1) in
   let put_arg =
-    if dim = 0 then fun (k,_) -> puts "x_" << put_int k
-    else fun (k,i) -> puts "x_" << put_int k << putc '_' << put_int i
+    if dim = 0 then fun (k,_) -> puts "x" << put_int k
+    else fun (k,i) -> puts "x" << put_int k << putc '_' << put_int i
   in
   let put_var =
     (if dim = 0 then fun (s,_) -> puts s
