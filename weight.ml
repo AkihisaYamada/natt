@@ -189,7 +189,6 @@ let rec distrib_max w =
         match x with Smt e when is_zero e -> None | _ -> Some (x::y)
       ) (List.map distrib_max ws) [[]]
     )
-let _ = debug (put_list (put_w puts) (puts ", ") (puts "???") (distrib_max (Prod[Max[BVar "aa"; BVar "bb"]; Smt(LI 2)])))
 
 let rec distrib_sum w =
   match w with
@@ -280,9 +279,7 @@ let order_max solver w1 w2 =
     (LB true, LB true)
     ep2
   in
-  debug2(endl << puts "[order_max] " << put_w put_var w1 << puts " vs. " << put_w put_var w2 <<
-         endl << puts "    " << put_epoly ep1 << puts " vs. " << put_epoly ep2 << 
-         endl << puts "  ge: " << put_exp ge);
+  debug2(endl << puts "[order_max] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   (ge,gt)
 
 let order_w solver w1 w2 =
@@ -297,8 +294,7 @@ let order_w solver w1 w2 =
   in
   let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
   let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
-  debug2(endl << puts "[order_w] " << put_cws put_var cws1 << puts "\n vs. " << put_cws put_var cws2 <<
-      endl << puts "    ge: " << put_exp ge << endl << puts "gt: " << put_exp gt << endl);
+  debug2(endl << puts "[order_w] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   (ge,gt)
 
 let order_vec param solver =
@@ -341,7 +337,8 @@ class interpreter p =
     val table = Hashtbl.create 64
     method init : 't. (#context as 't) -> Trs.trs -> Dp.dg -> unit = fun solver trs dg ->
       let iterer f =
-        let to_n = int_list 0 (f#arity-1) in
+        let n = f#arity in
+        let to_n = int_list 0 (n-1) in
         let rec sub k t =
             match t with
             | Node(WeightTemplate.Var,[]) ->
@@ -355,7 +352,8 @@ class interpreter p =
             | Node(WeightTemplate.Add,ss) -> Sum (List.map (sub k) ss)
             | Node(WeightTemplate.Mul,ss) -> Prod (List.map (sub k) ss)
             | Node(WeightTemplate.SumArgs,[s]) -> Sum (List.map (fun l -> sub l s) to_n)
-            | Node(WeightTemplate.MaxArgs,[s]) -> Max (List.map (fun l -> sub l s) to_n)
+            | Node(WeightTemplate.MaxArgs,[s]) ->
+              if n = 0 then zero_w else Max (List.map (fun l -> sub l s) to_n)
         in
         let vec = Array.map (fun cp -> sub (-1) cp.template) p.w_params in
         Hashtbl.add table f#name {
