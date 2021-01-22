@@ -14,16 +14,29 @@ type 'a t =
 | Max of 'a t list
 | Cond of exp * 'a t * 'a t
 
-let zero_w = Sum []
-let one_w = Prod []
+let zero_w = Smt (LI 0)
+let one_w = Smt (LI 1)
+
+let sum ws =
+   match List.filter (fun w -> w <> zero_w) ws with
+   | [] -> zero_w
+   | [w] -> w
+   | ws -> Sum ws
+
+let prod ws =
+  if List.exists (fun w -> w = zero_w) ws then zero_w else
+  match List.filter (fun w -> w <> one_w) ws with
+  | [] -> one_w
+  | [w] -> w
+  | ws -> sum ws
 
 let eval_w solver =
   let rec sub w =
     match w with
     | BVar _ -> w
     | Smt e -> Smt (solver#get_value e)
-    | Prod ws -> Prod (List.map sub ws)
-    | Sum ws -> Sum (List.map sub ws)
+    | Prod ws -> prod (List.map sub ws)
+    | Sum ws -> sum (List.map sub ws)
     | Max ws -> Max (remdups (List.map sub ws))
     | Cond(e,w1,w2) -> (
         match solver#get_value e with
@@ -48,21 +61,6 @@ let refer_w solver =
 
 let refer_vec solver = Array.map (refer_w solver)
 
-let put_w var : 'a t -> #printer -> unit =
-  let paren l l' m = if l <= l' then m else putc '(' << m << putc ')' in
-  let rec sub l w =
-    match w with
-    | BVar v -> var v
-    | Smt e -> put_exp e
-    | Prod ws -> paren l 2 (put_list (sub 2) (puts " * ") (putc '1') ws)
-    | Sum ws -> paren l 1 (put_list (sub 1) (puts " + ") (putc '0') ws)
-    | Max ws -> puts "max{ " << put_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
-    | Cond(e,w1,w2) -> paren l 0 (put_exp e << puts " ? " << sub 1 w1 << puts " : " << sub 0 w2)
-  in
-  fun w os -> (sub 0 w) os
-
-let put_vec var wa = puts "[ " << put_list (put_w var) (puts "; ") (puts "-") (Array.to_list wa) << puts " ]"
-
 let eq_0_w =
   let rec sub w =
     match w with
@@ -74,17 +72,6 @@ let eq_0_w =
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   in sub
 
-let ge_0_w =
-  let rec sub w =
-    match w with
-    | BVar v -> LB true (* carrier is assumed to be nonnegative *)
-    | Smt e -> e >=^ LI 0
-    | Prod ws -> LB true (* don't support negative in products *)
-    | Sum ws -> smt_for_all sub ws (* sound: cancellation is not considered *)
-    | Max ws -> smt_exists sub ws
-    | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
-  in sub
-
 let eq_1_w =
   let rec sub w =
     match w with
@@ -93,6 +80,17 @@ let eq_1_w =
     | Prod ws -> smt_for_all sub ws (* division is not considered *)
     | Sum ws -> LB false (* sound *)
     | Max ws -> LB false (* sound *)
+    | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
+  in sub
+
+let ge_0_w =
+  let rec sub w =
+    match w with
+    | BVar v -> LB true (* carrier is assumed to be nonnegative *)
+    | Smt e -> e >=^ LI 0
+    | Prod ws -> LB true (* don't support negative in products *)
+    | Sum ws -> smt_for_all sub ws (* sound: cancellation is not considered *)
+    | Max ws -> smt_exists sub ws
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   in sub
 
@@ -159,6 +157,27 @@ let weak_simple_on_w x =
     | w::ws -> (sub w &^ smt_for_all ge_0_w ws) |^ (ge_0_w w &^ sub_sum ws)
   in sub
 
+let put_w var : 'a t -> #printer -> unit =
+  let paren l l' m = if l <= l' then m else putc '(' << m << putc ')' in
+  let rec sub l w =
+    match w with
+    | BVar v -> var v
+    | Smt e -> put_exp e
+    | Prod ws ->
+      if List.exists (fun w -> w = Smt (LI 0)) ws then putc '0'
+      else
+       let ws = List.filter (fun w -> w <> Smt (LI 1)) ws in 
+       paren l 2 (put_list (sub 2) (puts " * ") (putc '1') ws)
+    | Sum ws ->
+      let ws = List.filter (fun w -> w <> Smt (LI 0)) ws in
+      paren l 1 (put_list (sub 1) (puts " + ") (putc '0') ws)
+    | Max ws -> puts "max{ " << put_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
+    | Cond(e,w1,w2) -> paren l 0 (put_exp e << puts " ? " << sub 1 w1 << puts " : " << sub 0 w2)
+  in
+  fun w os -> (sub 0 w) os
+
+let put_vec var wa = puts "[ " << put_list (put_w var) (puts "; ") (puts "-") (Array.to_list wa) << puts " ]"
+
 let cw_op =
   let sub (c1,w1) (c2,ws) = match c1 &^ c2 with LB false -> None | c -> Some (c, w1 :: ws) in
   fun f cws -> List.map (fun (c,ws) -> (c, f ws)) (list_product_fold_filter sub cws [(LB true,[])])
@@ -169,8 +188,8 @@ let expand_cond : 'a. 'a t -> (exp * 'a t) list =
     else match w with
     | BVar _ | Smt _ -> [(c,w)]
     | Max ws -> cw_op (fun ws -> Max ws) (List.map (sub c) ws)
-    | Sum ws -> cw_op (fun ws -> Sum ws) (List.map (sub c) ws)
-    | Prod ws -> cw_op (fun ws -> Prod ws) (List.map (sub c) ws)
+    | Sum ws -> cw_op (fun ws -> sum ws) (List.map (sub c) ws)
+    | Prod ws -> cw_op (fun ws -> prod ws) (List.map (sub c) ws)
     | Cond(c1,w1,w2) -> sub (c &^ c1) w1 @ sub (c &^ smt_not c1) w2
   in fun w -> sub (LB true) w
 
@@ -183,8 +202,8 @@ let rec expand_max w =
   match w with
   | BVar _ | Smt _ -> [w]
   | Max ws -> List.concat (List.map expand_max ws)
-  | Sum ws -> List.map (fun ws -> Sum ws) (list_product (List.map expand_max ws))
-  | Prod ws -> List.map (fun ws -> Prod ws) (
+  | Sum ws -> List.map (fun ws -> sum ws) (list_product (List.map expand_max ws))
+  | Prod ws -> List.map (fun ws -> prod ws) (
       list_product_fold_filter (fun x y ->
         match x with Smt e when is_zero e -> None | _ -> Some (x::y)
       ) (List.map expand_max ws) [[]]
@@ -194,7 +213,7 @@ let rec expand_sum w =
   match w with
   | BVar _ | Smt _ -> [w]
   | Sum ws -> List.concat (List.map expand_sum ws)
-  | Prod ws -> List.map (fun ws -> Prod ws) (
+  | Prod ws -> List.map (fun ws -> prod ws) (
       list_product_fold_filter (fun x y ->
         match x with Smt e when is_zero e -> None | _ -> Some (x::y)
       ) (List.map expand_sum ws) []
@@ -325,7 +344,7 @@ class interpreter p =
   let dim = Array.length p.w_params in
   let to_dim = int_list 0 (dim-1) in
   let put_arg =
-    if dim = 0 then fun (k,_) -> puts "x" << put_int (k+1)
+    if dim = 1 then fun (k,_) -> puts "x" << put_int (k+1)
     else fun (k,i) -> puts "x" << put_int (k+1) << putc '_' << put_int (i+1)
   in
   let ty = p.base_ty in
@@ -341,13 +360,22 @@ class interpreter p =
               let v = solver#temp_variable ty in
               solver#add_assertion (v >=^ LI 0);
               Smt v
-            | Node(WeightTemplate.Choice,[s1;s2]) -> Cond(solver#temp_variable Bool, sub k s1, sub k s2)
+            | Node(WeightTemplate.Choice,[s1;s2]) ->
+              let w1 = sub k s1 in
+              let w2 = sub k s2 in
+              let c = solver#temp_variable Bool in
+              ( match w1, w2 with
+                | BVar v, Smt (LI 0) -> Prod [Smt(smt_if c (LI 1) (LI 0)); BVar v]
+                | Smt (LI 0), BVar v -> Prod [Smt(smt_if c (LI 0) (LI 1)); BVar v]
+                | Smt e1, Smt e2 -> Smt(smt_if c e1 e2)
+                | _ -> Cond(c,w1,w2)
+              )
             | Node(WeightTemplate.Arg i,[]) -> BVar (k,i)
             | Node(WeightTemplate.Const n,[]) -> Smt (LI n)
             | Node(WeightTemplate.Max,ss) -> Max (List.map (sub k) ss)
-            | Node(WeightTemplate.Add,ss) -> Sum (List.map (sub k) ss)
-            | Node(WeightTemplate.Mul,ss) -> Prod (List.map (sub k) ss)
-            | Node(WeightTemplate.SumArgs,[s]) -> Sum (List.map (fun l -> sub l s) to_n)
+            | Node(WeightTemplate.Add,ss) -> sum (List.map (sub k) ss)
+            | Node(WeightTemplate.Mul,ss) -> prod (List.map (sub k) ss)
+            | Node(WeightTemplate.SumArgs,[s]) -> sum (List.map (fun l -> sub l s) to_n)
             | Node(WeightTemplate.MaxArgs,[s]) ->
               if n = 0 then zero_w else Max (List.map (fun l -> sub l s) to_n)
         in
