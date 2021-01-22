@@ -129,17 +129,17 @@ class processor =
   in
   let permed finfo = finfo#permed in
   let depend_w finfo i = smt_not (interpreter#constant_at finfo#base i) in
-  let rec set_usable filt usable s =
-    smt_for_all usable (estimator#find_matchable s) &^ set_usable_inner filt usable s
-  and set_usable_inner filt usable (Node(f,ss)) =
+  let rec set_usable filt flag s =
+    smt_for_all flag (estimator#find_matchable s) &^ set_usable_inner filt flag s
+  and set_usable_inner filt flag (Node(f,ss)) =
     if f#is_var then
-      smt_for_all (set_usable_inner filt usable) ss
+      smt_for_all (set_usable_inner filt flag) ss
     else
       let finfo = lookup f in
       let rec sub i ss =
         match ss with
         | [] -> LB true
-        | s::ss -> (filt finfo i =>^ set_usable filt usable s) &^ sub (i+1) ss
+        | s::ss -> (filt finfo i =>^ set_usable filt flag s) &^ sub (i+1) ss
       in
       sub 1 ss
   in
