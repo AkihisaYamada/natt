@@ -296,7 +296,8 @@ class processor =
           let v = "col_" ^ f#name in
           solver#add_variable v Bool;
           finfo#set_collapse (EV v);
-          solver#add_assertion (EV v =>^ (smt_exists (fun i -> interpreter#collapses_at f i &^ finfo#permed i) to_n));
+          solver#add_assertion (EV v =>^ ES1 (List.map finfo#permed to_n)); 
+          solver#add_assertion (EV v =>^ (smt_for_all (fun i -> interpreter#collapses_at f i =^ finfo#permed i) to_n));
     else
       fun finfo _ _ -> finfo#set_collapse (LB false)
   in
