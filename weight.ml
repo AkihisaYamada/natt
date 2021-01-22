@@ -28,7 +28,7 @@ let prod ws =
   match List.filter (fun w -> w <> one_w) ws with
   | [] -> one_w
   | [w] -> w
-  | ws -> sum ws
+  | ws -> Prod ws
 
 let eval_w solver =
   let rec sub w =
@@ -203,11 +203,7 @@ let rec expand_max w =
   | BVar _ | Smt _ -> [w]
   | Max ws -> List.concat (List.map expand_max ws)
   | Sum ws -> List.map (fun ws -> sum ws) (list_product (List.map expand_max ws))
-  | Prod ws -> List.map (fun ws -> prod ws) (
-      list_product_fold_filter (fun x y ->
-        match x with Smt e when is_zero e -> None | _ -> Some (x::y)
-      ) (List.map expand_max ws) [[]]
-    )
+  | Prod ws -> List.map (fun ws -> prod ws) (list_product (List.map expand_max ws))
 
 let rec expand_sum w =
   match w with
@@ -275,8 +271,10 @@ let order_poly solver p1 p2 =
   in
   let e1 = poly_coeff [] p1 in
   let e2 = poly_coeff [] p2 in
-  debug2 (endl << puts "[order_poly] " << put_poly p1 << puts " vs. " << put_poly p2);
-  ((e1 >=^ e2) &^ pre, (e1 >^ e2) &^ pre)
+  let ge = (e1 >=^ e2) &^ pre in
+  let gt = (e1 >^ e2) &^ pre in
+  debug2 (endl << puts "[order_poly] " << put_exp ge);
+  (ge, gt)
 
 let order_max solver w1 w2 =
   let ew1 = expand_max w1 in
