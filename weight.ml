@@ -222,7 +222,7 @@ let rec expand_sum w =
 (* A polynomial is represented by a map. *)
 module StrIntListMap = Map.Make(LexList(Hashed (struct type t = string * int end)))
 
-let put_var (v,i) = puts v << putc '_' << put_int (i+1)
+let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
 
 let poly_coeff vs p =
   match StrIntListMap.find_opt vs p with
@@ -283,6 +283,7 @@ let order_max solver w1 w2 =
   let ew2 = expand_max w2 in
   let ep1 = List.map poly_of_w ew1 in
   let ep2 = List.map poly_of_w ew2 in
+  debug2(endl << puts "[order_max] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   let (ge,gt) =
     List.fold_left (fun (all_ge,all_gt) p2 ->
       let (ge,gt) =
@@ -298,12 +299,12 @@ let order_max solver w1 w2 =
     (LB true, LB true)
     ep2
   in
-  debug2(endl << puts "[order_max] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   (ge,gt)
 
 let order_w solver w1 w2 =
   let cws1 = expand_cond w1 in
   let cws2 = expand_cond w2 in
+  debug2(endl << puts "[order_w] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   let ords = list_prod_filter (fun (c1,w1) (c2,w2) ->
       match c1 &^ c2 with
       | LB false -> None
@@ -313,7 +314,6 @@ let order_w solver w1 w2 =
   in
   let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
   let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
-  debug2(endl << puts "[order_w] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   (ge,gt)
 
 let order_vec param solver =
