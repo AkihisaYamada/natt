@@ -163,7 +163,7 @@ let cw_op =
   let sub (c1,w1) (c2,ws) = match c1 &^ c2 with LB false -> None | c -> Some (c, w1 :: ws) in
   fun f cws -> List.map (fun (c,ws) -> (c, f ws)) (list_product_fold_filter sub cws [(LB true,[])])
 
-let distrib_cond : 'a. 'a t -> (exp * 'a t) list =
+let expand_cond : 'a. 'a t -> (exp * 'a t) list =
   let rec sub c w =
     if c = LB false then []
     else match w with
@@ -179,25 +179,25 @@ let put_cws var cws =
   put_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n  ") (puts "??") cws <<
   puts "}"
 
-let rec distrib_max w =
+let rec expand_max w =
   match w with
   | BVar _ | Smt _ -> [w]
-  | Max ws -> List.concat (List.map distrib_max ws)
-  | Sum ws -> List.map (fun ws -> Sum ws) (list_product (List.map distrib_max ws))
+  | Max ws -> List.concat (List.map expand_max ws)
+  | Sum ws -> List.map (fun ws -> Sum ws) (list_product (List.map expand_max ws))
   | Prod ws -> List.map (fun ws -> Prod ws) (
       list_product_fold_filter (fun x y ->
         match x with Smt e when is_zero e -> None | _ -> Some (x::y)
-      ) (List.map distrib_max ws) [[]]
+      ) (List.map expand_max ws) [[]]
     )
 
-let rec distrib_sum w =
+let rec expand_sum w =
   match w with
   | BVar _ | Smt _ -> [w]
-  | Sum ws -> List.concat (List.map distrib_sum ws)
+  | Sum ws -> List.concat (List.map expand_sum ws)
   | Prod ws -> List.map (fun ws -> Prod ws) (
       list_product_fold_filter (fun x y ->
         match x with Smt e when is_zero e -> None | _ -> Some (x::y)
-      ) (List.map distrib_sum ws) []
+      ) (List.map expand_sum ws) []
     )
 
 (* A polynomial is represented by a map. *)
@@ -239,15 +239,15 @@ let poly_of_w =
 let ge_poly p1 p2 = smt_for_all (fun (vs,e2) -> poly_coeff vs p1 >=^ e2) (StrIntListMap.bindings p2)
 
 let ge_max w1 w2 =
-  let ew1 = distrib_max w1 in
-  let ew2 = distrib_max w2 in
+  let ew1 = expand_max w1 in
+  let ew2 = expand_max w2 in
   let ep1 = List.map poly_of_w ew1 in
   let ep2 = List.map poly_of_w ew2 in
   smt_for_all (fun p2 -> smt_exists (fun p1 -> ge_poly p1 p2) ep1) ep2
 
 let ge_w w1 w2 =
-  let cws1 = distrib_cond w1 in
-  let cws2 = distrib_cond w2 in
+  let cws1 = expand_cond w1 in
+  let cws2 = expand_cond w2 in
   smt_conjunction (list_prod (fun(c1,w1) (c2,w2) -> (c1 &^ c2) =>^ ge_max w1 w2) cws1 cws2)
 
 let order_poly solver p1 p2 =
@@ -260,8 +260,8 @@ let order_poly solver p1 p2 =
   ((e1 >=^ e2) &^ pre, (e1 >^ e2) &^ pre)
 
 let order_max solver w1 w2 =
-  let ew1 = distrib_max w1 in
-  let ew2 = distrib_max w2 in
+  let ew1 = expand_max w1 in
+  let ew2 = expand_max w2 in
   let ep1 = List.map poly_of_w ew1 in
   let ep2 = List.map poly_of_w ew2 in
   let (ge,gt) =
@@ -283,8 +283,8 @@ let order_max solver w1 w2 =
   (ge,gt)
 
 let order_w solver w1 w2 =
-  let cws1 = distrib_cond w1 in
-  let cws2 = distrib_cond w2 in
+  let cws1 = expand_cond w1 in
+  let cws2 = expand_cond w2 in
   let ords = list_prod_filter (fun (c1,w1) (c2,w2) ->
       match c1 &^ c2 with
       | LB false -> None
@@ -376,25 +376,25 @@ class interpreter p =
         )
       )
 
-    method private find : 'b. (#sym as 'b) -> _ =
+    method private find : 'f. (#sym as 'f) -> _ =
       fun f -> Hashtbl.find table f#name
 
-    method constant_at : 'b. (#sym as 'b) -> int -> exp =
+    method constant_at : 'f. (#sym as 'f) -> int -> exp =
       (* <--> [f](..x_k..) is constant *)
       fun f k -> (x#find f).pos_info.(k-1).const
 
-    method collapses_at : 'b. (#sym as 'b) -> int -> exp =
+    method collapses_at : 'f. (#sym as 'f) -> int -> exp =
       (* <--> [f](..x_k..) = x_k *)
       fun f k -> (x#find f).pos_info.(k-1).just
 
-    method weak_simple_at : 'b. (#sym as 'b) -> int -> exp =
+    method weak_simple_at : 'f. (#sym as 'f) -> int -> exp =
       (* <--> [f](..x_k..) >= x_k *)
       fun f k -> (x#find f).pos_info.(k-1).weak_simple
 
-    method private encode_sym : 'b. (#sym as 'b) -> _ =
+    method private encode_sym : 'f. (#sym as 'f) -> _ =
       fun f -> (x#find f).encodings
 
-    method interpret : 'b. (#sym as 'b) -> (string * int) t array list -> (string * int) t array =
+    method interpret : 'f. (#sym as 'f) -> (string * int) t array list -> (string * int) t array =
       fun f vs ->
       let subst = Array.of_list vs in
       let rec sub w =
@@ -409,17 +409,25 @@ class interpreter p =
       if f#is_var then Array.map (fun i -> BVar (f#name,i)) (int_array 0 (dim - 1))
       else Array.map sub (x#encode_sym f)
 
-    method annotate : 't 'b. (#context as 't) -> (#sym as 'b) term -> ('b, (string * int) t array) wterm =
+    method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, (string * int) t array) wterm =
       fun solver (Node(f,ss) as t) ->
       let ts = List.map (x#annotate solver) ss in
       let vec = x#interpret f (List.map get_weight ts) in
       WT(f, ts, refer_vec solver vec)
 
-    method output_sym : 't 'f 'o. (#solver as 't) -> (#sym as 'f) -> (#printer as 'o) -> unit =
-      fun solver f os -> put_vec put_arg (eval_vec solver (x#encode_sym f)) os
+    method output_sym : 't 'f 'o. (#solver as 't) -> (#Trs.sym_detailed as 'f) -> (#printer as 'o) -> unit =
+      fun solver f os -> put_vec put_arg (eval_vec solver (x#encode_sym f)) os;
+         os#puts "\tinfo: ";
+           for i = 1 to f#arity do
+             os#putc ' ';
+             if solver#get_bool (x#constant_at f i)  then os#putc '0';
+             if solver#get_bool (x#collapses_at f i) then os#putc '1';
+             if solver#get_bool (x#weak_simple_at f i) then os#putc 's';
+           done
 
     method output_sym_template : 'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
       fun f -> f#output << puts ": " << put_vec put_arg (x#encode_sym f)
   end
+
 
 
