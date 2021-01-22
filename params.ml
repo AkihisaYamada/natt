@@ -90,7 +90,7 @@ type order_params = {
   mutable dp : bool;
   mutable w_params : w_params array;
   mutable base_ty : Smt.ty;
-  mutable temp_var : bool;
+  mutable tmpvar : bool;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -127,7 +127,7 @@ let nonmonotone p =
 let order_default = {
   dp = false;
   base_ty = Smt.Real;
-  temp_var = true;
+  tmpvar = true;
   w_params = Array.make 0 w_default;
   ext_lex = false;
   ext_mset = false;
@@ -194,7 +194,6 @@ type params_type = {
   mutable result : bool;
   mutable cpf : bool;
   mutable cpf_to : out_channel;
-  mutable tmpvar : bool;
   mutable relative_usable : bool;
   mutable naive_C : bool;
 };;
@@ -217,7 +216,6 @@ let params = {
   result = true;
   cpf = false;
   cpf_to = stdout;
-  tmpvar = true;
   relative_usable = true;
   naive_C = false;
 };;
@@ -324,7 +322,7 @@ while !i < argc do
     match opt, optarg with
     | "-help", _ -> prerr_help (); exit 0;
     | "-all", None -> p.remove_all <- true;
-    | "-Tempvar", None -> params.tmpvar <- false;
+    | "-Tempvar", None -> p.tmpvar <- false;
     | "-Sort", None -> params.sort_scc <- SORT_none;
     | "-sort", _ -> (
       match optarg with

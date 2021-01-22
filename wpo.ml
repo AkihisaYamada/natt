@@ -41,7 +41,7 @@ class processor =
   let dplist = ref [] in
   let solver =
     let (tool,options) = p.smt_tool in
-    create_solver p.temp_var p.peek_to p.peek_in p.peek_out tool options
+    create_solver p.tmpvar p.peek_to p.peek_in p.peek_out tool options
   in
   let () = solver#set_base_ty weight_ty in
   (* Signature as the set of function symbols with their informations. *)
