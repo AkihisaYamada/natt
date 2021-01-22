@@ -203,7 +203,7 @@ let rec distrib_sum w =
 (* A polynomial is represented by a map. *)
 module StrIntListMap = Map.Make(LexList(Hashed (struct type t = string * int end)))
 
-let put_var (v,i) = puts v << putc '_' << put_int i
+let put_var (v,i) = puts v << putc '_' << put_int (i+1)
 
 let poly_coeff vs p =
   match StrIntListMap.find_opt vs p with
@@ -325,12 +325,8 @@ class interpreter p =
   let dim = Array.length p.w_params in
   let to_dim = int_list 0 (dim-1) in
   let put_arg =
-    if dim = 0 then fun (k,_) -> puts "x" << put_int k
-    else fun (k,i) -> puts "x" << put_int k << putc '_' << put_int i
-  in
-  let put_var =
-    (if dim = 0 then fun (s,_) -> puts s
-    else fun (s,i) -> puts s << putc '_' << put_int i)
+    if dim = 0 then fun (k,_) -> puts "x" << put_int (k+1)
+    else fun (k,i) -> puts "x" << put_int (k+1) << putc '_' << put_int (i+1)
   in
   let ty = p.base_ty in
   object (x)
