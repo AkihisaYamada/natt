@@ -649,14 +649,13 @@ class processor =
     else wpo3 s t
   and wpo3 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     let finfo = lookup f in
-    let live_f = smt_not finfo#collapse in
+    let col_f = finfo#collapse in
     smt_split (order_by_some_arg wpo finfo ss t)
     (fun some_ge some_gt ->
       smt_let Bool some_ge
       (fun some_ge ->
-        let some_gt = smt_if live_f some_ge some_gt in
-        if some_gt = LB true then
-          strictly_ordered
+        if some_ge = LB true then
+          Cons(LB true, col_f |^ some_gt)
         else if g#is_var then
           Cons(some_ge, some_gt)
         else
@@ -668,12 +667,11 @@ class processor =
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
               smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts))
-              (fun rest_ge rest_gt ->
+              (fun sym_arg_ge sym_arg_gt ->
                 smt_let Bool all_gt
                 (fun all_gt ->
-                  let cond = live_f &^ smt_not col_g &^ all_gt in 
-                  let ge = some_ge |^ (cond &^ rest_ge) |^ (col_g &^ all_ge) in
-                  let gt = some_gt |^ (cond &^ rest_gt) |^ (col_g &^ all_gt) in
+                  let ge = some_ge |^ smt_if col_g all_ge (smt_not col_f &^ all_gt &^ sym_arg_ge) in
+                  let gt = smt_if col_f some_gt (some_ge |^ (all_gt &^ (col_g |^ sym_arg_gt))) in
                   Cons(ge,gt)
                 )
               )

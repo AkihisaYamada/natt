@@ -90,7 +90,7 @@ class pretty_printer (base : #outputter) maxdepth =
 
 class pretty_wrap_out os =
   object (x)
-    inherit pretty_printer (new wrap_out os) 32
+    inherit pretty_printer (new wrap_out os) 64
   end
 
 class finalized finalizer =

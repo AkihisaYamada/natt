@@ -63,6 +63,23 @@ and dec =
   | Def of name * ty * exp
 ;;
 
+let very_simple e =
+  match e with
+  | Nil | EV _ | Not (EV _) | LI _ | LB _ | LR _ -> true
+  | _ -> false
+
+let is_simple e =
+  very_simple e ||
+  match e with
+  | If(c,t,e, _) when very_simple c && very_simple t && very_simple e -> true
+(*  | And(e1,e2)-> is_simple e1 && is_simple e2
+  | Or(e1,e2) -> is_simple e1 && is_simple e2
+*)
+  | Eq(e1,e2) -> very_simple e1 && very_simple e2
+  | Gt(e1,e2) -> very_simple e1 && very_simple e2
+  | Ge(e1,e2) -> very_simple e1 && very_simple e2
+  | _     -> false
+
 exception Inconsistent
 exception Internal of string
 exception Invalid_formula of string * exp
@@ -183,9 +200,11 @@ class virtual sexp_printer =
       | Dup(_,e)    -> pr "(dup "; pr_e e; pr ")";
       | Car(e)    -> pr "(car "; pr_e e; pr ")";
       | Cdr(e)    -> pr "(cdr "; pr_e e; pr ")";
-      | If(e1,e2,e3,_)  -> x#enter_inline;
-                 pr "(ite "; pr_e e1; pr " "; pr_e e2; pr " "; pr_e e3; pr ")";
-                 x#leave_inline;
+      | If(e1,e2,e3,_)  ->
+        ( if very_simple e1 && very_simple e2 && very_simple e3 then
+            (fun i -> x#enter_inline; i (); x#leave_inline)
+          else (fun i -> i ())
+        ) (fun _ -> pr "(ite "; x#enter 4; pr_e e1; x#endl; pr_e e2; x#endl; pr_e e3; pr ")"; x#leave 4)
       | Max(es)   -> pr "(max"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
       | ZeroOne(es) -> pr "(zeroone"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
       | ES1(es)   -> pr "(es1"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
@@ -228,28 +247,6 @@ let is_one =
   | LR 1.0 -> true
   | _ -> false
 
-let is_simple =
-  let very_simple =
-    function
-    | Nil
-    | EV _
-    | Not (EV _)
-    | LI _
-    | LB _
-    | LR _    -> true
-    | _ -> false
-  in
-  fun e -> very_simple e ||
-  match e with
-  | If(c,t,e, _) when very_simple c && very_simple t && very_simple e -> true
-(*  | And(e1,e2)-> is_simple e1 && is_simple e2
-  | Or(e1,e2) -> is_simple e1 && is_simple e2
-*)
-  | Eq(e1,e2) -> very_simple e1 && very_simple e2
-  | Gt(e1,e2) -> very_simple e1 && very_simple e2
-  | Ge(e1,e2) -> very_simple e1 && very_simple e2
-  | _     -> false
-
 let rec smt_not =
   function
   | LB b  -> LB (not b)
@@ -283,9 +280,7 @@ module OrderKnow = Map.Make(StringPair)
 
 let rec simplify_knowing kn e =
   match e with
-  | LB _
-  | LI _
-  | LR _ -> e
+  | LB _ | LI _ | LR _ -> e
   | EV v -> (try LB (BoolKnow.find v kn) with _ -> e)
   | Not e -> smt_not (simplify_knowing kn e)
   | And(e1,e2) -> (
@@ -311,7 +306,7 @@ let rec simplify_knowing kn e =
     | LB b -> if b then simplify_knowing kn e2 else LB true 
     | e1 -> (
       match simplify_knowing (assume_true e1 kn) e2 with
-      | LB b -> if b then LB true else e1
+      | LB b -> if b then LB true else smt_not e1
       | e2 -> Imp(e1,e2)
     )
   )
