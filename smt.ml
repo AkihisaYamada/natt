@@ -531,10 +531,10 @@ and smt_pre_if c nc t e =
     | LB b, _ -> if b then c |^ e else nc &^ e
     | _, LB b -> if b then c =>^ t else c &^ t
     | _ when simple_eq t e = Some true -> t
-    | If(c',t',e',p), _ when simple_eq e' e = Some true -> If(c  &^ c', t', e', p)
-    | If(c',t',e',p), _ when simple_eq t' e = Some true -> If(nc &^ c', t', e', p)
-    | _, If(c',t',e',p) when simple_eq e' t = Some true -> If(nc &^ c', t', e', p)
-    | _, If(c',t',e',p) when simple_eq t' t = Some true -> If(c  &^ c', t', e', p)
+    | If(c',t',e',p), _ when simple_eq e' e = Some true -> If(c  &^ c', t', e', p) (* c ? (c' ? t' : e) : e --> c && c' ? t' : e *)
+    | If(c',t',e',p), _ when simple_eq t' e = Some true -> If(nc |^ c', t', e', p) (* c ? (c' ? e : e') : e --> !c || c' ? e : e' *)
+    | _, If(c',t',e',p) when simple_eq e' t = Some true -> If(nc &^ c', t', e', p) (* c ? t : (c' ? t' : t) --> !c && c' ? t' : t *)
+    | _, If(c',t',e',p) when simple_eq t' t = Some true -> If(c  |^ c', t', e', p) (* c ? t : (c' ? t : e') --> c || c' ? t : e' *)
     | Nil, _
     | _, Nil
     | Cons _, _
@@ -566,20 +566,10 @@ and (>=^) e1 e2 =
   | LR r1, LI i2 -> LB(r1 >= float_of_int i2)
   | LR r1, LR r2 -> LB(r1 >= r2)
   | If(c,t,e,p), e2 -> (
-    match t >=^ e2 with
-    | LB b -> (
-      match e >=^ e2 with
-      | LB b' ->
-        if b then if b' then LB true else c
-        else if b' then smt_not c else LB false
-      | e' -> if b then c |^ e' else smt_not c &^ e'
-      )
-    | t' -> (
-      match e >=^ e2 with
-      | LB b' ->
-        if b' then c =>^ t' else c &^ t'
-      | _ -> Ge(e1, e2)
-      )
+    match t >=^ simplify_under c e2, e >=^ simplify_under (smt_not c) e2 with
+    | LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
+    | t', LB be -> if be then c =>^ t' else c &^ t'
+    | _ -> Ge(e1, e2)
     )
   | _, If(c,t,e,p) -> (
     match e1 >=^ t with

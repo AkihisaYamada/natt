@@ -273,7 +273,10 @@ let order_poly solver p1 p2 =
   let e2 = poly_coeff [] p2 in
   let ge = (e1 >=^ e2) &^ pre in
   let gt = (e1 >^ e2) &^ pre in
-  debug2 (endl << puts "[order_poly] " << put_exp ge);
+  debug2 (
+    endl << puts "[order_poly] "  << put_poly p1 << puts " vs. " << put_poly p2 <<
+    endl << puts "[order_poly] ge: " << put_exp ge <<
+    endl << puts "[order_poly] gt: " << put_exp gt);
   (ge, gt)
 
 let order_max solver w1 w2 =
