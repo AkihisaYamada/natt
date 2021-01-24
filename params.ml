@@ -57,38 +57,12 @@ type mode =
 | MODE_through
 | MODE_higher_xml
 | MODE_xml
-type w_template =
-| TEMP_sum
-| TEMP_max
-| TEMP_max_sum_dup
-| TEMP_sum_max_dup
 
-type w_params = {
-  mutable template : WeightTemplate.sym Term.term;
-  mutable w_mode : w_mode;
-  mutable w_neg : bool;
-  mutable coeff_mode : w_mode;
-  mutable coeff_max : int;
-  mutable max_poly : bool;
-  mutable addend_mode : w_mode;
-  mutable mcw_mode : mcw_mode;
-}
-
-let w_default = {
-  template = const 0;
-  w_mode = W_num;
-  w_neg = false;
-  coeff_mode = W_bool;
-  coeff_max = 0;
-  max_poly = false;
-  addend_mode = W_num;
-  mcw_mode = MCW_const 0;
-}
 type smt_tool = string * string list
 
 type order_params = {
   mutable dp : bool;
-  mutable w_params : w_params array;
+  mutable w_templates : WeightTemplate.t array;
   mutable base_ty : Smt.ty;
   mutable tmpvar : bool;
   mutable ext_mset : bool;
@@ -128,7 +102,7 @@ let order_default = {
   dp = false;
   base_ty = Smt.Real;
   tmpvar = true;
-  w_params = Array.make 0 w_default;
+  w_templates = Array.make 0 (WeightTemplate.Const 0);
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
@@ -163,7 +137,7 @@ let name_order p =
   let prec =
     if p.prec_mode = PREC_quasi then "Q" else ""
   in
-  if Array.length p.w_params = 0 then
+  if Array.length p.w_templates = 0 then
     prec ^ (
       match p.ext_lex, p.ext_mset with
       | true, true -> "RPO" ^ status
@@ -246,7 +220,6 @@ let prerr_help () =
   pe "Options for orders:";
   pe "  -u/-U        enable/disable usable rules (after EDG, enabled by default).";
   pe "  -w:<temp>    introduce a weight template.";
-  pe "  -neg         enable negative constants (after EDG).";
   pe "  -c[:<n>]     enable coefficients (with bound <n>). Requires QF_NIA solver.";
   pe "  -c:b         enable binary coefficients (default after EDG).";
   pe "  -C           disable coefficients.";
@@ -257,7 +230,7 @@ let prerr_help () =
 in
 let i = ref 1 in
 let pp = ref order_default in
-let wpp = ref w_default in
+let wpp = ref (WeightTemplate.Const 0) in
 let register_order p =
   if params.dp then begin
     params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
@@ -268,8 +241,8 @@ let register_order p =
   end;
 in
 let register_weight wp =
-  (!pp).w_params <- Array.append (!pp).w_params (Array.make 1 wp);
-  wpp := (!pp).w_params.(Array.length (!pp).w_params - 1);
+  (!pp).w_templates <- Array.append (!pp).w_templates (Array.make 1 wp);
+  wpp := (!pp).w_templates.(Array.length (!pp).w_templates - 1);
 in
 let apply_edg () =
   if params.dp then err "'EDG' cannot be applied twice!";
@@ -416,18 +389,10 @@ while !i < argc do
       | _ -> erro arg;
     )
     | "P", None -> p.prec_mode <- PREC_none;
-    | "neg", None -> wp.w_neg <- true;
     | "w", Some str -> (
       default := false;
-      wp.template <- WeightTemplate.of_string str;
+      register_weight (WeightTemplate.of_string str);
     )
-    | "-w0", _ ->
-      begin
-        match optarg with
-        | None -> wp.mcw_mode <- MCW_num;
-        | Some "b" -> wp.mcw_mode <- MCW_bool;
-        | Some s -> wp.mcw_mode <- MCW_const (safe_atoi s arg);
-      end;
     | "-min", None -> p.mincons <- true;
     | "-ty", Some "real" -> p.base_ty <- Smt.Real;
     | "-ty", Some "int" -> p.base_ty <- Smt.Int;
@@ -516,22 +481,16 @@ while !i < argc do
     | "POLO" ->
       default := false;
       apply_polo ();
-      register_weight { w_default with
-        template = if params.dp then sum_template else mono_sum_template;
-      };
+      register_weight (if params.dp then sum_template else mono_sum_template);
     | "O" ->
       default := false;
       apply_polo ();
     | "sum" ->
       default := false;
-      register_weight { w_default with
-        template = if params.dp then sum_template else mono_sum_template;
-      };
+      register_weight (if params.dp then sum_template else mono_sum_template);
     | "max" ->
       default := false;
-      register_weight { w_default with
-        template = if params.dp then max_template else mono_max_template;
-      };
+      register_weight (if params.dp then max_template else mono_max_template);
     | _ ->
       if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
       params.file <- arg;
@@ -541,27 +500,23 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
-  register_weight { w_default with template = mono_poly_template; };
+  register_weight mono_poly_template;
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;
   apply_polo ();
-  register_weight { w_default with template = sum_template; };
+  register_weight sum_template;
   apply_polo ();
-  register_weight { w_default with template = max_template; };
+  register_weight max_template;
   apply_lpo ();
   apply_polo ();
-  register_weight { w_default with template = sum_template; w_neg = true; };
+  register_weight neg_template;
   apply_wpo ();
-  register_weight { w_default with template = sum_template; };
+  register_weight sum_template;
   !pp.status_mode <- S_partial;
   apply_polo ();
-  register_weight { w_default with
-    template = sum [sum_args (sum [choice [const 0; arg 0]; choice [const 0; arg 1]]); var];
-  };
-  register_weight { w_default with
-    template = sum [sum_args (sum [choice [const 0; arg 0]; choice [const 0; arg 1]]); var];
-  };
+  register_weight (Sum [SumArgs (Sum [Choice [Arg 0; Const 0]; Choice [Arg 1; Const 0]]); PosVar]);
+  register_weight (Sum [SumArgs (Sum [Choice [Arg 0; Const 0]; Choice [Arg 1; Const 0]]); PosVar]);
   (* certified nontermination not supported *)
   if not params.cpf then params.max_loop <- 3;
 end

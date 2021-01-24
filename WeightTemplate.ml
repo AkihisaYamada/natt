@@ -1,53 +1,48 @@
 open Term
 open Txtr
 
-type sym =
+type t =
 | Const of int
-| Add
-| Mul
-| Max
-| Var
-| Choice
+| Prod of t list
+| Sum of t list
+| Max of t list
+| PosVar
+| NegVar
+| Choice of t list
 | Arg of int
-| SumArgs
-| MaxArgs
-| MaxOrSumArgs
+| SumArgs of t
+| MaxArgs of t
+| MaxOrSumArgs of t
+| Arity0 of t * t
+| Arity1 of t * t
 
-let const n = Node(Const n, [])
-let arg i = Node(Arg i, [])
-let var = Node(Var,[])
-let sum ss = Node(Add,ss)
-let max ss = Node(Max,ss)
-let prod ss = Node(Mul,ss)
-let choice ss = Node(Choice,ss)
-let sum_args s = Node(SumArgs,[s])
-let max_args s = Node(MaxArgs,[s])
-let max_or_sum_args s = Node(MaxOrSumArgs,[s])
-
-let mono_sum_template = sum [sum_args (arg 0); var]
-let mono_poly_template = sum [sum_args (choice [arg 0; prod [const 2; arg 0]]); var]
-let mono_max_template = max_args (sum [(arg 0); var])
-let mono_max_or_sum_template = sum [max_or_sum_args (arg 0); var]
-let sum_template = sum [sum_args (choice [const 0;arg 0;]); var]
-let max_template = max_args (sum [choice [const 0;arg 0]; var])
-let max_or_sum_template = sum [max_or_sum_args (choice [arg 0; const 0]); var]
+let mono_sum_template = Sum [SumArgs (Arg 0); PosVar]
+let mono_poly_template = Sum [SumArgs (Choice [Arg 0; Prod [Const 2; Arg 0]]); PosVar]
+let mono_max_template = Arity0(PosVar, MaxArgs (Sum [Arg 0; PosVar]))
+let mono_max_or_sum_template = Sum [MaxOrSumArgs (Arg 0); PosVar]
+let sum_template = Sum [SumArgs (Choice [Const 0; Arg 0]); PosVar]
+let max_template = Arity0(PosVar, MaxArgs(Sum [Choice [Const 0; Arg 0]; PosVar]))
+let max_or_sum_template = Sum [MaxOrSumArgs (Choice [Arg 0; Const 0]); PosVar]
+let neg_template = Arity0(PosVar, Max [Sum [SumArgs (Choice [Const 0; Arg 0]); NegVar]; Const 0])
 
 let of_string =
   let rec sub xmls = (
-    element "const" (int >>= fun i -> return (const i)) <|>
-    element "sum" (many sub >>= fun ss -> return (sum ss)) <|>
-    element "prod" (many sub >>= fun ss -> return (prod ss)) <|>
-    element "max" (many ~minOccurs:1 sub >>= fun ss -> return (max ss)) <|>
-    element "var" (return var) <|>
-    element "choice" (
-      element "option" sub >>= fun s1 ->
-      element "option" sub >>= fun s2 ->
-      return (choice [s1;s2])
+    element "const" (int >>= fun i -> return (Const i)) <|>
+    element "sum" (many sub >>= fun ss -> return (Sum ss)) <|>
+    element "prod" (many sub >>= fun ss -> return (Prod ss)) <|>
+    element "max" (many ~minOccurs:1 sub >>= fun ss -> return (Max ss)) <|>
+    element "var" (default false (bool_attribute "neg") >>= fun b -> return (if b then NegVar else PosVar)) <|>
+    element "choice" (sub >>= fun s1 -> sub >>= fun s2 -> return (Choice [s1;s2])) <|>
+    element "arg" (default 1 (int_attribute "coord") >>= fun i -> return (Arg i)) <|>
+    element "args" (
+      default "sum" (attribute "mode") >>= fun mode -> sub >>= fun s ->
+      match mode with
+      | "sum" -> return (SumArgs s)
+      | "max" -> return (MaxArgs s)
+      | "maxsum" -> return (MaxOrSumArgs s)
     ) <|>
-    element "arg" (default 1 (int_attribute "coord") >>= fun i -> return (arg i)) <|>
-    element "sumArgs" (sub >>= fun s -> return (sum_args s)) <|>
-    element "maxArgs" (sub >>= fun s -> return (max_args s)) <|>
-    element "maxOrSumArgs" (sub >>= fun s -> return (max_or_sum_args s))
+    element "maxArgs" (sub >>= fun s -> return (MaxArgs s)) <|>
+    element "maxOrSumArgs" (sub >>= fun s -> return (MaxOrSumArgs s))
   ) xmls
   in
   parse_string sub

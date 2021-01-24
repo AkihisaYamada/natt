@@ -36,6 +36,7 @@ class processor =
   let ge_p_v i = "geP" ^ string_of_int i in
   let supply_index v i = v ^ "_" ^ string_of_int i in
   fun p (trs : trs) (estimator : Estimator.t) (dg : dg) ->
+  let dim = Array.length p.w_templates in
   let weight_ty = p.base_ty in
   let usables = ref [] in
   let dplist = ref [] in
@@ -257,7 +258,7 @@ class processor =
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
-(*          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.addend_mode <> W_none) p.w_params
+(*          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.addend_mode <> W_none) p.w_templates
           then begin
             sub_c fname finfo;
           end else *) begin
@@ -703,7 +704,7 @@ object (x)
     debug (puts " Initializing.");
     solver#set_logic
     ( "QF_" ^
-      (if Array.exists (fun cp -> cp.coeff_mode = W_num) p.w_params then "N" else "L") ^
+      (if false then "N" else "L") ^
       (if weight_ty = Real then "R" else "I") ^
       "A"
     );
@@ -783,7 +784,7 @@ object (x)
         let w = Weight.smult (LI coeff) w in
         Weight.add acc w
       in
-      let rw = prule#fold_rs folder (Array.make (Array.length p.w_params) Weight.zero_w) in
+      let rw = prule#fold_rs folder (Array.make dim Weight.zero_w) in
       let (ge,gt) = split (wo lw rw) solver in
       if p.remove_all then begin
         solver#add_assertion gt;
@@ -821,7 +822,7 @@ object (x)
           end;
         end else if p.usable then begin
           let filt =
-            if Array.length p.w_params = 0 then permed (* trivial weight *)
+            if dim = 0 then permed (* trivial weight *)
             else depend_w
           in
           solver#add_assertion (usable i =>^ set_usable filt usable rule#r);

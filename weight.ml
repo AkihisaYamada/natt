@@ -318,7 +318,7 @@ let order_w solver w1 w2 =
   (ge,gt)
 
 let order_vec param solver =
-  let dim = Array.length param.w_params in
+  let dim = Array.length param.w_templates in
   if dim = 0 then fun _ _ -> weakly_ordered
   else fun w1 w2 ->
     Delay (fun solver ->
@@ -342,7 +342,7 @@ type sym_info = {
 }
 
 class interpreter p =
-  let dim = Array.length p.w_params in
+  let dim = Array.length p.w_templates in
   let to_dim = int_list 0 (dim-1) in
   let put_arg =
     if dim = 1 then fun (k,_) -> puts "x" << put_int (k+1)
@@ -357,13 +357,16 @@ class interpreter p =
         let to_n = int_list 0 (n-1) in
         let rec sub k t =
             match t with
-            | Node(WeightTemplate.Var,[]) ->
+            | WeightTemplate.PosVar ->
               let v = solver#temp_variable ty in
               solver#add_assertion (v >=^ LI 0);
               Smt v
-            | Node(WeightTemplate.Choice,[s1;s2]) ->
-              let w1 = sub k s1 in
-              let w2 = sub k s2 in
+            | WeightTemplate.NegVar ->
+              let v = solver#temp_variable ty in
+              Smt v
+            | WeightTemplate.Choice [t1;t2] ->
+              let w1 = sub k t1 in
+              let w2 = sub k t2 in
               let c = solver#temp_variable Bool in
               ( match w1, w2 with
                 | BVar v, Smt (LI 0) -> Prod [Smt(smt_if c (LI 1) (LI 0)); BVar v]
@@ -371,16 +374,17 @@ class interpreter p =
                 | Smt e1, Smt e2 -> Smt(smt_if c e1 e2)
                 | _ -> Cond(c,w1,w2)
               )
-            | Node(WeightTemplate.Arg i,[]) -> BVar (k,i)
-            | Node(WeightTemplate.Const n,[]) -> Smt (LI n)
-            | Node(WeightTemplate.Max,ss) -> Max (List.map (sub k) ss)
-            | Node(WeightTemplate.Add,ss) -> sum (List.map (sub k) ss)
-            | Node(WeightTemplate.Mul,ss) -> prod (List.map (sub k) ss)
-            | Node(WeightTemplate.SumArgs,[s]) -> sum (List.map (fun l -> sub l s) to_n)
-            | Node(WeightTemplate.MaxArgs,[s]) ->
-              if n = 0 then zero_w else Max (List.map (fun l -> sub l s) to_n)
+            | WeightTemplate.Arg i -> BVar (k,i)
+            | WeightTemplate.Const n -> Smt (LI n)
+            | WeightTemplate.Prod ts -> Prod (List.map (sub k) ts)
+            | WeightTemplate.Sum ts -> Sum (List.map (sub k) ts)
+            | WeightTemplate.Max ts -> Max (List.map (sub k) ts)
+            | WeightTemplate.SumArgs t -> Sum (List.map (fun l -> sub l t) to_n)
+            | WeightTemplate.MaxArgs t -> Max (List.map (fun l -> sub l t) to_n)
+            | WeightTemplate.Arity0(t1,t2) -> sub k (if n = 0 then t1 else t2)
+            | WeightTemplate.Arity1(t1,t2) -> sub k (if n = 1 then t1 else t2)
         in
-        let vec = Array.map (fun cp -> sub (-1) cp.template) p.w_params in
+        let vec = Array.map (fun t -> sub (-1) t) p.w_templates in
         Hashtbl.add table f#name {
           encodings = vec;
           pos_info = Array.of_list (
