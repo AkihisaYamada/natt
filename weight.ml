@@ -145,7 +145,7 @@ let weak_simple_on_w x =
     | Smt e -> LB false
     | Prod ws -> sub_prod ws
     | Sum ws -> sub_sum ws
-    | Max ws -> smt_for_all sub ws
+    | Max ws -> smt_exists sub ws
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   and sub_prod ws =
     match ws with

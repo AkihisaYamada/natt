@@ -21,9 +21,11 @@ let mono_poly_template = Sum [SumArgs (Choice [Arg 0; Prod [Const 2; Arg 0]]); P
 let mono_max_template = Arity0(PosVar, MaxArgs (Sum [Arg 0; PosVar]))
 let mono_max_or_sum_template = Sum [MaxOrSumArgs (Arg 0); PosVar]
 let sum_template = Sum [SumArgs (Choice [Const 0; Arg 0]); PosVar]
-let max_template = Arity0(PosVar, MaxArgs(Sum [Choice [Const 0; Arg 0]; PosVar]))
-let max_or_sum_template = Sum [MaxOrSumArgs (Choice [Arg 0; Const 0]); PosVar]
-let neg_template = Arity0(PosVar, Max [Sum [SumArgs (Choice [Const 0; Arg 0]); NegVar]; Const 0])
+let max_template = Arity0(PosVar, Arity1(sum_template, MaxArgs(Sum [Choice [Arg 0; Const 0]; PosVar])))
+let max_template2 = Arity0(PosVar, Arity1(sum_template, Max [MaxArgs(Sum [Choice [Arg 0; Const 0]; PosVar]);PosVar]))
+let neg_template = Arity0(PosVar, Max [Sum [SumArgs (Choice [Arg 0; Const 0]); NegVar]; Const 0])
+let max_or_sum_template = Arity0(PosVar, Arity1(sum_template, Choice[sum_template; max_template]))
+let max_or_sum_heuristic_template = Sum [MaxOrSumArgs (Choice [Arg 0; Const 0]); PosVar]
 
 let of_string =
   let rec sub xmls = (

@@ -512,7 +512,7 @@ if !default then begin
   apply_polo ();
   register_weight neg_template;
   apply_wpo ();
-  register_weight sum_template;
+  register_weight max_or_sum_template;
   !pp.status_mode <- S_partial;
   apply_polo ();
   register_weight (Sum [SumArgs (Sum [Choice [Arg 0; Const 0]; Choice [Arg 1; Const 0]]); PosVar]);
