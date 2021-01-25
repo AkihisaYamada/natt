@@ -171,12 +171,12 @@ let put_w var : 'a t -> #printer -> unit =
     | Sum ws ->
       let ws = List.filter (fun w -> w <> Smt (LI 0)) ws in
       paren l 1 (put_list (sub 1) (puts " + ") (putc '0') ws)
-    | Max ws -> puts "max{ " << put_list (sub 0) (puts ", ") (puts "-oo") ws << puts " }"
+    | Max ws -> puts "max{" << put_list (sub 0) (puts ", ") (puts "-oo") ws << puts "}"
     | Cond(e,w1,w2) -> paren l 0 (put_exp e << puts " ? " << sub 1 w1 << puts " : " << sub 0 w2)
   in
   fun w os -> (sub 0 w) os
 
-let put_vec var wa = puts "[ " << put_list (put_w var) (puts "; ") (puts "-") (Array.to_list wa) << puts " ]"
+let put_vec var wa = puts "(" << put_list (put_w var) (puts ", ") (puts "-") (Array.to_list wa) << puts ")"
 
 let cw_op =
   let sub (c1,w1) (c2,ws) = match c1 &^ c2 with LB false -> None | c -> Some (c, w1 :: ws) in

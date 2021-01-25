@@ -23,7 +23,9 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
     method output_proof : 'pr. (#printer as 'pr) -> unit = fun pr ->
       let pr_exp e = put_exp e pr in
       let pr_perm finfo =
-        pr#puts "s: ";
+        if status_is_used then begin
+        let n = finfo#base#arity in
+        if n > 0 then (
         let punct = ref "" in
         let rbr =
           if solver#get_bool finfo#collapse then ""
@@ -31,42 +33,42 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
             (pr#puts "{"; "}")
           else (pr#puts "["; "]")
         in
-        let n = finfo#base#arity in
         for j = 1 to n do
           for i = 1 to n do
             if solver#get_bool (finfo#perm i j) then begin
               pr#puts !punct;
+              pr#putc 'x';
               pr#put_int i;
               punct := ",";
             end;
           done;
         done;
-        pr#puts rbr;
+        pr#puts rbr
+        );
+        end;
       in
       let pr_interpret finfo =
-        pr#puts "\tw: ";
-	interpreter#output_sym solver finfo#base pr;
+        if weight_is_used then begin
+          pr#puts "\tw: ";
+          interpreter#output_sym solver finfo#base pr;
+        end
       in
       let pr_prec finfo =
-        pr#puts "p: ";
-        pr_exp (solver#get_value finfo#prec);
+        if prec_is_used then begin
+          pr_exp (solver#get_value finfo#prec);
+        end;
       in
       let pr_symbol fname (finfo:wpo_sym) =
         pr#puts "  ";
         finfo#base#output (pr:>Io.outputter);
-        if status_is_used then begin
-          pr#puts "\t";
-          pr_perm finfo;
-        end;
+        pr#putc '(';
+        (put_list (fun i -> putc 'x' << put_int i) (putc ',') nop (int_list 1 finfo#base#arity)) pr;
+        pr#puts ")\t";
         if not (solver#get_bool finfo#collapse) then begin
-          if prec_is_used then begin
-            pr#puts "\t";
-            pr_prec finfo;
-          end;
+          pr_prec finfo;
         end;
-	if weight_is_used then begin
-          pr_interpret finfo;
-        end;
+        pr_perm finfo;
+        pr_interpret finfo;
         pr#endl;
       in
       Hashtbl.iter pr_symbol sigma;
