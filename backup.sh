@@ -10,18 +10,17 @@ pwd=`pwd`
 bak=~/NaTT.backup
 tar="tar"
 
-common="README.txt xtc2tpdb.xml"
+doc="README.txt"
 bin="NaTT.exe"
-script="NaTT.sh"
+script="NaTT.sh xtc2tpdb.xml"
 src="*.ml *.mll *.mly Makefile"
-local="$common $script $src *.sh *.mk"
 
-if [ "$1" = "-r" ]
+if [ "$1" = "-s" ]
 then
 	shift
-	release=y
+	starexec=y
 else
-	release=n
+	starexec=n
 fi
 
 chmod -x $src $common
@@ -36,24 +35,22 @@ then
 	
 	$make || exit 1
 	
-	cd "$bak"
+	mkdir "$bak/NaTT"
+	mkdir "$bak/NaTT/bin"
+
+    eval cp $doc $src \"$bak/NaTT\"
+    eval cp $bin $script \"$bak/NaTT/bin\"
+
+	(cd $bak; $tar -czf $1.tar.gz NaTT)
 	
-	mkdir NaTT
-	
-	(cd "$pwd"; eval cp $local \"$bak/NaTT\")
-	$tar -czf $1.tar.gz NaTT
-	
-	if [ "$release" = "y" ]
+	if [ "$starexec" = "y" ]
 	then
-		rm -f NaTT/*
-		(cd "$pwd"; eval cp $bin $script $common \"$bak/NaTT\")
-		$tar -czf $1.bin.tar.gz NaTT
-		rm -f NaTT/*
-		(cd "$pwd"; eval cp $src $script $common \"$bak/NaTT\")
-		$tar -czf $1.src.tar.gz NaTT
+		rm -rf "$bak/NaTT"
+		eval cp $bin $script starexec_* \"$bak/NaTT/bin\"
+		(cd $bak; $tar -czf $1.starexec.tar.gz NaTT)
 	fi
 	
-	rm -rf NaTT
+	rm -rf "$bak/NaTT"
 else
 	echo Please make directory "$bak"!
 	exit 1

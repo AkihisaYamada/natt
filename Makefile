@@ -1,8 +1,8 @@
-TARG=./NaTT
-TARG_OPT=./NaTT.exe
+TARG=bin/NaTT
+TARG_OPT=bin/NaTT.exe
 PACKS=unix,str,ocamlgraph,xml-light
-OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg -g
-OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg -g
+OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg
 OCAMLDEP=ocamldep
 OCAMLYACC=ocamlyacc
 OCAMLLEX=ocamllex
@@ -48,8 +48,8 @@ OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
 OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
 
 ## If you need a statically linked binary
-#OCAMLFLAGS= -cclib '-static'
-OCAMLFLAGS+= -g
+OCAMLFLAGS= -cclib '-static'
+#OCAMLFLAGS+= -g
 
 all: $(TARG_OPT)
 
@@ -87,7 +87,7 @@ clean:
 
 # Consistency test
 test: $(TARG_OPT)
-	TOOL=$(PWD)/NaTT.sh; \
+	TOOL=$(PWD)/bin/NaTT.sh; \
 	BENCH=$(PWD)/tpdb_info/nonterm.list; \
 	cd ../TPDB/TRS_Standard; \
 	if [ -e tmp_result ]; then rm tmp_result; fi; \
