@@ -1,4 +1,5 @@
 open Util
+open Io
 
 type ty = Nat | Int | Real | Bool | Prod of ty * ty
 
@@ -89,7 +90,7 @@ exception Parse_error of string
 
 class virtual sexp_printer =
   object (x)
-    inherit Io.printer
+    inherit printer
     method virtual pr_v : string -> unit
     method virtual pr_ds : dec list -> unit
     method pr_e e =
@@ -142,7 +143,9 @@ class virtual sexp_printer =
       | Mul(e1,e2)  -> pr "(* "; pr_mul e1; pr " "; pr_mul e2; pr ")";
       | Div(e1,e2)  -> pr "(/ "; pr_e e1; pr " "; pr_e e2; pr ")";
       | Mod(e1,e2)  -> pr "(mod "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Eq(e1,e2)   -> pr "(= "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Eq(e1,e2)   ->
+        let mid = if very_simple e1 && very_simple e2 then putc ' ' else endl in
+        pr "(= "; x#enter 3; pr_e e1; mid x; pr_e e2; x#leave 3; pr ")"
       | Ge(e1,e2)   -> pr "(>= "; pr_e e1; pr " "; pr_e e2; pr ")";
       | Gt(e1,e2)   -> pr "(> "; pr_e e1; pr " "; pr_e e2; pr ")";
       | Le(e1,e2)   -> pr "(<= "; pr_e e1; pr " "; pr_e e2; pr ")";
@@ -201,10 +204,8 @@ class virtual sexp_printer =
       | Car(e)    -> pr "(car "; pr_e e; pr ")";
       | Cdr(e)    -> pr "(cdr "; pr_e e; pr ")";
       | If(e1,e2,e3,_)  ->
-        ( if very_simple e1 && very_simple e2 && very_simple e3 then
-            (fun i -> x#enter_inline; i (); x#leave_inline)
-          else (fun i -> i ())
-        ) (fun _ -> pr "(ite "; x#enter 4; pr_e e1; x#endl; pr_e e2; x#endl; pr_e e3; pr ")"; x#leave 4)
+        let mid = if very_simple e1 && very_simple e2 && very_simple e3 then putc ' ' else endl in
+        pr "(ite "; x#enter 4; pr_e e1; mid x; pr_e e2; mid x; pr_e e3; pr ")"; x#leave 4;
       | Max(es)   -> pr "(max"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
       | ZeroOne(es) -> pr "(zeroone"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
       | ES1(es)   -> pr "(es1"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
@@ -214,9 +215,9 @@ class virtual sexp_printer =
       | Delay f   -> pr "(delay...)";
   end;;
 
-class sexp_printer_wrap (base : #Io.printer) = object
+class sexp_printer_wrap (base : #printer) = object
   inherit sexp_printer
-  inherit Io.printer
+  inherit printer
   (* Tedious! Can't be done elegantly? *)
   method puts = base#puts
   method putc = base#putc
@@ -230,9 +231,9 @@ class sexp_printer_wrap (base : #Io.printer) = object
   method pr_ds = raise (No_support "SMT")
 end;;
 
-let put_exp e (pr : #Io.printer) = (new sexp_printer_wrap pr)#pr_e e
+let put_exp e (pr : #printer) = (new sexp_printer_wrap pr)#pr_e e
 
-let prerr_exp e = put_exp e Io.cerr
+let prerr_exp e = put_exp e cerr
 
 
 let is_zero =
@@ -1296,8 +1297,8 @@ let create_solver tmpvar debug_to debug_in debug_out command options =
   object (x)
     inherit smt_lib_2_0 tmpvar
     val main = new Proc.t command options
-    val dout = if debug_out then new Io.pretty_wrap_out debug_to else (Io.null :> Io.printer)
-    val din = if debug_in then new Io.pretty_wrap_out debug_to else (Io.null :> Io.printer)
+    val dout = if debug_out then new pretty_wrap_out debug_to else (Io.null :> printer)
+    val din = if debug_in then new pretty_wrap_out debug_to else (Io.null :> printer)
     method endl = main#endl; dout#endl;
     method putc c = main#putc c; dout#putc c;
     method puts s = main#puts s; dout#puts s;

@@ -118,6 +118,8 @@ let null =
 let cerr = new pretty_wrap_out stderr
 let cout = new pretty_wrap_out stdout
 
+let (<<) f g pr = f pr; g pr
+
 let puts s pr = pr#puts s
 let putc c pr = pr#putc c
 let put_int i pr = pr#put_int i
@@ -126,7 +128,5 @@ let flush pr = pr#flush
 let nop pr = pr
 let enter n pr = pr#enter n
 let leave n pr = pr#leave n
-
-
-let (<<) f g pr = f pr; g pr
-
+let indent n m pr = enter n pr; m pr; leave n
+let inline n m pr = pr#enter_inline; m pr; pr#leave_inline
