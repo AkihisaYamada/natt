@@ -78,9 +78,13 @@ let eq_1_w =
     | BVar v -> LB false
     | Smt e -> e =^ LI 1
     | Prod ws -> smt_for_all sub ws (* division is not considered *)
-    | Sum ws -> LB false (* sound *)
-    | Max ws -> LB false (* sound *)
+    | Sum ws -> sub_sum ws
+    | Max ws -> smt_for_all sub ws (* sound *)
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
+  and sub_sum ws =
+    match ws with
+    | [] -> LB false
+    | w::ws -> (sub w &^ smt_for_all eq_0_w ws) |^ (eq_0_w w &^ sub_sum ws)
   in sub
 
 let ge_0_w =
@@ -126,7 +130,7 @@ let is_var_w x =
     | Smt e -> LB false
     | Prod ws -> sub_prod ws
     | Sum ws -> sub_sum ws
-    | Max ws -> smt_for_all sub ws
+    | Max ws -> sub_max ws
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   and sub_prod ws =
     match ws with
@@ -136,6 +140,10 @@ let is_var_w x =
     match ws with
     | [] -> LB false
     | w::ws -> (sub w &^ smt_for_all eq_0_w ws) |^ (eq_0_w w &^ sub_sum ws)
+  and sub_max ws =
+    match ws with
+    | [] -> LB false
+    | w::ws -> (sub w &^ smt_for_all eq_0_w ws) |^ (eq_0_w w &^ sub_max ws)
   in sub
 
 let weak_simple_on_w x =

@@ -49,8 +49,8 @@ class sym_unmarked ty0 name = object (x:'x)
     else MyXML.enclose_inline "name" x#output
 end
 
-let mark_name name = "♯" ^ name
-let marked_name name = String.sub name 0 2 = "♯"
+let mark_name name = " #" ^ name
+let marked_name name = String.sub name 0 2 = " #"
 let unmark_name name = String.sub name 2 (String.length name - 2)
 
 

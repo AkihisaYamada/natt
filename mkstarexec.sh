@@ -28,7 +28,7 @@ then
 	mkdir "$bak/bin"
 	cp $doc $bak
 
-	(cd bin; eval cp $bin starexec_* \"$bak/bin/\")
+	(cd bin; eval cp $bin starexec_* z3 \"$bak/bin/\")
 
 	(cd $bak; $tar -czf $1.tar.gz bin $doc)
 	
