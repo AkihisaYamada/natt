@@ -132,7 +132,7 @@ do
 		cat "$d$f"
 	fi | {
 		time -p {
-			timeout $t "$dir/NaTT.exe" $cpfopt $@ $options 1> "$outfile"
+			timeout $t "$dir/NaTT.exe" $cpfopt "$@" $options 1> "$outfile"
 		} 2> "$log"
 	} 2> "$timefile"
 	out=`sed -E "s/([A-Z]+)/\1/;q" "$outfile"`

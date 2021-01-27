@@ -61,19 +61,20 @@ let of_string =
     element "max" (many ~minOccurs:1 sub >>= fun ss -> return (Max ss)) <|>
     element "var" (default false (bool_attribute "neg") >>= fun b -> return (if b then NegVar else PosVar)) <|>
     element "choice" (sub >>= fun s1 -> sub >>= fun s2 -> return (Choice [s1;s2])) <|>
-    element "arg" (default 1 (int_attribute "coord") >>= fun i -> return (Arg i)) <|>
+    element "arg" (default 0 (int_attribute "coord") >>= fun i -> return (Arg i)) <|>
     element "args" (
       default "sum" (attribute "mode") >>= fun mode -> sub >>= fun s ->
       match mode with
       | "sum" -> return (SumArgs s)
       | "max" -> return (MaxArgs s)
       | "maxsum" -> return (MaxOrSumArgs s)
-    ) <|>
-    element "maxArgs" (sub >>= fun s -> return (MaxArgs s)) <|>
-    element "maxOrSumArgs" (sub >>= fun s -> return (MaxOrSumArgs s))
+    )
   ) xmls
   in
   parse_string (
+    element "poly" (default false (bool_attribute "mono") >>= fun mono ->
+      return [if mono then mono_poly_template else sum_template]
+    ) <|>
     element "matrix" (
       mandatory (int_attribute "dim") >>= fun dim ->
       return (List.init dim (fun _ -> bmat_template dim))
