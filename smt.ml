@@ -732,8 +732,9 @@ class virtual context tmpvar =
       else
         match e with
           (* Impure formula will not be represented by a variable *)
-        | If(c,t,e,b) ->
-          If(x#refer_sub Bool c, x#refer_sub ty t, x#refer_sub ty e, b)
+          (* We don't abstract If-condition *) 
+        | If(c,t,e,false) -> If(c, x#refer_sub ty t, x#refer_sub ty e, false)
+        | If(c,t,e,true) when very_simple t && very_simple e -> If(c,t,e,true)
         | Cons(e1,e2) ->
           (match ty with
            | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
