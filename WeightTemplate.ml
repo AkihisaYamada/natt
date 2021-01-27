@@ -17,7 +17,7 @@ type t =
 | Arity1 of t * t
 
 let mono_sum_template = Sum [SumArgs (Arg 0); PosVar]
-let mono_poly_template = Sum [SumArgs (Choice [Arg 0; Prod [Const 2; Arg 0]]); PosVar]
+let mono_poly_template = Sum [SumArgs (Prod [Choice [Const 2; Const 1]; Arg 0]); PosVar]
 let mono_max_template = Arity0(PosVar, MaxArgs (Sum [Arg 0; PosVar]))
 let mono_max_or_sum_template = Sum [MaxOrSumArgs (Arg 0); PosVar]
 let sum_template = Sum [SumArgs (Choice [Const 0; Arg 0]); PosVar]
