@@ -164,33 +164,42 @@ class processor =
   (*** Status ***)
   let add_perm =
     let sub_lex =
-      let sub_perm fname finfo n =
-        match finfo#status_mode with
-        | S_none -> finfo#set_perm (fun i k -> LB (i = k))
-        | S_empty -> finfo#set_perm (fun _ _ -> LB false)
-        | S_total
-        | S_partial ->
-          let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
-          let perm_e i k = EV(perm_v i k) in
-          for i = 1 to n do
-            for k = 1 to n do
-              solver#add_variable (perm_v i k) Bool;
-            done;
-          done;
-          finfo#set_perm perm_e;
-      in
       let sub_permed fname finfo n =
         match finfo#status_mode with
         | S_none
         | S_total -> finfo#set_permed (k_comb (LB true))
         | S_empty -> finfo#set_permed (k_comb (LB false))
         | S_partial ->
-          let permed_v i = supply_index ("permed_" ^ fname) i in
-          let permed_e i = EV(permed_v i) in
-          for i = 1 to n do
-            solver#add_variable (permed_v i) Bool;
-          done;
-          finfo#set_permed permed_e;
+          if n = 0 then
+            finfo#set_permed (k_comb (LB false))
+          else (
+            let permed_v i = supply_index ("permed_" ^ fname) i in
+            let permed_e i = EV(permed_v i) in
+            for i = 1 to n do
+              solver#add_variable (permed_v i) Bool;
+            done;
+            finfo#set_permed permed_e;
+          )
+      in
+      let sub_perm fname finfo n =
+        match finfo#status_mode with
+        | S_none -> finfo#set_perm (fun i k -> LB (i = k))
+        | S_empty -> finfo#set_perm (fun _ _ -> LB false)
+        | S_total
+        | S_partial ->
+          if n = 0 then
+            finfo#set_perm (fun _ _ -> LB false)
+          else if n = 1 then
+            finfo#set_perm (fun i _ -> finfo#permed i)
+          else (
+            let perm_v i k = supply_index (supply_index ("st_" ^ fname) i) k in
+            for i = 1 to n do
+              for k = 1 to n do
+                solver#add_variable (perm_v i k) Bool;
+              done;
+            done;
+            finfo#set_perm (fun i k -> EV(perm_v i k));
+          )
       in
       let sub_mapped fname finfo n to_n =
         match finfo#status_mode with
@@ -207,8 +216,8 @@ class processor =
           finfo#set_mapped mapped_e;
       in
       fun fname finfo n to_n ->
-        sub_perm fname finfo n;
         sub_permed fname finfo n;
+        sub_perm fname finfo n;
         sub_mapped fname finfo n to_n;
         for i = 1 to n do
           let p_i = finfo#permed i in
@@ -298,7 +307,7 @@ class processor =
           solver#add_variable v Bool;
           finfo#set_collapse (EV v);
           solver#add_assertion (EV v =>^ ES1 (List.map finfo#permed to_n)); 
-          solver#add_assertion (EV v =>^ (smt_for_all (fun i -> interpreter#collapses_at f i =^ finfo#permed i) to_n));
+          solver#add_assertion (EV v =>^ (smt_for_all (fun i -> finfo#permed i =>^ interpreter#collapses_at f i) to_n));
     else
       fun finfo _ _ -> finfo#set_collapse (LB false)
   in
