@@ -1,4 +1,4 @@
-open Term
+open Util
 open Txtr
 
 type t =
@@ -13,19 +13,45 @@ type t =
 | SumArgs of t
 | MaxArgs of t
 | MaxOrSumArgs of t
-| Arity0 of t * t
-| Arity1 of t * t
+| ArityChoice of (int -> t)
 
 let mono_sum_template = Sum [SumArgs (Arg 0); PosVar]
 let mono_poly_template = Sum [SumArgs (Prod [Choice [Const 2; Const 1]; Arg 0]); PosVar]
-let mono_max_template = Arity0(PosVar, MaxArgs (Sum [Arg 0; PosVar]))
-let mono_max_or_sum_template = Sum [MaxOrSumArgs (Arg 0); PosVar]
-let sum_template = Sum [SumArgs (Choice [Const 0; Arg 0]); PosVar]
-let max_template = Arity0(PosVar, Arity1(sum_template, MaxArgs(Sum [Choice [Arg 0; Const 0]; PosVar])))
-let max_template2 = Arity0(PosVar, Arity1(sum_template, Max [MaxArgs(Sum [Choice [Arg 0; Const 0]; PosVar]);PosVar]))
-let neg_template = Arity0(PosVar, Max [Sum [SumArgs (Choice [Arg 0; Const 0]); NegVar]; Const 0])
-let max_or_sum_template = Arity0(PosVar, Arity1(sum_template, Choice[sum_template; max_template]))
-let max_or_sum_heuristic_template = Sum [MaxOrSumArgs (Choice [Arg 0; Const 0]); PosVar]
+let mono_max_template = ArityChoice(function 0 -> PosVar | _ -> MaxArgs (Sum [Arg 0; PosVar]))
+let mono_max_sum_template = Sum [MaxOrSumArgs (Arg 0); PosVar]
+let sum_template = Sum [SumArgs (Choice [Arg 0; Const 0]); PosVar]
+let max_template = ArityChoice(function
+  | 0 -> PosVar
+  | 1 -> Sum[Choice[Arg 0; Const 0]; PosVar]
+  | _ -> MaxArgs(Sum [Choice [Arg 0; Const 0]; PosVar])
+)
+let neg_template = ArityChoice(function
+  | 0 -> PosVar
+  | _ -> Max[Sum[SumArgs(Choice [Arg 0; Const 0]); NegVar]; Const 0]
+)
+let neg_max_sum_template maxarity = ArityChoice(function
+  | 0 -> PosVar
+  | 1 -> Max[Sum[Choice[Arg 0; Const 0]; NegVar]; Const 0]
+  | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
+    Max[MaxArgs(Sum[Choice[Arg 0; Const 0]; NegVar]); Const 0]
+  | _ -> Choice[
+      Max[Sum[SumArgs(Choice[Arg 0; Const 0]); NegVar]; Const 0];
+      Max[MaxArgs(Sum[Choice[Arg 0; Const 0]; NegVar]); Const 0];
+    ]
+)
+let max_sum_template maxarity = ArityChoice(function
+  | 0 -> PosVar
+  | 1 -> Sum[Choice[Arg 0; Const 0]; PosVar]
+  | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
+    MaxArgs(Sum[Choice[Arg 0; Const 0]; PosVar])
+  | _ -> Choice[
+      Sum[SumArgs(Choice[Arg 0; Const 0]); PosVar];
+      MaxArgs(Sum[Choice[Arg 0; Const 0]; PosVar]);
+    ]
+)
+let bmat_template dim =
+  Sum[SumArgs(Sum(List.map (fun i -> Choice [Arg i; Const 0]) (int_list 0 (dim-1)))); PosVar]
+
 
 let of_string =
   let rec sub xmls = (
@@ -47,5 +73,12 @@ let of_string =
     element "maxOrSumArgs" (sub >>= fun s -> return (MaxOrSumArgs s))
   ) xmls
   in
-  parse_string sub
+  parse_string (
+    element "matrix" (
+      mandatory (int_attribute "dim") >>= fun dim ->
+      return (List.init dim (fun _ -> bmat_template dim))
+    ) <|>
+    element "multi" (many sub >>= fun ss -> return ss) <|>
+    (sub >>= fun s -> return [s])
+  )
 

@@ -389,10 +389,9 @@ class interpreter p =
             | WeightTemplate.Max ts -> Max (List.map (sub k) ts)
             | WeightTemplate.SumArgs t -> Sum (List.map (fun l -> sub l t) to_n)
             | WeightTemplate.MaxArgs t -> Max (List.map (fun l -> sub l t) to_n)
-            | WeightTemplate.Arity0(t1,t2) -> sub k (if n = 0 then t1 else t2)
-            | WeightTemplate.Arity1(t1,t2) -> sub k (if n = 1 then t1 else t2)
+            | WeightTemplate.ArityChoice fn -> sub k (fn n)
         in
-        let vec = Array.map (fun t -> sub (-1) t) p.w_templates in
+        let vec = Array.map (fun t -> sub 0 t) p.w_templates in
         Hashtbl.add table f#name {
           encodings = vec;
           pos_info = Array.of_list (

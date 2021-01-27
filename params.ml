@@ -391,7 +391,7 @@ while !i < argc do
     | "P", None -> p.prec_mode <- PREC_none;
     | "w", Some str -> (
       default := false;
-      register_weight (WeightTemplate.of_string str);
+      List.iter register_weight (WeightTemplate.of_string str);
     )
     | "-min", None -> p.mincons <- true;
     | "-ty", Some "real" -> p.base_ty <- Smt.Real;
@@ -510,9 +510,9 @@ if !default then begin
   register_weight max_template;
   apply_lpo ();
   apply_polo ();
-  register_weight neg_template;
+  register_weight (neg_max_sum_template 4);
   apply_wpo ();
-  register_weight max_or_sum_template;
+  register_weight (max_sum_template 4);
   !pp.status_mode <- S_partial;
   apply_polo ();
   register_weight (Sum [SumArgs (Sum [Choice [Arg 0; Const 0]; Choice [Arg 1; Const 0]]); PosVar]);
