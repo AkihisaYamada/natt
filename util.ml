@@ -124,6 +124,16 @@ let remdups =
   in
   fun xs -> sub [] xs
 
+type ('a,'b) sum = Inl of 'a | Inr of 'b
+
+let separate_list f =
+  let rec sub ls rs xs =
+    match xs with
+    | [] -> (ls,rs)
+    | x::xs -> match f x with Inl l -> sub (l::ls) rs xs | Inr r -> sub ls (r::rs) xs
+  in
+  sub [] []
+
 class type output =
   object
     method output : out_channel -> unit

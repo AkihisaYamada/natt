@@ -11,7 +11,7 @@ bak=~/NaTT.backup
 tar="tar"
 
 doc="README.txt"
-bin="NaTT.exe NaTT.sh xtc2tpdb.xml"
+bin="NaTT.exe NaTT.sh *.xml"
 
 chmod -x $src $common
 

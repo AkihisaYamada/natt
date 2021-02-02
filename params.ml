@@ -62,7 +62,7 @@ type smt_tool = string * string list
 
 type order_params = {
   mutable dp : bool;
-  mutable w_templates : WeightTemplate.t array;
+  mutable w_templates : WeightTemplate.entry array;
   mutable base_ty : Smt.ty;
   mutable tmpvar : bool;
   mutable ext_mset : bool;
@@ -102,7 +102,7 @@ let order_default = {
   dp = false;
   base_ty = Smt.Real;
   tmpvar = true;
-  w_templates = Array.make 0 (WeightTemplate.Const 0);
+  w_templates = Array.make 0 (WeightTemplate.Nat(WeightTemplate.Const 0));
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
@@ -201,6 +201,7 @@ let err msg =
 in
 let argv = Sys.argv in
 let argc = Array.length argv in
+let progdir = Filename.dirname argv.(0) in
 let prerr_help () =
   let pr = prerr_string in
   let pe = prerr_endline in
@@ -230,7 +231,6 @@ let prerr_help () =
 in
 let i = ref 1 in
 let pp = ref order_default in
-let wpp = ref (WeightTemplate.Const 0) in
 let register_order p =
   if params.dp then begin
     params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
@@ -240,9 +240,8 @@ let register_order p =
     pp := params.orders_removal.(Array.length params.orders_removal - 1);
   end;
 in
-let register_weight wp =
-  (!pp).w_templates <- Array.append (!pp).w_templates (Array.make 1 wp);
-  wpp := (!pp).w_templates.(Array.length (!pp).w_templates - 1);
+let register_weights wts =
+  (!pp).w_templates <- Array.append (!pp).w_templates (Array.of_list wts);
 in
 let apply_edg () =
   if params.dp then err "'EDG' cannot be applied twice!";
@@ -282,7 +281,6 @@ let safe_atoi s arg = (try int_of_string s with _ -> erro arg) in
 let default = ref true in
 while !i < argc do
   let p = !pp in
-  let wp = !wpp in
   let arg = argv.(!i) in
   if arg.[0] = '-' then begin
     let (opt,optarg) =
@@ -391,7 +389,7 @@ while !i < argc do
     | "P", None -> p.prec_mode <- PREC_none;
     | "w", Some str -> (
       default := false;
-      List.iter register_weight (WeightTemplate.of_string str);
+      register_weights (WeightTemplate.parse_file (progdir ^ "/" ^ str));
     )
     | "-min", None -> p.mincons <- true;
     | "-ty", Some "real" -> p.base_ty <- Smt.Real;
@@ -481,16 +479,16 @@ while !i < argc do
     | "POLO" ->
       default := false;
       apply_polo ();
-      register_weight (if params.dp then sum_template else mono_sum_template);
+      register_weights (if params.dp then sum_template else mono_sum_template);
     | "O" ->
       default := false;
       apply_polo ();
     | "sum" ->
       default := false;
-      register_weight (if params.dp then sum_template else mono_sum_template);
+      register_weights (if params.dp then sum_template else mono_sum_template);
     | "max" ->
       default := false;
-      register_weight (if params.dp then max_template else mono_max_template);
+      register_weights (if params.dp then max_template else mono_max_template);
     | _ ->
       if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
       params.file <- arg;
@@ -500,23 +498,22 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
-  register_weight mono_poly_template;
+  register_weights mono_poly_template;
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;
   apply_polo ();
-  register_weight sum_template;
+  register_weights sum_template;
   apply_polo ();
-  register_weight max_template;
+  register_weights max_template;
   apply_lpo ();
   apply_polo ();
-  register_weight (neg_max_sum_template 4);
+  register_weights (neg_max_sum_template 4);
   apply_wpo ();
-  register_weight (max_sum_template 4);
+  register_weights (max_sum_template 4);
   !pp.status_mode <- S_partial;
   apply_polo ();
-  register_weight (Sum [SumArgs (Sum [Choice [Arg 0; Const 0]; Choice [Arg 1; Const 0]]); PosVar]);
-  register_weight (Sum [SumArgs (Sum [Choice [Arg 0; Const 0]; Choice [Arg 1; Const 0]]); PosVar]);
+  register_weights (bmat_template 2);
   (* certified nontermination not supported *)
   if not params.cpf then params.max_loop <- 3;
 end

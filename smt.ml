@@ -146,8 +146,12 @@ class virtual sexp_printer =
       | Eq(e1,e2)   ->
         let mid = if very_simple e1 && very_simple e2 then putc ' ' else endl in
         pr "(= "; x#enter 3; pr_e e1; mid x; pr_e e2; x#leave 3; pr ")"
-      | Ge(e1,e2)   -> pr "(>= "; pr_e e1; pr " "; pr_e e2; pr ")";
-      | Gt(e1,e2)   -> pr "(> "; pr_e e1; pr " "; pr_e e2; pr ")";
+      | Ge(e1,e2)   ->
+        let mid = if very_simple e1 && very_simple e2 then putc ' ' else endl in
+        pr "(>= "; x#enter 4; pr_e e1; mid x; pr_e e2; x#leave 4; pr ")";
+      | Gt(e1,e2)   ->
+        let mid = if very_simple e1 && very_simple e2 then putc ' ' else endl in
+        pr "(> "; x#enter 3; pr_e e1; mid x; pr_e e2; x#leave 3; pr ")";
       | Le(e1,e2)   -> pr "(<= "; pr_e e1; pr " "; pr_e e2; pr ")";
       | Lt(e1,e2)   -> pr "(< "; pr_e e1; pr " "; pr_e e2; pr ")";
       | And(e1,e2)  ->
@@ -467,39 +471,9 @@ and (=^) e1 e2 =
     when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true
       || simple_eq l1 r2 = Some true && simple_eq r1 l2 = Some true
     -> LB true
-(*    | If(c,t,e,p), e2 -> (
-      match t =^ e2 with
-      | LB b -> (
-        match e =^ e2 with
-        | LB b' ->
-          if b then if b' then LB true else c
-          else if b' then smt_not c else LB false
-        | e' -> if b then c |^ e' else smt_not c &^ e'
-        )
-      | t' -> (
-        match e =^ e2 with
-        | LB b' ->
-          if b' then c =>^ t' else c &^ t'
-        | _ -> Eq(e1, e2)
-        )
-      )
-    | _, If(c,t,e,p) -> (
-      match e1 =^ t with
-      | LB b -> (
-        match e1 =^ e with
-        | LB b' ->
-          if b then if b' then LB true else c
-          else if b' then smt_not c else LB false
-        | e' -> if b then c |^ e' else smt_not c &^ e'
-        )
-      | t' -> (
-        match e1 =^ e with
-        | LB b' ->
-          if b' then c =>^ t' else c &^ t'
-        | _ -> Eq(e1, e2)
-        )
-      )
-*)    | _ -> Eq (e1, e2)
+    | If(c,t,e,p), e2 when very_simple e2 -> smt_if c (t =^ e2) (e =^ e2)
+    | e1, If(c,t,e,p) when very_simple e1 -> smt_if c (e1 =^ t) (e1 =^ e)
+    | _ -> Eq(e1,e2)
   )
 and ( *^) e1 e2 =
   match e1, e2 with
