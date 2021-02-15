@@ -5,11 +5,10 @@ open Util
 open Preorder
 open Params
 open Io
-
-type sort = IntS | NatS | BoolS
+open WeightTemplate
 
 type 'a t =
-| BVar of 'a * sort
+| BVar of 'a * range
 | Smt of exp
 | Prod of 'a t list
 | Sum of 'a t list
@@ -67,7 +66,7 @@ let refer_w solver =
     | Prod ws -> Prod (List.map sub ws)
     | Sum ws -> Sum (List.map sub ws)
     | Max ws -> Max (List.map sub ws)
-    | Cond(e,w1,w2) -> Cond(solver#refer Bool e, sub w1, sub w2)
+    | Cond(e,w1,w2) -> Cond(solver#refer Smt.Bool e, sub w1, sub w2)
   in sub
 
 let refer_vec solver = Array.map (refer_w solver)
@@ -75,22 +74,22 @@ let refer_vec solver = Array.map (refer_w solver)
 let eq_0_w =
   let rec sub w =
     match w with
-    | BVar(_,_) -> LB false
+    | BVar(_,_) -> LB false (* incomplete *)
     | Smt e -> e =^ LI 0
     | Prod ws -> smt_exists sub ws
-    | Sum ws -> smt_for_all sub ws (* sound: cancellation is not considered *)
-    | Max ws -> smt_for_all sub ws (* sound *)
+    | Sum ws -> smt_for_all sub ws (* cancellation is not considered *)
+    | Max ws -> smt_for_all sub ws (* incomplete *)
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   in sub
 
 let eq_1_w =
   let rec sub w =
     match w with
-    | BVar(_,_) -> LB false
+    | BVar(_,_) -> LB false (* incomplete *)
     | Smt e -> e =^ LI 1
     | Prod ws -> smt_for_all sub ws (* division is not considered *)
     | Sum ws -> sub_sum ws
-    | Max ws -> smt_for_all sub ws (* sound *)
+    | Max ws -> smt_for_all sub ws (* incomplete *)
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   and sub_sum ws =
     match ws with
@@ -101,11 +100,12 @@ let eq_1_w =
 let ge_0_w =
   let rec sub w =
     match w with
-    | BVar(_,NatS) | BVar(_,BoolS) -> LB true
-    | BVar(_,IntS) -> LB false
+    | BVar(_,Pos) | BVar(_,Bool) -> LB true
+    | BVar(_,Neg) -> LB false
+    | BVar(_,Full) -> LB false (* incomplete *)
     | Smt e -> e >=^ LI 0
     | Prod ws -> LB true (* don't support negative in products *)
-    | Sum ws -> smt_for_all sub ws (* sound: cancellation is not considered *)
+    | Sum ws -> smt_for_all sub ws (* cancellation is not considered *)
     | Max ws -> smt_exists sub ws
     | Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
   in sub
@@ -113,7 +113,7 @@ let ge_0_w =
 let ge_1_w =
   let rec sub w =
     match w with
-    | BVar(_,_) -> LB false
+    | BVar(_,_) -> LB false (* incomplete *)
     | Smt e -> e >=^ LI 1
     | Prod ws -> smt_for_all sub ws
     | Sum ws -> sub_sum ws
@@ -239,13 +239,15 @@ let rec expand_sum w =
     )
 
 (* A polynomial is represented by a map. *)
-module StrIntListMap = Map.Make(LexList(Hashed (struct type t = string * int * sort end)))
+module StrIntListMap = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
 
-let put_sort s = puts (match s with IntS -> "int" | NatS -> "nat" | BoolS -> "bool")
+let put_range s = puts (
+  match s with Full -> "full" | Pos -> "pos" | Neg -> "neg" | Bool -> "bool"
+)
 
 let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
 
-let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_sort s << putc '>'
+let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_range s << putc '>'
 
 let poly_coeff vs p =
   match StrIntListMap.find_opt vs p with
@@ -278,14 +280,23 @@ let poly_of_w =
     | Prod ws -> prod_poly (List.map sub ws)
   in sub
 
-let int_vars = List.exists (fun (v,i,s) -> s = IntS)
+let ge_monom =
+  let rec sub flag vs = 
+    match vs with
+    | [] -> if flag then (>=^) else (<=^)
+    | (v,i,s) :: vs ->
+      match s with
+      | Full -> (=^)
+      | Pos | Bool -> sub flag vs
+      | Neg -> sub (not flag) vs
+  in sub true
 
 let ge_poly_merged =
   let merger vs e1opt e2opt = Some(
-      match e1opt, e2opt with
-      | Some e1, Some e2 -> if int_vars vs then e1 =^ e2 else e1 >=^ e2
-      | Some e1, None    -> if int_vars vs then e1 =^ LI 0 else LB true (*no negative coefficient considered. e1 >=^ LI 0*)
-      | None   , Some e2 -> LI 0 =^ e2
+    match e1opt, e2opt with
+    | Some e1, Some e2 -> ge_monom vs e1 e2
+    | Some e1, None    -> ge_monom vs e1 (LI 0)
+    | None   , Some e2 -> ge_monom vs (LI 0) e2
     )
   in
   fun p1 p2 -> StrIntListMap.(bindings (merge merger p1 p2))
@@ -305,7 +316,7 @@ let ge_w w1 w2 =
   smt_conjunction (list_prod (fun(c1,w1) (c2,w2) -> (c1 &^ c2) =>^ ge_max w1 w2) cws1 cws2)
 
 let order_poly solver p1 p2 =
-  let pre = solver#refer Bool (smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_merged p1 p2)) in
+  let pre = solver#refer Smt.Bool (smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_merged p1 p2)) in
   let e1 = poly_coeff [] p1 in
   let e2 = poly_coeff [] p2 in
   let ge = (e1 >=^ e2) &^ pre in
@@ -361,7 +372,7 @@ let order_vec param solver =
     Delay (fun solver ->
       let (ge,gt) = order_w solver w1.(0) w2.(0) in
       let ge_rest = smt_for_all (fun i -> ge_w w1.(i) w2.(i)) (int_list 1 (dim-1)) in
-      let ge_rest = solver#refer Bool ge_rest in
+      let ge_rest = solver#refer Smt.Bool ge_rest in
       Cons(ge &^ ge_rest, gt &^ ge_rest)
     )
 
@@ -380,9 +391,7 @@ type sym_info = {
 
 class interpreter p =
   let dim = Array.length p.w_templates in
-  let sort_of_coord i = match p.w_templates.(i) with
-    | WeightTemplate.Nat _ -> NatS
-    | WeightTemplate.Int _ -> IntS
+  let range_of_coord i = fst p.w_templates.(i)
   in
   let to_dim = int_list 0 (dim-1) in
   let put_arg =
@@ -398,24 +407,23 @@ class interpreter p =
         let to_n = int_list 0 (n-1) in
         let rec sub k t =
             match t with
-            | WeightTemplate.PosVar ->
+            | WeightTemplate.Var Bool ->
+              let v = solver#temp_variable Smt.Bool in
+              Smt(smt_if v (LI 1) (LI 0))
+            | WeightTemplate.Var r ->
               let v = solver#temp_variable ty in
-              solver#add_assertion (v >=^ LI 0);
-              Smt v
-            | WeightTemplate.NegVar ->
-              let v = solver#temp_variable ty in
+              if r = Pos then solver#add_assertion (v >=^ LI 0)
+              else if r = Neg then solver#add_assertion (v <=^ LI 0);
               Smt v
             | WeightTemplate.Choice [t1;t2] ->
               let w1 = sub k t1 in
               let w2 = sub k t2 in
-              let c = solver#temp_variable Bool in
+              let c = solver#temp_variable Smt.Bool in
               ( match w1, w2 with
-                | BVar(v,s), Smt (LI 0) -> Prod [Smt(smt_if c (LI 1) (LI 0)); BVar(v,s)]
-                | Smt (LI 0), BVar(v,s) -> Prod [Smt(smt_if c (LI 0) (LI 1)); BVar(v,s)]
                 | Smt e1, Smt e2 -> Smt(smt_if c e1 e2)
                 | _ -> Cond(c,w1,w2)
               )
-            | WeightTemplate.Arg i -> BVar((k,i), sort_of_coord i)
+            | WeightTemplate.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
             | WeightTemplate.Const n -> Smt(LI n)
             | WeightTemplate.Prod ts -> Prod(List.map (sub k) ts)
             | WeightTemplate.Sum ts -> Sum(List.map (sub k) ts)
@@ -424,7 +432,7 @@ class interpreter p =
             | WeightTemplate.MaxArgs t -> max (List.map (fun l -> sub l t) to_n)
             | WeightTemplate.ArityChoice fn -> sub k (fn n)
         in
-        let vec = Array.map (fun ent -> match ent with WeightTemplate.Nat t | WeightTemplate.Int t -> sub 0 t) p.w_templates in
+        let vec = Array.map (fun (r,t) -> sub 0 t) p.w_templates in
         Hashtbl.add table f#name {
           encodings = vec;
           pos_info = Array.of_list (
@@ -479,7 +487,7 @@ class interpreter p =
         | Prod ws -> Prod (List.map sub ws)
         | Cond(e,w1,w2) -> Cond(e, sub w1, sub w2)
       in
-      if f#is_var then Array.init dim (fun i -> BVar((f#name,i), sort_of_coord i))
+      if f#is_var then Array.init dim (fun i -> BVar((f#name,i), range_of_coord i))
       else Array.map sub (x#encode_sym f)
 
     method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, (string * int) t array) wterm =

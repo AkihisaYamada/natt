@@ -1,4 +1,5 @@
 open Util
+open Io
 
 exception Dead of string
 
@@ -15,6 +16,7 @@ class finalized finalizer =
 class t command opts =
 	object (x)
 		inherit Io.t
+		inherit finalized (fun y -> y#close)
 
 		val mutable pid = 0
 		val mutable in_from = Unix.stdin
@@ -22,18 +24,16 @@ class t command opts =
 		val mutable is = stdin
 		val mutable os = stdout
 
-		method output_info os =
-			output_string os "pid=";
-			output_string os (string_of_int pid);
+		method output_info =
+			puts "pid=" << put_int pid
 
 		method init =
 			let (in_to_proc,out_to_proc) = Unix.pipe () in
 			let (in_from_proc,out_from_proc) = Unix.pipe () in
-			debug
-			(fun _ ->
-				prerr_string "Running: ";
-				prerr_string (String.concat " " (command :: opts));
-				prerr_string " ... ";
+			debug (
+				puts "Running: " <<
+				puts (String.concat " " (command :: opts)) <<
+				puts " ... "
 			);
 			pid <- Unix.create_process
 					command
@@ -41,7 +41,7 @@ class t command opts =
 					in_to_proc
 					out_from_proc
 					Unix.stderr;
-			debug (fun _ -> x#output_info stderr; prerr_newline (););
+			debug (x#output_info << endl);
 			Unix.close in_to_proc;
 			Unix.close out_from_proc;
 			in_from <- in_from_proc;
@@ -59,23 +59,19 @@ class t command opts =
 		method input_line = input_line is
 		method puts = output_string os
 		method putc = output_char os
-		method flush = flush os
+		method flush = Stdlib.flush os
 		method close =
 			if not x#dead then begin
 				x#flush;
 				if Sys.os_type <> "Win32" then begin
-					debug (fun _ ->
-						prerr_string "killing ";
-						x#output_info stderr;
-						flush stderr;
-					);
+					debug (puts "killing " << x#output_info << flush);
 					try
 						x#flush;
 						ignore Unix.(kill pid Sys.sigkill);
 						pid <- 0;
 						debug (fun _ -> prerr_endline ". ok.");
 					with Unix.Unix_error(_,_,_) ->
-					debug (fun _ -> prerr_endline "... failed.");
+					warning Io.(puts "failed to kill " << x#output_info << endl);
 				end else begin
 					ignore (Unix.waitpid [] pid);
 					pid <- 0;

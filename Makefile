@@ -88,12 +88,12 @@ clean:
 
 # Consistency test
 test: $(TARG_OPT)
-	TOOL=$(PWD)/bin/NaTT.sh; \
-	BENCH=$(PWD)/tpdb_info/nonterm.list; \
+	TOOL="$(PWD)/bin/NaTT.sh -V"; \
+	BENCH="$(PWD)/tpdb_info/nonterm.list"; \
 	cd ../TPDB/TRS_Standard; \
 	if [ -e tmp_result ]; then rm tmp_result; fi; \
 	while read f; do \
-		$$TOOL -V $$f | tee -a tmp_result; \
+		$$TOOL $$f | tee -a tmp_result; \
 		if grep -q YES tmp_result; then echo WRONG!; exit 1; fi;\
 	done < $$BENCH; \
 	grep -c NO tmp_result; \

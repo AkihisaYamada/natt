@@ -62,9 +62,10 @@ type smt_tool = string * string list
 
 type order_params = {
   mutable dp : bool;
-  mutable w_templates : WeightTemplate.entry array;
+  mutable w_templates : (WeightTemplate.range * WeightTemplate.template) array;
   mutable base_ty : Smt.ty;
   mutable tmpvar : bool;
+  mutable linear : bool;
   mutable ext_mset : bool;
   mutable ext_lex : bool;
   mutable status_mode : status_mode;
@@ -100,9 +101,10 @@ let nonmonotone p =
 
 let order_default = {
   dp = false;
-  base_ty = Smt.Real;
+  base_ty = Smt.Int;
   tmpvar = true;
-  w_templates = Array.make 0 (WeightTemplate.Nat(WeightTemplate.Const 0));
+  linear = true;
+  w_templates = Array.make 0 WeightTemplate.no_entry;
   ext_lex = false;
   ext_mset = false;
   status_mode = S_total;
@@ -260,7 +262,7 @@ let apply_polo () =
     prec_mode = PREC_none;
     collapse = false;
     usable_w = false;
-    base_ty = Smt.Real;
+    base_ty = Smt.Int;
   };
 in
 let apply_wpo () =
@@ -359,6 +361,8 @@ while !i < argc do
       | Some file -> p.peek_to <- open_out file;
       | _ -> ();
     )
+    | "l", None -> p.linear <- true;
+    | "L", None -> p.linear <- false;
     | "f", None -> p.collapse <- true;
     | "F", None -> p.collapse <- false;
     | "u", None -> if not p.dp then err "-u cannot be applied here!"; p.usable <- true;
@@ -498,7 +502,7 @@ done;
 if !default then begin
   (* the default strategy *)
   apply_polo ();
-  register_weights mono_poly_template;
+  register_weights mono_bpoly_template;
   params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
   apply_edg ();
   params.naive_C <- params.cpf;

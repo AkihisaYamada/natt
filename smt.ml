@@ -285,7 +285,7 @@ module OrderKnow = Map.Make(StringPair)
 
 let rec simplify_knowing kn e =
   match e with
-  | LB _ | LI _ | LR _ -> e
+(*  | LB _ | LI _ | LR _ -> e
   | EV v -> (try LB (BoolKnow.find v kn) with _ -> e)
   | Not e -> smt_not (simplify_knowing kn e)
   | And(e1,e2) -> (
@@ -322,7 +322,7 @@ let rec simplify_knowing kn e =
     | LB b -> if b then simplify_knowing kn t else simplify_knowing kn e
     | c -> If(c, simplify_knowing (assume_true c kn) t, simplify_knowing (assume_false c kn) e, p)
   )
-  | _ -> e
+*)  | _ -> e
 and assume_true e kn =
   match e with
   | EV v -> BoolKnow.add v true kn
@@ -487,7 +487,7 @@ and ( *^) e1 e2 =
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
   | LR r1, LR r2 -> LR(r1 *. r2)
-  | If(c,t,e,p), _ when is_zero t ->
+(*  | If(c,t,e,p), _ when is_zero t ->
     let nc = smt_not c in smt_pre_if c nc t (e *^ simplify_under nc e2)
   | If(c,t,e,p), _ when is_zero e ->
     smt_pre_if c (smt_not c) (t *^ simplify_under c e2) e
@@ -495,7 +495,7 @@ and ( *^) e1 e2 =
     let nc = smt_not c in smt_pre_if c nc t (simplify_under nc e1 *^ e)
   | _, If(c,t,e,p) when is_zero e ->
     smt_pre_if c (smt_not c) (simplify_under c e1 *^ t) e
-  | _ -> Mul(e1,e2)
+*)  | _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
     match t, e with
     | LB b, _ -> if b then c |^ e else nc &^ e
@@ -541,7 +541,7 @@ and (>=^) e1 e2 =
     | t', LB be -> if be then c =>^ t' else c &^ t'
     | _ -> Ge(e1, e2)
     )
-  | _, If(c,t,e,p) -> (
+(*  | _, If(c,t,e,p) -> (
     match e1 >=^ t with
     | LB b -> (
       match e1 >=^ e with
@@ -557,16 +557,15 @@ and (>=^) e1 e2 =
       | _ -> Ge(e1, e2)
       )
     )
-  | _ -> Ge(e1, e2)
+*)  | _ -> Ge(e1, e2)
 and (>^) e1 e2 =
   match e1, e2 with
-  | LI 0, _ -> LB false
   | EV v1, EV v2 when v1 = v2 -> LB false
   | LI i1, LI i2 -> LB(i1 > i2)
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
   | LR r1, LI i2 -> LB(r1 > float_of_int i2)
   | LR r1, LR r2 -> LB(r1 > r2)
-  | If(c,t,e,p), _ -> (
+(*  | If(c,t,e,p), _ -> (
     match t >^ e2 with
     | LB b -> (
       match e >^ e2 with
@@ -598,7 +597,7 @@ and (>^) e1 e2 =
       | _ -> Gt(e1,e2)
       )
     )
-  | _ -> Gt(e1,e2)
+*)  | _ -> Gt(e1,e2)
 
 let (<>^) e1 e2 = smt_not (e1 =^ e2)
 
@@ -653,7 +652,7 @@ let smt_split e f =
 
 ;;
 
-class virtual context tmpvar =
+class virtual context tmpvar linear =
 
   object (x:'t)
     inherit [exp,dec] base
@@ -661,7 +660,7 @@ class virtual context tmpvar =
     method virtual private add_assertion_body : exp -> unit
     method virtual private add_declaration_body : dec -> unit
 
-    method private branch = new subcontext tmpvar
+    method private branch = new subcontext tmpvar linear
 
     val mutable consistent = true
 
@@ -785,16 +784,18 @@ class virtual context tmpvar =
       x#gt_purify (x#expand e1) (x#expand e2)
 
     method private add_purify e1 e2 =
-      match e1, e2 with
-      | If(c,t,e,_), _ ->
-				let nc = smt_not c in
-				let e2 = x#refer_base e2 in
-        smt_pre_if c nc (x#add_purify t e2) (x#add_purify e e2)
-      | _, If(c,t,e,_) ->
-        let nc = smt_not c in
-        let e1 = x#refer_base e1 in
-        smt_pre_if c nc (x#add_purify e1 t) (x#add_purify e1 e)
-      | _ -> e1 +^ e2
+      if linear then
+        match e1, e2 with
+        | If(c,t,e,_), _ ->
+          let nc = smt_not c in
+          let e2 = x#refer_base e2 in
+          smt_pre_if c nc (x#add_purify t e2) (x#add_purify e e2)
+        | _, If(c,t,e,_) ->
+          let nc = smt_not c in
+          let e1 = x#refer_base e1 in
+          smt_pre_if c nc (x#add_purify e1 t) (x#add_purify e1 e)
+        | _ -> Add(e1,e2)
+      else Add(e1,e2)
 
     method private expand_add e1 e2 =
       match x#expand e1 with
@@ -803,31 +804,33 @@ class virtual context tmpvar =
     method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
     method private mul_purify e1 e2 =
-      match e1, e2 with
-      | LI 0, _
-      | LR 0.0, _ -> e1
-      | _, LI 0
-      | _, LR 0.0 -> e2
-      | If(c,t,e,_), _ when is_zero t ->
-        let nc = smt_not c in
-        smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
-      | If(c,t,e,_), _ when is_zero e ->
-        let nc = smt_not c in
-        smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
-      | _, If(c,t,e,_) when is_zero t ->
-        let nc = smt_not c in
-        smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
-      | _, If(c,t,e,_) when is_zero e ->
-        let nc = smt_not c in
-        smt_pre_if c nc (x#mul_purify (simplify_under nc e1) t) e
-      | If(c,t,e,_), _ ->
-        let e2 = x#refer_sub base_ty e2 in
-        smt_pre_if c (smt_not c) (x#mul_purify t e2) (x#mul_purify e e2)
-      | _, If(c,t,e,_) ->
-        let e1 = x#refer_sub base_ty e1 in
-        smt_pre_if c (smt_not c) (x#mul_purify e1 t) (x#mul_purify e1 e)
-      | _ ->
-        e1 *^ e2
+      if linear then
+        match e1, e2 with
+        | LI 0, _
+        | LR 0.0, _ -> e1
+        | _, LI 0
+        | _, LR 0.0 -> e2
+        | If(c,t,e,_), _ when is_zero t ->
+          let nc = smt_not c in
+          smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
+        | If(c,t,e,_), _ when is_zero e ->
+          let nc = smt_not c in
+          smt_pre_if c nc (x#mul_purify t (simplify_under c e2)) e
+        | _, If(c,t,e,_) when is_zero t ->
+          let nc = smt_not c in
+          smt_pre_if c nc t (x#mul_purify (simplify_under nc e1) e)
+        | _, If(c,t,e,_) when is_zero e ->
+          let nc = smt_not c in
+          smt_pre_if c nc (x#mul_purify (simplify_under nc e1) t) e
+        | If(c,t,e,_), _ ->
+          let e2 = x#refer_sub base_ty e2 in
+          smt_pre_if c (smt_not c) (x#mul_purify t e2) (x#mul_purify e e2)
+        | _, If(c,t,e,_) ->
+          let e1 = x#refer_sub base_ty e1 in
+          smt_pre_if c (smt_not c) (x#mul_purify e1 t) (x#mul_purify e1 e)
+        | _ -> Mul(e1,e2)
+      else Mul(e1,e2)
+
     method private expand_mul e1 e2 =
       match x#expand e1 with
       | LI 0   -> LI 0
@@ -960,9 +963,9 @@ class virtual context tmpvar =
       | Delay f   -> x#expand_delay f
       | e         -> raise (Invalid_formula ("expand",e))
   end
-and subcontext tmpvar =
+and subcontext tmpvar linear =
   object (x)
-    inherit context tmpvar
+    inherit context tmpvar linear
     val mutable assertion = LB true
     val mutable declarations = []
     method private add_assertion_body e = assertion <- e &^ assertion
@@ -981,11 +984,10 @@ and subcontext tmpvar =
       ForAll(declarations,assertion =>^ e)
   end
 
-class virtual solver tmpvar =
+class virtual solver tmpvar linear ty =
   object
-    inherit context tmpvar
+    inherit context tmpvar linear
     method virtual init : unit
-    method virtual set_logic : string -> unit
     method virtual check : unit
     method virtual get_bool : exp -> bool
     method virtual get_value : exp -> exp
@@ -1104,31 +1106,22 @@ let rec smt_eval_int e =
 let test_sat str = Str.string_match (Str.regexp "sat.*") str 0
 let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 
-class virtual smt_lib_2_0 tmpvar =
+class virtual smt_lib_2_0 tmpvar linear ty =
   object (x)
     inherit Io.t
-    inherit solver tmpvar
+    inherit solver tmpvar linear ty
     inherit sexp_printer
     inherit parser
-    inherit Proc.finalized (fun y -> y#exit)
 
     val mutable initialized = false
 
-    method exit =
-      if initialized then begin
-        x#puts "(exit)";
+    method init =
+      if not initialized then begin
+        initialized <- true;
+        x#puts ("(set-logic QF_" ^ (if linear then "L" else "N") ^ (if ty = Int then "I" else "R") ^ "A)");
         x#endl;
-        x#close;
-        initialized <- false
       end;
 
-    method set_logic logic =
-      if not initialized then begin
-        x#init;
-        initialized <- true;
-      end;
-      x#puts ("(set-logic " ^ logic ^ ")");
-      x#endl;
 
     method private add_declaration_body d =
       match d with
@@ -1268,9 +1261,10 @@ class virtual smt_lib_2_0 tmpvar =
       | d::ds -> x#puts "("; pr_d d; x#puts ") "; x#pr_ds ds;
   end
 
-let create_solver tmpvar debug_to debug_in debug_out command options =
+let create_solver tmpvar linear ty debug_to debug_in debug_out command options =
   object (x)
-    inherit smt_lib_2_0 tmpvar
+    inherit smt_lib_2_0 tmpvar linear ty as super
+    inherit Proc.finalized (fun y -> y#close)
     val main = new Proc.t command options
     val dout = if debug_out then new pretty_wrap_out debug_to else (Io.null :> printer)
     val din = if debug_in then new pretty_wrap_out debug_to else (Io.null :> printer)
@@ -1283,11 +1277,11 @@ let create_solver tmpvar debug_to debug_in debug_out command options =
     method leave_inline = dout#leave_inline;
     method ready = main#ready;
     method flush = main#flush; dout#flush;
+    method init = main#init; super#init;
     method close = main#close; dout#close;
-    method init = main#init;
 
     method input_line =
-      din#puts "< ";
+      din#puts "; ";
       din#flush;
       let s = main#input_line in
       din#puts s;

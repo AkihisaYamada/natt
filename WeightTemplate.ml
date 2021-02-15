@@ -1,71 +1,71 @@
 open Util
 open Txtr
 
+type range = Pos | Bool | Full | Neg
+
 type template =
 | Const of int
 | Prod of template list
 | Sum of template list
 | Max of template list
-| PosVar
-| NegVar
+| Min of template list
+| Var of range
 | Choice of template list
-| Arg of int
+| Arg of int * int
 | SumArgs of template
 | MaxArgs of template
 | MaxOrSumArgs of template
 | ArityChoice of (int -> template)
 
-type entry = Nat of template | Int of template
+let ( *?) s t = Prod[s;t]
+let (+?) s t = Sum[s;t]
 
-let mono_sum_template = [Nat(Sum[SumArgs(Arg 0); PosVar])]
-let mono_poly_template =
-  [Nat(Sum[SumArgs(Prod[Choice[Const 2; Const 1]; Arg 0]); PosVar])]
+let no_entry = (Pos, Const 0)
+let mono_sum_template = [Pos, SumArgs(Arg(-1,0)) +? Var Pos]
+let mono_bpoly_template = [Pos, SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
 let mono_max_template =
-  [Nat(ArityChoice(function 0 -> PosVar | _ -> MaxArgs(Sum[Arg 0; PosVar])))]
-let sum_template = [Nat(Sum[SumArgs(Choice[Arg 0; Const 0]); PosVar])]
-let max_template = [Nat(
+  [Pos, ArityChoice(function 0 -> Var Pos | _ -> MaxArgs(Arg(-1,0) +? Var Pos))]
+let sum_template = [Pos, SumArgs(Var Bool *? Arg(-1,0)) +? Var Pos]
+let max_template = [Pos,
   ArityChoice(function
-    | 0 -> PosVar
-    | 1 -> Sum[Choice[Arg 0; Const 0]; PosVar]
-    | _ -> MaxArgs(Sum[Choice[Arg 0; Const 0]; PosVar])
+    | 0 -> Var Pos
+    | _ -> MaxArgs(Var Bool *? Arg(-1,0) +? Var Pos)
   )
-)]
-let neg_template = [Nat(
+]
+let neg_template = [Pos,
   ArityChoice(function
-    | 0 -> PosVar
-    | _ -> Max[Sum[SumArgs(Choice[Arg 0; Const 0]); NegVar]; Const 0]
+    | 0 -> Var Pos
+    | _ -> Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0]
   )
-)]
-let neg_max_sum_template maxarity = [Nat(
+]
+let neg_max_sum_template maxarity = [Pos,
   ArityChoice(function
-    | 0 -> PosVar
-    | 1 -> Max[Sum[Choice[Arg 0; Const 0]; NegVar]; Const 0]
+    | 0 -> Var Pos
+    | 1 -> Max[Var Bool *? Arg(0,0) +? Var Full; Const 0]
     | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
-      Max[MaxArgs(Sum[Choice[Arg 0; Const 0]; NegVar]); Const 0]
+      Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0]
     | _ -> Choice[
-        Max[Sum[SumArgs(Choice[Arg 0; Const 0]); NegVar]; Const 0];
-        Max[MaxArgs(Sum[Choice[Arg 0; Const 0]; NegVar]); Const 0];
+        Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0];
+        Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0];
       ]
   )
-)]
-let max_sum_template maxarity = [Nat(
+]
+let max_sum_template maxarity = [Pos,
   ArityChoice(function
-    | 0 -> PosVar
-    | 1 -> Sum[Choice[Arg 0; Const 0]; PosVar]
+    | 0 -> Var Pos
+    | 1 -> Var Bool *? Arg(0,0) +? Var Pos
     | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
-      MaxArgs(Sum[Choice[Arg 0; Const 0]; PosVar])
+      MaxArgs(Var Bool *? Arg(-1,0) +? Var Pos)
     | _ -> Choice[
-        Sum[SumArgs(Choice[Arg 0; Const 0]); PosVar];
-        MaxArgs(Sum[Choice[Arg 0; Const 0]; PosVar]);
+        SumArgs(Var Bool *? Arg(-1,0)) +? Var Pos;
+        MaxArgs(Var Bool *? Arg(-1,0) +? Var Pos);
       ]
   )
-)]
+]
 let bmat_template dim =
-  let elm = Nat(
-    Sum[SumArgs(Sum(List.init dim (fun i -> Choice [Arg i; Const 0]))); PosVar]
+  List.init dim (fun _ ->
+    (Pos, SumArgs(Sum(List.init dim (fun j -> Var Bool *? Arg(-1,j)))) +? Var Pos)
   )
-  in
-  List.init dim (fun _ -> elm)
 
 let parser =
   let rec sub xmls = (
@@ -73,9 +73,16 @@ let parser =
     element "sum" (many sub >>= fun ss -> return (Sum ss)) <|>
     element "prod" (many sub >>= fun ss -> return (Prod ss)) <|>
     element "max" (many ~minOccurs:1 sub >>= fun ss -> return (Max ss)) <|>
-    element "var" (default "nat" (attribute "type") >>= fun ty -> return (match ty with "int" -> NegVar | _ -> PosVar)) <|>
+    element "min" (many ~minOccurs:1 sub >>= fun ss -> return (Min ss)) <|>
+    element "var" (default "pos" (attribute "range") >>= fun r ->
+      return (Var(match r with "bool" -> Bool | "neg" -> Neg | "full" -> Full | _ -> Pos))
+    ) <|>
     element "choice" (sub >>= fun s1 -> sub >>= fun s2 -> return (Choice [s1;s2])) <|>
-    element "arg" (default 0 (int_attribute "coord") >>= fun i -> return (Arg i)) <|>
+    element "arg" (
+      default (-1) (int_attribute "index") >>= fun i ->
+      default 0 (int_attribute "coord") >>= fun j ->
+      return (Arg(i,j))
+    ) <|>
     element "args" (
       default "sum" (attribute "mode") >>= fun mode -> sub >>= fun s ->
       match mode with
@@ -86,7 +93,7 @@ let parser =
   ) xmls
   in
   let entry = element "entry" (
-    default "nat" (attribute "type") >>= fun s ->
+    default "pos" (attribute "range") >>= fun s ->
     many (
       element "case" (
         mandatory (int_attribute "arity") >>= fun a ->
@@ -97,11 +104,14 @@ let parser =
     sub >>= fun d ->
     let f a = match List.assoc_opt a ass with Some s -> s | None -> d in
     let t = ArityChoice f in
-    match s with "nat" -> return (Nat t) | "int" -> return (Int t)
+    match s with
+    | "pos" -> return (Pos,t)
+    | "neg" -> return (Neg,t)
+    | "full" -> return (Full,t)
   )
   in
   element "poly" (default false (bool_attribute "mono") >>= fun mono ->
-    return (if mono then mono_poly_template else sum_template)
+    return (if mono then mono_bpoly_template else sum_template)
   ) <|>
   element "matrix" (
     mandatory (int_attribute "dim") >>= fun dim ->
