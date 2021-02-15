@@ -1,0 +1,36 @@
+<multi>
+ <entry range="pos">
+  <case arity="0">
+   <var range="pos"/>
+  </case>
+  <args mode="max">
+   <max>
+    <sum>
+     <prod><var range="bool"/><arg coord="0"/></prod>
+     <var range="pos"/>
+    </sum>
+    <sum>
+     <prod><var range="bool"/><arg coord="1"/></prod>
+     <var range="pos"/>
+    </sum>
+   </max>
+  </args>
+ </entry>
+ <entry range="pos">
+  <case arity="0">
+   <var range="pos"/>
+  </case>
+  <args mode="max">
+   <max>
+    <sum>
+     <prod><var range="bool"/><arg coord="0"/></prod>
+     <var range="pos"/>
+    </sum>
+    <sum>
+     <prod><var range="bool"/><arg coord="1"/></prod>
+     <var range="pos"/>
+    </sum>
+   </max>
+  </args>
+ </entry>
+</multi>

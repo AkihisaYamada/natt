@@ -1,0 +1,13 @@
+<multi>
+ <entry range="pos">
+  <case arity="0">
+   <var range="pos"/>
+  </case>
+  <sum>
+   <args mode="sum">
+    <prod><var range="bool"/><arg/></prod>
+   </args>
+   <var range="pos"/>
+  </sum>
+ </entry>
+</multi>
