@@ -5,6 +5,7 @@ open Trs
 open Dp
 open Smt
 open Preorder
+open Strategy
 open Params
 open Io
 open Wpo_info
@@ -263,7 +264,7 @@ class processor =
     fun fname finfo to_n ->
       finfo#set_status_mode
         (if p.status_nest > 0 && trs#nest_of fname > p.status_nest then S_empty
-         else p.Params.status_mode);
+         else p.status_mode);
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
@@ -343,7 +344,7 @@ class processor =
 
   (*** argument comparison ***)
   let lexperm_compargs =
-    match p.Params.status_mode with
+    match p.status_mode with
     | S_empty ->
       fun _ _ _ _ _ -> weakly_ordered
     | _ ->
@@ -593,7 +594,7 @@ class processor =
           (some_gt |^ (finfo#permed i &^ curr_gt)) order finfo ss t
         )
     in
-    if p.Params.status_mode = S_empty then
+    if p.status_mode = S_empty then
       fun _ _ _ _ -> Cons(LB false, LB false)
     else
       sub 1 (LB false) (LB false)
@@ -617,7 +618,7 @@ class processor =
           )
         )
     in
-    if p.Params.status_mode = S_empty then
+    if p.status_mode = S_empty then
       fun _ _ _ _ -> Cons(LB true, LB true)
     else
       sub 1 (LB true) (LB true)

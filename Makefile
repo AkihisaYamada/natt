@@ -1,6 +1,6 @@
 TARG=bin/NaTT
 TARG_OPT=bin/NaTT.exe
-PACKS=unix,str,ocamlgraph,xml-light
+PACKS=unix,str,re,ocamlgraph,xml-light
 OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg
 OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg
 OCAMLDEP=ocamldep
@@ -19,7 +19,7 @@ OCAML_SRCS=\
 	util.ml \
 	txtr.ml \
 	MyXML.ml \
-	WeightTemplate.ml \
+	Strategy.ml \
 	matrix.ml \
 	params.ml \
 	proc.ml \

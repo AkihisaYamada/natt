@@ -1,43 +1,16 @@
 open Util
-open WeightTemplate
+open Strategy
 
 let version = "1.8";
 
-type prec_mode =
-| PREC_none
-| PREC_strict
-| PREC_quasi
-| PREC_partial
+
 type estimator_mode =
 | E_tcap
 | E_sym_trans
-type max_mode =
-| MAX_none
-| MAX_all
-| MAX_dup
-type w_mode =
-| W_none
-| W_num
-| W_bool
-| W_tri
-| W_quad
-| W_arc
-type status_mode =
-| S_none
-| S_empty
-| S_partial
-| S_total
-type mcw_mode = (* minimum weight for constants *)
-| MCW_num (* integer variable *)
-| MCW_bool (* 0 or 1 *)
-| MCW_const of int (* constant *)
 type sort_mode =
 | SORT_asc
 | SORT_desc
 | SORT_none
-type reset_mode =
-| RESET_reboot
-| RESET_reset
 type acdp_mode =
 | ACDP_new
 | ACDP_union
@@ -58,39 +31,6 @@ type mode =
 | MODE_higher_xml
 | MODE_xml
 
-type smt_tool = string * string list
-
-type order_params = {
-  mutable dp : bool;
-  mutable w_templates : (WeightTemplate.range * WeightTemplate.template) array;
-  mutable base_ty : Smt.ty;
-  mutable tmpvar : bool;
-  mutable linear : bool;
-  mutable ext_mset : bool;
-  mutable ext_lex : bool;
-  mutable status_mode : status_mode;
-  mutable status_copy : bool;
-  mutable status_nest : int;
-  mutable prec_mode : prec_mode;
-  mutable mincons : bool;
-  mutable maxcons : bool;
-  mutable ac_w : bool;
-  mutable strict_equal : bool;
-  mutable collapse : bool;
-  mutable usable : bool;
-  mutable usable_w : bool;
-  mutable reset_mode : reset_mode;
-  mutable use_scope : bool;
-  mutable use_scope_ratio : int;
-  mutable remove_all : bool;
-  mutable smt_tool : smt_tool;
-  mutable peek_in : bool;
-  mutable peek_out : bool;
-  mutable peek_to : out_channel;
-}
-
-let z3cmd = ("z3", ["-smt2";"-in"])
-let cvc4cmd = ("cvc4", ["--lang=smt2"; "--incremental";"--produce-models"])
 
 (* checks monotonicity *)
 let nonmonotone p =
@@ -98,59 +38,6 @@ let nonmonotone p =
   p.collapse ||
   p.status_mode = S_partial ||
   p.status_mode = S_empty && p.prec_mode <> PREC_none
-
-let order_default = {
-  dp = false;
-  base_ty = Smt.Int;
-  tmpvar = true;
-  linear = true;
-  w_templates = Array.make 0 WeightTemplate.no_entry;
-  ext_lex = false;
-  ext_mset = false;
-  status_mode = S_total;
-  status_nest = 0;
-  status_copy = false;
-  prec_mode = PREC_quasi;
-  mincons = false;
-  maxcons = false;
-  ac_w = true;
-  strict_equal = false;
-  collapse = false;
-  usable = true;
-  usable_w = false;
-  reset_mode = RESET_reset;
-  use_scope = true;
-  use_scope_ratio = 0;
-  remove_all = false;
-  smt_tool = z3cmd;
-  peek_in = false;
-  peek_out = false;
-  peek_to = stderr;
-}
-
-let name_order p =
-  let status =
-    match p.status_mode with
-    | S_partial -> "pS"
-    | S_total -> "S"
-    | S_empty -> "eS"
-    | _ -> ""
-  in
-  let prec =
-    if p.prec_mode = PREC_quasi then "Q" else ""
-  in
-  if Array.length p.w_templates = 0 then
-    prec ^ (
-      match p.ext_lex, p.ext_mset with
-      | true, true -> "RPO" ^ status
-      | true, false -> "LPO" ^ status
-      | false, true -> "MPO"
-      | _ -> "???"
-    )
-  else if p.status_mode = S_empty && p.prec_mode = PREC_none then
-    "Interpretation"
-  else
-    prec ^ "WPO" ^ status
 
 type params_type = {
   mutable mode : mode;
@@ -196,6 +83,16 @@ let params = {
   naive_C = false;
 };;
 
+let set_strategy (pre,freezing,rest) =
+  params.orders_removal <- Array.of_list pre;
+  params.uncurry <- freezing;
+  ( match rest with
+    | Some(post,loop) ->
+      params.orders_dp <- Array.of_list post;
+      params.max_loop <- loop;
+    | None -> ()
+  )
+in
 let err msg =
   prerr_endline msg;
   print_endline "ERR";
@@ -232,57 +129,10 @@ let prerr_help () =
   pe "  --mset       enable multiset status.";
 in
 let i = ref 1 in
-let pp = ref order_default in
-let register_order p =
-  if params.dp then begin
-    params.orders_dp <- Array.append params.orders_dp (Array.make 1 p);
-    pp := params.orders_dp.(Array.length params.orders_dp - 1);
-  end else begin
-    params.orders_removal <- Array.append params.orders_removal (Array.make 1 p);
-    pp := params.orders_removal.(Array.length params.orders_removal - 1);
-  end;
-in
-let register_weights wts =
-  (!pp).w_templates <- Array.append (!pp).w_templates (Array.of_list wts);
-in
-let apply_edg () =
-  if params.dp then err "'EDG' cannot be applied twice!";
-  params.dp <- true;
-  order_default.dp <- true;
-  order_default.collapse <- not params.cpf;
-  order_default.status_mode <- S_partial;
-  pp := order_default;
-in
-let apply_polo () =
-  register_order {
-    order_default with
-    ext_lex = false;
-    ext_mset = false;
-    status_mode = S_empty;
-    prec_mode = PREC_none;
-    collapse = false;
-    usable_w = false;
-    base_ty = Smt.Int;
-  };
-in
-let apply_wpo () =
-  register_order {
-    order_default with
-    ext_lex = true;
-  };
-in
-let apply_lpo () =
-  register_order {
-    order_default with
-    status_mode = if params.dp then S_partial else S_total;
-    ext_lex = true;
-  };
-in
 let erro str = err ("unknown option: " ^ str ^ "!") in
 let safe_atoi s arg = (try int_of_string s with _ -> erro arg) in
 let default = ref true in
 while !i < argc do
-  let p = !pp in
   let arg = argv.(!i) in
   if arg.[0] = '-' then begin
     let (opt,optarg) =
@@ -294,8 +144,9 @@ while !i < argc do
     in
     match opt, optarg with
     | "-help", _ -> prerr_help (); exit 0;
-    | "-all", None -> p.remove_all <- true;
-    | "-Tempvar", None -> p.tmpvar <- false;
+    | "-s", Some file ->
+      set_strategy (Strategy.of_file file);
+      default := false;
     | "-Sort", None -> params.sort_scc <- SORT_none;
     | "-sort", _ -> (
       match optarg with
@@ -347,57 +198,6 @@ while !i < argc do
       params.cpf_to <- open_out file;
       params.naive_C <- true;
       params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
-    | "-peek", _ -> (
-        p.peek_in <- true;
-        p.peek_out <- true;
-        match optarg with
-        | Some file -> p.peek_to <- open_out file;
-        | _ -> ();
-    )
-    | "-peek-in", None -> p.peek_in <- true;
-    | "-peek-out", _ -> (
-      p.peek_out <- true;
-      match optarg with
-      | Some file -> p.peek_to <- open_out file;
-      | _ -> ();
-    )
-    | "l", None -> p.linear <- true;
-    | "L", None -> p.linear <- false;
-    | "f", None -> p.collapse <- true;
-    | "F", None -> p.collapse <- false;
-    | "u", None -> if not p.dp then err "-u cannot be applied here!"; p.usable <- true;
-    | "U", None -> p.usable <- false;
-    | "uw", None -> p.usable_w <- true;
-    | "Uw", None -> p.usable_w <- false;
-    | "ur", None -> params.relative_usable <- true;
-    | "Ur", None -> params.relative_usable <- false;
-    | "s", _ -> (
-      match optarg with
-      | Some "t" -> p.status_mode <- S_total;
-      | Some "e" -> p.status_mode <- S_empty;
-      | Some "p" -> p.status_mode <- S_partial;
-      | None -> p.status_mode <- if p.dp then S_partial else S_total;
-      | _ -> erro arg;
-    )
-    | "S", None -> p.status_mode <- S_none;
-    | "-mset", None -> p.ext_mset <- true;
-    | "-Lex", None -> p.ext_lex <- false;
-    | "p", _ -> (
-      match optarg with
-      | Some "q" -> p.prec_mode <- PREC_quasi;
-      | Some "s" -> p.prec_mode <- PREC_strict;
-      | Some "p" -> p.prec_mode <- PREC_partial;
-      | None -> p.prec_mode <- PREC_quasi;
-      | _ -> erro arg;
-    )
-    | "P", None -> p.prec_mode <- PREC_none;
-    | "w", Some str -> (
-      default := false;
-      register_weights (WeightTemplate.parse_file (progdir ^ "/" ^ str));
-    )
-    | "-min", None -> p.mincons <- true;
-    | "-ty", Some "real" -> p.base_ty <- Smt.Real;
-    | "-ty", Some "int" -> p.base_ty <- Smt.Int;
     | "n", _ ->
       begin
         match optarg with
@@ -412,27 +212,6 @@ while !i < argc do
         | None -> params.max_loop <- 3;
       end;
     | "-L", None -> params.max_loop <- 0;
-
-    | "-reset", _ ->
-      begin
-        match optarg with
-        | None -> p.use_scope <- false; p.use_scope_ratio <- 0;
-        | Some s -> p.use_scope <- false; p.use_scope_ratio <- safe_atoi s arg;
-      end;
-    | "-Reset", None -> p.use_scope <- true; p.use_scope_ratio <- 0;
-    | "-reboot", None -> p.reset_mode <- RESET_reboot;
-    | "-smt", _ -> (
-      let cmd =
-        match optarg with
-        | None -> i := !i + 1; argv.(!i)
-        | Some s -> s
-      in
-      match Str.split (Str.regexp "[ \t]+") cmd with
-      | tool::options -> p.smt_tool <- (tool,options);
-      | _ -> err "Please specify a valid SMT solver!";
-    )
-    | "-z3", None -> p.smt_tool <- z3cmd;
-    | "-cvc4", None -> p.smt_tool <- cvc4cmd; p.reset_mode <- RESET_reboot;
     | "-dup", None -> default := false; params.mode <- MODE_dup;
     | "-tcap", None -> params.edge_mode <- E_tcap;
     | "-edge", Some s -> params.edge_length <- safe_atoi s arg;
@@ -446,80 +225,13 @@ while !i < argc do
     )
     | _ -> erro arg;
   end else begin
-    match arg with
-    | "UNCURRY" ->
-      default := false;
-      if params.dp then err "UNCURRY after EDG is not yet supported!";
-      params.uncurry <- true;
-    | "EDG" ->
-      default := false;
-      apply_edg ();
-    | "LOOP" ->
-      default := false;
-      if not params.dp then err "LOOP cannot be applied before EDG!";
-      params.max_loop <- 3;
-    | "WPO" ->
-      default := false;
-      apply_wpo ();
-    | "LPO" ->
-      default := false;
-      apply_lpo ();
-    | "MPO" ->
-      default := false;
-      register_order {
-        order_default with
-        ext_lex = false;
-        ext_mset = true;
-        status_mode = if params.dp then S_partial else S_total;
-      };
-    | "RPO" ->
-      default := false;
-      register_order {
-        order_default with
-        ext_lex = true;
-        ext_mset = true;
-        status_mode = if params.dp then S_partial else S_total;
-      };
-    | "POLO" ->
-      default := false;
-      apply_polo ();
-      register_weights (if params.dp then sum_template else mono_sum_template);
-    | "O" ->
-      default := false;
-      apply_polo ();
-    | "sum" ->
-      default := false;
-      register_weights (if params.dp then sum_template else mono_sum_template);
-    | "max" ->
-      default := false;
-      register_weights (if params.dp then max_template else mono_max_template);
-    | _ ->
-      if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
-      params.file <- arg;
+    if params.file <> "" then err ("too many input file: " ^ arg ^ "!");
+    params.file <- arg;
   end;
   i := !i + 1;
 done;
 if !default then begin
-  (* the default strategy *)
-  apply_polo ();
-  register_weights mono_bpoly_template;
-  params.uncurry <- not params.cpf; (* certifed uncurrying not supported *)
-  apply_edg ();
-  params.naive_C <- params.cpf;
-  apply_polo ();
-  register_weights sum_template;
-  apply_polo ();
-  register_weights max_template;
-  apply_lpo ();
-  apply_polo ();
-  register_weights (neg_max_sum_template 4);
-  apply_wpo ();
-  register_weights (max_sum_template 4);
-  !pp.status_mode <- S_partial;
-  apply_polo ();
-  register_weights (bmat_template 2);
-  (* certified nontermination not supported *)
-  if not params.cpf then params.max_loop <- 3;
+  set_strategy (Strategy.of_file "default.xml")
 end
 
 let cpf =

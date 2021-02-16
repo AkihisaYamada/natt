@@ -5,7 +5,7 @@ open Smt
 class wpo_sym (sym:#Trs.sym_detailed) = object
   val base : Trs.sym_detailed = sym
   method base = base
-  val mutable status_mode = Params.S_none
+  val mutable status_mode = Strategy.S_none
   val mutable collapse = LB false
   val mutable is_const = LB(sym#arity = 0)
   val mutable is_quasi_const = LB(sym#arity = 0)

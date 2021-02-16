@@ -2,7 +2,7 @@ open Util
 open Sym
 open Term
 open Smt
-open Params
+open Strategy
 open Io
 open Wpo_info
 
@@ -13,7 +13,7 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
   let dim = Array.length p.w_templates in
   let status_is_used =
     p.ext_mset && p.ext_lex ||
-    p.Params.status_mode <> S_none && p.Params.status_mode <> S_empty ||
+    p.status_mode <> S_none && p.status_mode <> S_empty ||
     p.collapse
   in
   let weight_is_used = dim <> 0 in

@@ -1,4 +1,5 @@
 open Params
+open Strategy
 open Sym
 open Term
 open Trs

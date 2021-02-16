@@ -5,7 +5,7 @@ open Util
 open Preorder
 open Params
 open Io
-open WeightTemplate
+open Strategy
 
 type 'a t =
 | BVar of 'a * range
@@ -407,15 +407,15 @@ class interpreter p =
         let to_n = int_list 0 (n-1) in
         let rec sub k t =
             match t with
-            | WeightTemplate.Var Bool ->
+            | Strategy.Var Bool ->
               let v = solver#temp_variable Smt.Bool in
               Smt(smt_if v (LI 1) (LI 0))
-            | WeightTemplate.Var r ->
+            | Strategy.Var r ->
               let v = solver#temp_variable ty in
               if r = Pos then solver#add_assertion (v >=^ LI 0)
               else if r = Neg then solver#add_assertion (v <=^ LI 0);
               Smt v
-            | WeightTemplate.Choice [t1;t2] ->
+            | Strategy.Choice [t1;t2] ->
               let w1 = sub k t1 in
               let w2 = sub k t2 in
               let c = solver#temp_variable Smt.Bool in
@@ -423,14 +423,14 @@ class interpreter p =
                 | Smt e1, Smt e2 -> Smt(smt_if c e1 e2)
                 | _ -> Cond(c,w1,w2)
               )
-            | WeightTemplate.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
-            | WeightTemplate.Const n -> Smt(LI n)
-            | WeightTemplate.Prod ts -> Prod(List.map (sub k) ts)
-            | WeightTemplate.Sum ts -> Sum(List.map (sub k) ts)
-            | WeightTemplate.Max ts -> max (List.map (sub k) ts)
-            | WeightTemplate.SumArgs t -> Sum(List.map (fun l -> sub l t) to_n)
-            | WeightTemplate.MaxArgs t -> max (List.map (fun l -> sub l t) to_n)
-            | WeightTemplate.ArityChoice fn -> sub k (fn n)
+            | Strategy.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
+            | Strategy.Const n -> Smt(LI n)
+            | Strategy.Prod ts -> Prod(List.map (sub k) ts)
+            | Strategy.Sum ts -> Sum(List.map (sub k) ts)
+            | Strategy.Max ts -> max (List.map (sub k) ts)
+            | Strategy.SumArgs t -> Sum(List.map (fun l -> sub l t) to_n)
+            | Strategy.MaxArgs t -> max (List.map (fun l -> sub l t) to_n)
+            | Strategy.ArityChoice fn -> sub k (fn n)
         in
         let vec = Array.map (fun (r,t) -> sub 0 t) p.w_templates in
         Hashtbl.add table f#name {
