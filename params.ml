@@ -88,6 +88,7 @@ let set_strategy (pre,freezing,rest) =
   params.uncurry <- freezing;
   ( match rest with
     | Some(post,loop) ->
+      params.dp <- true;
       params.orders_dp <- Array.of_list post;
       params.max_loop <- loop;
     | None -> ()
@@ -100,7 +101,7 @@ let err msg =
 in
 let argv = Sys.argv in
 let argc = Array.length argv in
-let progdir = Filename.dirname argv.(0) in
+let progdir = Filename.dirname Sys.executable_name in
 let prerr_help () =
   let pr = prerr_string in
   let pe = prerr_endline in
@@ -144,8 +145,8 @@ while !i < argc do
     in
     match opt, optarg with
     | "-help", _ -> prerr_help (); exit 0;
-    | "-s", Some file ->
-      set_strategy (Strategy.of_file file);
+    | "s", Some file ->
+      set_strategy (Strategy.of_file (progdir ^ "/" ^ file));
       default := false;
     | "-Sort", None -> params.sort_scc <- SORT_none;
     | "-sort", _ -> (
@@ -231,7 +232,7 @@ while !i < argc do
   i := !i + 1;
 done;
 if !default then begin
-  set_strategy (Strategy.of_file "default.xml")
+  set_strategy (Strategy.of_file (progdir ^ "/default.xml"))
 end
 
 let cpf =

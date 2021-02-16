@@ -22,7 +22,8 @@ let (+?) s t = Sum[s;t]
 
 let sum_template mono =
   [Pos, SumArgs(if mono then Arg(-1,0) else Var Bool *? Arg(-1,0)) +? Var Pos]
-let mono_bpoly_template = [Pos, SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
+let mono_bpoly_template =
+  [Pos, SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
 let mono_max_template =
   [Pos, ArityChoice(function 0 -> Var Pos | _ -> MaxArgs(Arg(-1,0) +? Var Pos))]
 let max_template = [Pos,
@@ -168,7 +169,6 @@ let order_default = {
   dp = false;
   base_ty = Smt.Int;
   tmpvar = true;
-  linear = true;
   w_templates = Array.make 0 (Pos, Const 0);
   ext_lex = false;
   ext_mset = false;
@@ -183,11 +183,12 @@ let order_default = {
   collapse = false;
   usable = true;
   usable_w = false;
+  smt_tool = z3cmd;
   reset_mode = RESET_reset;
   use_scope = true;
   use_scope_ratio = 0;
   remove_all = false;
-  smt_tool = z3cmd;
+  linear = true;
   peek_in = false;
   peek_out = false;
   peek_to = stderr;
@@ -226,7 +227,7 @@ let smt_element =
   element "z3" (return z3cmd) <|>
   element "cvc4" (return cvc4cmd)
 
-let order_element mono =
+let order_element dp =
   element "order" (
     default PREC_none (
       validated_attribute "precedence" "none|quasi|strict" >>= fun str ->
@@ -236,14 +237,16 @@ let order_element mono =
       validated_attribute "status" "none|partial|total|empty" >>= fun str ->
       return (match str with "none" -> S_none | "partial" -> S_partial | "total" -> S_total | _ -> S_empty)
     ) >>= fun status ->
-    default (not mono) (bool_attribute "collapse") >>= fun collapse ->
-    default (not mono) (bool_attribute "usable") >>= fun usable ->
+    default (dp && status <> S_empty) (bool_attribute "collapse") >>= fun collapse ->
+    default dp (bool_attribute "usable") >>= fun usable ->
     default z3cmd smt_element >>= fun smt ->
-    default [] (weight_element mono) >>= fun weight ->
+    default [] (weight_element dp) >>= fun weight ->
     return {order_default with
+      dp = dp;
       w_templates = Array.of_list weight;
       prec_mode = prec;
       status_mode = status;
+      ext_lex = (match status with S_partial | S_total -> true | _ -> false);
       collapse = collapse;
       usable = usable;
       smt_tool = smt;
@@ -252,11 +255,11 @@ let order_element mono =
 
 let strategy_element =
   element "strategy" (
-    many (order_element true) >>= fun pre ->
+    many (order_element false) >>= fun pre ->
     default false (element "freezing" (return true)) >>= fun freezing ->
     optional (
       element "edg" (return ()) >>= fun _ ->
-      many (order_element false) >>= fun post ->
+      many (order_element true) >>= fun post ->
       default 0 (element "loop" (int_attribute "steps" >>= return)) >>= fun loop ->
       return (post,loop)
     ) >>= fun rest ->
