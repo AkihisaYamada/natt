@@ -1,27 +1,42 @@
-<multi>
- <entry range="pos">
-  <case arity="0">
-   <var range="pos"/>
-  </case>
-  <max>
-   <args mode="max">
-    <sum>
-     <prod><var range="bool"/><arg coord="0"/></prod>
-     <prod><var range="bool"/><arg coord="1"/></prod>
-     <var range="full"/>
-    </sum>
-   </args>
-   <var range="pos"/>
-  </max>
- </entry>
- <entry range="full">
-  <sum>
-   <args>
-    <sum>
-     <prod><var range="bool"/><arg coord="1"/></prod>
-    </sum>
-   </args>
-   <var range="full"/>
-  </sum>
- </entry>
-</multi>
+<?xml version="1.0"?>
+<strategy>
+  <edg/>
+  <order>
+    <multi>
+      <template range="pos">
+        <case arity="0">
+          <var range="pos"/>
+        </case>
+        <max>
+          <args mode="max">
+            <sum>
+              <prod>
+                <var range="bool"/>
+                <arg coord="0"/>
+              </prod>
+              <prod>
+                <var range="bool"/>
+                <arg coord="1"/>
+              </prod>
+              <var range="full"/>
+            </sum>
+          </args>
+          <var range="pos"/>
+        </max>
+      </template>
+      <template range="full">
+        <sum>
+          <args>
+            <sum>
+              <prod>
+                <var range="bool"/>
+                <arg coord="1"/>
+              </prod>
+            </sum>
+          </args>
+          <var range="full"/>
+        </sum>
+      </template>
+    </multi>
+  </order>
+</strategy>

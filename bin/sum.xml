@@ -1,15 +1,26 @@
+<?xml version="1.0"?>
 <strategy>
- <order><poly/></order>
- <freezing/>
- <edg/>
- <order>
-  <template>
-   <sum>
-    <args mode="sum">
-     <prod><var range="bool"/><arg/></prod>
-    </args>
-    <var range="pos"/>
-   </sum>
-  </template>
- </order>
+  <edg/>
+  <order>
+    <strategy>
+      <order>
+        <poly/>
+      </order>
+      <freezing/>
+      <edg/>
+      <order>
+        <template>
+          <sum>
+            <args mode="sum">
+              <prod>
+                <var range="bool"/>
+                <arg/>
+              </prod>
+            </args>
+            <var range="pos"/>
+          </sum>
+        </template>
+      </order>
+    </strategy>
+  </order>
 </strategy>
