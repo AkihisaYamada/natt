@@ -498,13 +498,6 @@ class interpreter p =
 
     method output_sym : 't 'f 'o. (#solver as 't) -> (#Trs.sym_detailed as 'f) -> (#printer as 'o) -> unit =
       fun solver f os -> put_vec put_arg (eval_vec solver (x#encode_sym f)) os;
-         os#puts "\tinfo: ";
-           for i = 1 to f#arity do
-             os#putc ' ';
-             if solver#get_bool (x#constant_at f i)  then os#putc '0';
-             if solver#get_bool (x#collapses_at f i) then os#putc '1';
-             if solver#get_bool (x#weak_simple_at f i) then os#putc 's';
-           done
 
     method output_sym_template : 'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
       fun f -> f#output << puts ": " << put_vec put_arg (x#encode_sym f)

@@ -33,7 +33,7 @@ OCAML_SRCS=\
 	trs.ml \
 	estimator.ml \
 	dp.ml \
-	app.ml \
+	freezing.ml \
 	weight.ml \
 	wpo_info.ml \
 	wpo_printer.ml \

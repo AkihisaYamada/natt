@@ -24,7 +24,7 @@ type rdp_mode = (* for relative DP *)
 type mode =
 | MODE_order
 | MODE_flat
-| MODE_uncurry
+| MODE_freezing
 | MODE_simple
 | MODE_dup
 | MODE_through
@@ -46,7 +46,7 @@ type params_type = {
   mutable edge_mode : estimator_mode;
   mutable edge_length : int;
   mutable sort_scc : sort_mode;
-  mutable uncurry : bool;
+  mutable freezing : bool;
   mutable max_loop : int;
   mutable max_narrowing : int;
   mutable acdp_mode : acdp_mode;
@@ -68,7 +68,7 @@ let params = {
   edge_mode = E_sym_trans;
   edge_length = 8;
   sort_scc = SORT_asc;
-  uncurry = false;
+  freezing = false;
   max_loop = 0;
   max_narrowing = 8;
   acdp_mode = ACDP_new;
@@ -85,7 +85,7 @@ let params = {
 
 let set_strategy (pre,freezing,rest) =
   params.orders_removal <- Array.of_list pre;
-  params.uncurry <- freezing;
+  params.freezing <- freezing;
   ( match rest with
     | Some(post,loop) ->
       params.dp <- true;
@@ -110,24 +110,9 @@ let prerr_help () =
   pe "";
   pe "Checks termination of TRS specified by FILE (stdin by default).";
   pe "";
-  pe "Global OPTIONs:";
-  pe "  -v:<n>           set verbosity (0 to 6, default: 3).";
-  pe "  --smt \"CMD\"      calls \"CMD\" as the back-end SMT solver.";
-  pe "  --peek[-in|-out] dump transactions with the SMT solver.";
-  pe "";
-  pe "PROCESSORs: <ORDER> [OPTION]... | UNCURRY | EDG | LOOP";
-  pe "ORDERs: WPO | POLO | LPO | MPO | RPO";
-  pe "";
-  pe "Options for orders:";
-  pe "  -u/-U        enable/disable usable rules (after EDG, enabled by default).";
-  pe "  -w:<temp>    introduce a weight template.";
-  pe "  -c[:<n>]     enable coefficients (with bound <n>). Requires QF_NIA solver.";
-  pe "  -c:b         enable binary coefficients (default after EDG).";
-  pe "  -C           disable coefficients.";
-  pe "  -p[:s]/-P    enable/disable [strict] precedences.";
-  pe "  -s:{t/p/e}   use total/partial/empty statuses";
-  pe "  -S           disable statuses.";
-  pe "  --mset       enable multiset status.";
+  pe "OPTIONs:";
+  pe "  -v:<n>         set verbosity (0 to 6, default: 3).";
+  pe "  -s:<file>      reads strategy file.";
 in
 let i = ref 1 in
 let erro str = err ("unknown option: " ^ str ^ "!") in

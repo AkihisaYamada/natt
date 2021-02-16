@@ -39,11 +39,11 @@ let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_
   )
 
 
-let uncurry =
-  if params.uncurry then
+let freeze =
+  if params.freezing then
     fun (trs : #trs) (dg : #dg) ->
-      comment (puts "Uncurrying");
-      let appsyms = App.auto_uncurry trs dg in
+      comment (puts "Freezing");
+      let appsyms = Freezing.auto_freeze trs dg in
       if appsyms = [] then
         (comment (puts " ... failed." << endl); false)
       else (
@@ -355,7 +355,7 @@ let prove_termination (trs : #trs) =
       extra_test trs;
       trivial_test trs;
       rule_remove trs (fun trs ->
-        if uncurry trs dummy_dg then
+        if freeze trs dummy_dg then
           rule_remove trs dp_prove
         else if params.dp then
           dp_prove trs
@@ -412,8 +412,8 @@ object (x)
     | MODE_flat ->
       trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
       trs#output cout;
-    | MODE_uncurry ->
-      ignore (App.auto_uncurry trs (new dg (new trs) (Estimator.tcap (new trs))));
+    | MODE_freezing ->
+      ignore (Freezing.auto_freeze trs (new dg (new trs) (Estimator.tcap (new trs))));
       trs#output cout;
     | MODE_simple ->
       if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then

@@ -5,7 +5,7 @@ open Trs
 open Dp
 open Params
 
-let uncurry (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
+let freeze (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
   let aarity_tbl = Hashtbl.create 64 in
   let aarity fname =
     try Hashtbl.find aarity_tbl fname
@@ -41,27 +41,27 @@ let uncurry (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
   trs#iter_rules iterer;
   dg#iter_dps iterer;
 
-  let uncurry_top (f,ss,d,aa) =
+  let freeze_top (f,ss,d,aa) =
     let f' = if d > 0 then new sym_freezed a f d else f in
     Node(f',ss)
   in
-  let rec uncurry_term s = uncurry_top (uncurry_sub s)
-  and uncurry_sub (Node(f,ss)) =
+  let rec freeze_term s = freeze_top (freeze_sub s)
+  and freeze_sub (Node(f,ss)) =
     if a#equals f then
       match ss with
-      | [] -> raise (Internal "uncurry")
+      | [] -> raise (Internal "freeze")
       | t::ss ->
-        let (g, ts, d, aa) as t' = uncurry_sub t in
-        let ss = List.map uncurry_term ss in
+        let (g, ts, d, aa) as t' = freeze_sub t in
+        let ss = List.map freeze_term ss in
         if d < aa then
           (g, ts @ ss, d + 1, aa)
         else
-          (f, uncurry_top t'::ss, 0, 0)
+          (f, freeze_top t'::ss, 0, 0)
     else
-      (f, List.map uncurry_term ss, 0, aarity f#name)
+      (f, List.map freeze_term ss, 0, aarity f#name)
   in
-  trs#iter_rules (fun i rule -> trs#modify_rule i (uncurry_term rule#l) (uncurry_term rule#r););
-  dg#iter_dps (fun i dp -> dg#modify_dp i (uncurry_term dp#l) (uncurry_term dp#r););
+  trs#iter_rules (fun i rule -> trs#modify_rule i (freeze_term rule#l) (freeze_term rule#r););
+  dg#iter_dps (fun i dp -> dg#modify_dp i (freeze_term dp#l) (freeze_term dp#r););
 
   let varlist name start count =
     let last = start + count - 1 in
@@ -92,7 +92,7 @@ let uncurry (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
 
 exception Next
 
-let auto_uncurry (trs : #trs) (dg : #dg) =
+let auto_freeze (trs : #trs) (dg : #dg) =
   let folder (a:sym_detailed) a_s =
     try
       if a#ty <> Fun || a#is_const then begin
@@ -136,7 +136,7 @@ let auto_uncurry (trs : #trs) (dg : #dg) =
       if !ngoods = 0 (*|| !ngoods < !nbads*) then begin
         raise Next;
       end;
-      uncurry a nargs trs dg;
+      freeze a nargs trs dg;
       a::a_s
     with Next -> a_s
   in
