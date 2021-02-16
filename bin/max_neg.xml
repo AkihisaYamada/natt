@@ -2,7 +2,7 @@
 <strategy>
   <edg/>
   <order>
-    <template>
+    <template name="max_neg">
       <case arity="0">
         <var range="pos"/>
       </case>

@@ -2,8 +2,8 @@
 <strategy>
   <edg/>
   <order>
-    <multi>
-      <template range="pos">
+    <template name="sum_full_tri_sum">
+      <entry range="pos">
         <case arity="0">
           <var range="pos"/>
         </case>
@@ -25,8 +25,8 @@
           </sum>
           <const>0</const>
         </max>
-      </template>
-      <template range="full">
+      </entry>
+      <entry range="full">
         <sum>
           <args>
             <prod>
@@ -36,7 +36,7 @@
           </args>
           <var range="full"/>
         </sum>
-      </template>
-    </multi>
+      </entry>
+    </template>
   </order>
 </strategy>

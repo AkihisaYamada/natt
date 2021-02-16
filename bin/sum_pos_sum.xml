@@ -2,8 +2,8 @@
 <strategy>
   <edg/>
   <order>
-    <multi>
-      <template range="pos">
+    <template name="sum_pos_sum">
+      <entry range="pos">
         <case arity="0">
           <var range="pos"/>
         </case>
@@ -22,8 +22,8 @@
           </args>
           <var range="pos"/>
         </sum>
-      </template>
-      <template range="pos">
+      </entry>
+      <entry range="pos">
         <sum>
           <args mode="sum">
             <sum>
@@ -39,7 +39,7 @@
           </args>
           <var range="pos"/>
         </sum>
-      </template>
-    </multi>
+      </entry>
+    </template>
   </order>
 </strategy>

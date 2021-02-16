@@ -1,8 +1,12 @@
-<?xml version="1.0"?>
 <strategy>
-  <edg/>
-  <order>
-    <template name="sum_full_sum">
+ <order><poly/></order>
+ <freezing/>
+ <edg/>
+ <order><sum/></order>
+ <order><max/></order>
+ <order precedence="quasi" status="partial"/>
+ <order>
+    <template name="sum_neg_sum">
       <entry range="pos">
         <case arity="0">
           <var range="pos"/>
@@ -26,23 +30,22 @@
           <const>0</const>
         </max>
       </entry>
-      <entry range="full">
+      <entry range="neg">
         <sum>
           <args>
-            <sum>
-              <prod>
-                <var range="bool"/>
-                <arg coord="0"/>
-              </prod>
-              <prod>
-                <var range="bool"/>
-                <arg coord="1"/>
-              </prod>
-            </sum>
+            <prod>
+              <var range="bool"/>
+              <arg coord="1"/>
+            </prod>
           </args>
-          <var range="full"/>
+          <var range="neg"/>
         </sum>
       </entry>
     </template>
-  </order>
+ </order>
+ <order precedence="quasi" status="partial">
+  <maxSum/>
+ </order>
+ <order><matrix dim="2"/></order>
+ <loop steps="3"/>
 </strategy>

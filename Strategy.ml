@@ -75,13 +75,11 @@ let neg_max_sum_weight maxarity =
 let bmat_weight mono dim =
   let entry =
     if mono then
-      fun j -> if j = 0 then Choice[Const 2; Const 1] else Var Bool
-    else fun _ -> Var Bool
+      fun j -> (if j = 0 then Choice[Const 2; Const 1] else Var Bool) *? Arg(-1,j)
+    else fun j -> Var Bool *? Arg(-1,j)
   in
   weight (string_of_int dim ^ "D-Mat") (
-    List.init dim (fun _ ->
-      (Pos, SumArgs(Sum(List.init dim (fun j -> entry j *? Arg(-1,j)))) +? Var Pos)
-    )
+    List.init dim (fun _ -> (Pos, SumArgs(Sum(List.init dim entry)) +? Var Pos))
   )
 
 let range_attribute =
@@ -108,7 +106,7 @@ let rec exp_element xmls = (
   )
 ) xmls
 
-let template_seq =
+let exp_seq =
   many (
     element "case" (
       mandatory (int_attribute "arity") >>= fun a ->
@@ -123,7 +121,7 @@ let template_seq =
 let template_entry_element =
   element "entry" (
     range_attribute >>= fun r ->
-    template_seq >>= fun t ->
+    exp_seq >>= fun t ->
     return (r,t)
   )
 
@@ -147,8 +145,7 @@ let weight_element mono =
   ) <|>
   element "template" (
     mandatory (attribute "name") >>= fun name ->
-    ( many template_entry_element <|>
-      (template_seq >>= fun s -> return [Pos,s])
+    ( many ~minOccurs:1 template_entry_element <|> (exp_seq >>= fun s -> return [Pos,s])
     ) >>= fun ss ->
     return (weight name ss)
   )
@@ -261,7 +258,7 @@ let smt_element =
   element "z3" (return z3cmd) <|>
   element "cvc4" (return cvc4cmd)
 
-let order_element dp =
+let order_element mono =
   element "order" (
     default PREC_none (
       validated_attribute "precedence" "none|quasi|strict" >>= fun str ->
@@ -271,12 +268,12 @@ let order_element dp =
       validated_attribute "status" "none|partial|total|empty" >>= fun str ->
       return (match str with "none" -> S_none | "partial" -> S_partial | "total" -> S_total | _ -> S_empty)
     ) >>= fun status ->
-    default (dp && status <> S_empty) (bool_attribute "collapse") >>= fun collapse ->
-    default dp (bool_attribute "usable") >>= fun usable ->
+    default (not mono && status <> S_empty) (bool_attribute "collapse") >>= fun collapse ->
+    default (not mono) (bool_attribute "usable") >>= fun usable ->
     default z3cmd smt_element >>= fun smt ->
-    default ("no weight",[]) (weight_element dp) >>= fun (w_name,w_templates) ->
+    default ("no weight",[]) (weight_element mono) >>= fun (w_name,w_templates) ->
     return {order_default with
-      dp = dp;
+      dp = not mono;
       w_name = w_name;
       w_templates = Array.of_list w_templates;
       prec_mode = prec;
@@ -290,11 +287,11 @@ let order_element dp =
 
 let strategy_element =
   element "strategy" (
-    many (order_element false) >>= fun pre ->
+    many (order_element true) >>= fun pre ->
     default false (element "freezing" (return true)) >>= fun freezing ->
     optional (
       element "edg" (return ()) >>= fun _ ->
-      many (order_element true) >>= fun post ->
+      many (order_element false) >>= fun post ->
       default 0 (element "loop" (int_attribute "steps" >>= return)) >>= fun loop ->
       return (post,loop)
     ) >>= fun rest ->

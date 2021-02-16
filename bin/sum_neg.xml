@@ -2,24 +2,22 @@
 <strategy>
   <edg/>
   <order>
-    <multi>
-      <template range="pos">
-        <case arity="0">
-          <var range="pos"/>
-        </case>
-        <max>
-          <sum>
-            <args mode="sum">
-              <prod>
-                <var range="bool"/>
-                <arg/>
-              </prod>
-            </args>
-            <var range="full"/>
-          </sum>
-          <const>0</const>
-        </max>
-      </template>
-    </multi>
+    <template name="sum_neg">
+      <case arity="0">
+        <var range="pos"/>
+      </case>
+      <max>
+        <sum>
+          <args mode="sum">
+            <prod>
+              <var range="bool"/>
+              <arg/>
+            </prod>
+          </args>
+          <var range="full"/>
+        </sum>
+        <const>0</const>
+      </max>
+    </template>
   </order>
 </strategy>

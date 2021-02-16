@@ -2,8 +2,8 @@
 <strategy>
   <edg/>
   <order>
-    <multi>
-      <template range="pos">
+    <template name="max_neg_sum">
+      <entry range="pos">
         <case arity="0">
           <var range="pos"/>
         </case>
@@ -28,8 +28,8 @@
           </args>
           <var range="pos"/>
         </max>
-      </template>
-      <template range="neg">
+      </entry>
+      <entry range="neg">
         <sum>
           <args>
             <sum>
@@ -41,7 +41,7 @@
           </args>
           <var range="neg"/>
         </sum>
-      </template>
-    </multi>
+      </entry>
+    </template>
   </order>
 </strategy>
