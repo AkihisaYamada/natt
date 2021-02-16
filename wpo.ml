@@ -898,7 +898,7 @@ object (x)
       x#reset;
 
   method reduce current_usables sccref =
-    comment (puts (name_order p) << putc '.' << flush);
+    comment (put_order p << putc '.' << flush);
     try
       x#push current_usables !sccref;
       comment (putc '.' << flush);
@@ -941,7 +941,7 @@ object (x)
 
   method direct current_usables =
     try
-      comment (puts "Direct " << puts (name_order p) << puts " ." << flush);
+      comment (puts "Direct " << put_order p << puts " ." << flush);
       x#push current_usables [];
       trs#iter_prules (fun i _ -> x#add_prule i);
 

@@ -1,45 +1,14 @@
 <strategy>
- <order>
-  <poly/>
- </order>
+ <order><poly/></order>
  <freezing/>
  <edg/>
- <order>
-  <sum/>
- </order>
- <order>
-  <template>
-   <case arity="0"><var/></case>
-   <args mode="max">
-    <sum><prod><var range="bool"/><arg/></prod><var/></sum>
-   </args>
-  </template>
- </order>
+ <order><sum/></order>
+ <order><max/></order>
  <order precedence="quasi" status="partial"/>
- <order>
-  <template>
-   <case arity="0"><var/></case>
-   <max>
-    <choice>
-     <args mode="max">
-      <sum><prod><var range="bool"/><arg/></prod><var range="full"/></sum>
-     </args>
-     <sum>
-      <args mode="sum">
-       <prod><var range="bool"/><arg/></prod>
-      </args>
-      <var range="full"/>
-     </sum>
-   </choice>
-   <const>0</const>
-   </max>
-  </template>
- </order>
+ <order><maxSum neg="true"/></order>
  <order precedence="quasi" status="partial">
   <maxSum/>
  </order>
- <order>
-  <matrix dim="2"/>
- </order>
+ <order><matrix dim="2"/></order>
  <loop steps="3"/>
 </strategy>
