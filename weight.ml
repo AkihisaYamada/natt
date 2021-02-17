@@ -42,7 +42,7 @@ let prod =
     | w :: ws -> sub (w::acc) ws
   and sub2 e acc ws =
     match ws with
-    | [] -> (match acc with [] -> Smt e | _ -> Prod acc)
+    | [] -> (match acc with [] -> Smt e | _ -> Prod (e::acc))
     | Smt e1 :: ws -> if is_zero e1 then zero_w else sub2 (e *^ e1) acc ws
     | Prod ws1 :: ws -> sub2 e acc (ws1 @ ws)
     | w :: ws -> sub2 e (w::acc) ws
