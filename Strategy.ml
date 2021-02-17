@@ -160,73 +160,60 @@ type status_mode =
 | S_empty
 | S_partial
 | S_total
-type reset_mode =
-| RESET_reboot
-| RESET_reset
-type smt_tool = string * string list
 
 type order_params = {
-  mutable dp : bool;
-  mutable w_name : string;
-  mutable w_templates : (range * template) array;
-  mutable base_ty : Smt.ty;
-  mutable tmpvar : bool;
-  mutable linear : bool;
-  mutable ext_mset : bool;
-  mutable ext_lex : bool;
-  mutable status_mode : status_mode;
-  mutable status_copy : bool;
-  mutable status_nest : int;
-  mutable prec_mode : prec_mode;
-  mutable mincons : bool;
-  mutable maxcons : bool;
-  mutable ac_w : bool;
-  mutable strict_equal : bool;
-  mutable collapse : bool;
+  smt_params : Smt.params;
+  dp : bool;
+  w_name : string;
+  w_templates : (range * template) array;
+  ext_mset : bool;
+  ext_lex : bool;
+  status_mode : status_mode;
+  status_copy : bool;
+  status_nest : int;
+  prec_mode : prec_mode;
+  mincons : bool;
+  maxcons : bool;
+  ac_w : bool;
+  strict_equal : bool;
+  collapse : bool;
   mutable usable : bool;
-  mutable usable_w : bool;
-  mutable reset_mode : reset_mode;
-  mutable use_scope : bool;
-  mutable use_scope_ratio : int;
-  mutable remove_all : bool;
-  mutable smt_tool : smt_tool;
-  mutable peek_in : bool;
-  mutable peek_out : bool;
-  mutable peek_to : out_channel;
+  usable_w : bool;
+  remove_all : bool;
+  use_scope : bool;
+  use_scope_ratio : int;
 }
 
-let z3cmd = ("z3", ["-smt2";"-in"])
-let cvc4cmd = ("cvc4", ["--lang=smt2"; "--incremental"; "--produce-models"])
+let z3cmd = "z3"
+let z3args = ["-smt2";"-in"]
+let cvc4cmd = "cvc4"
+let cvc4args = ["--lang=smt2"; "--incremental"; "--produce-models"]
 
-let order_default = {
+let default_smt = Smt.default_params z3cmd z3args
+
+let default_order = {
+  smt_params = default_smt;
   dp = false;
-  base_ty = Smt.Int;
-  tmpvar = true;
-  w_name = "?";
-  w_templates = Array.make 0 (Pos, Const 0);
-  ext_lex = false;
+  w_name = "???";
+  w_templates = Array.make 0 (Pos,Const 0);
   ext_mset = false;
-  status_mode = S_total;
-  status_nest = 0;
+  ext_lex = false;
+  status_mode = S_empty;
   status_copy = false;
-  prec_mode = PREC_quasi;
+  status_nest = 0;
+  prec_mode = PREC_none;
   mincons = false;
   maxcons = false;
-  ac_w = true;
+  ac_w = false;
   strict_equal = false;
   collapse = false;
-  usable = true;
+  usable = false;
   usable_w = false;
-  smt_tool = z3cmd;
-  reset_mode = RESET_reset;
+  remove_all = false;
   use_scope = true;
   use_scope_ratio = 0;
-  remove_all = false;
-  linear = true;
-  peek_in = false;
-  peek_out = false;
-  peek_to = stderr;
 }
+
 let put_order p =
   let status =
     match p.status_mode with
@@ -251,12 +238,30 @@ let put_order p =
 
 let smt_element =
   element "smt" (
-    element "command" string >>= fun cmd ->
-    many (element "arg" string) >>= fun args ->
-    return (cmd,args)
-  ) <|>
-  element "z3" (return z3cmd) <|>
-  element "cvc4" (return cvc4cmd)
+    default (false,stderr) (
+      (bool_attribute "peek" >>= fun b -> return (b,stderr)) <|>
+      (attribute "peekTo" >>= fun file -> return (true,open_out file))
+    ) >>= fun (peek,peek_to) ->
+    default false (bool_attribute "tempvars") >>= fun tmpvar ->
+    default true (bool_attribute "linear") >>= fun linear ->
+    ( ( element "command" string >>= fun cmd ->
+        many (element "arg" string) >>= fun args ->
+        return (cmd,args)
+      ) <|>
+      element "z3" (return (z3cmd,z3args)) <|>
+      element "cvc4" (return (cvc4cmd,cvc4args))
+    ) >>= fun (cmd,args) ->
+    return Smt.{
+      cmd = cmd;
+      args = args;
+      base_ty = Smt.Int;
+      tmpvar = tmpvar;
+      linear = linear;
+      peek_in = peek;
+      peek_out = peek;
+      peek_to = peek_to;
+    }
+  )
 
 let order_element mono =
   element "order" (
@@ -270,18 +275,29 @@ let order_element mono =
     ) >>= fun status ->
     default (not mono && status <> S_empty) (bool_attribute "collapse") >>= fun collapse ->
     default (not mono) (bool_attribute "usable") >>= fun usable ->
-    default z3cmd smt_element >>= fun smt ->
+    default default_smt smt_element >>= fun smt ->
     default ("no weight",[]) (weight_element mono) >>= fun (w_name,w_templates) ->
-    return {order_default with
+    return {
+      smt_params = smt;
       dp = not mono;
       w_name = w_name;
       w_templates = Array.of_list w_templates;
       prec_mode = prec;
       status_mode = status;
+      status_nest = 0;
+      status_copy = false;
       ext_lex = (match status with S_partial | S_total -> true | _ -> false);
+      ext_mset = false;
       collapse = collapse;
       usable = usable;
-      smt_tool = smt;
+      usable_w = false;
+      mincons = false;
+      maxcons = false;
+      ac_w = true;
+      strict_equal = false;
+      remove_all = false;
+      use_scope = true;
+      use_scope_ratio = 0;
     }
   )
 

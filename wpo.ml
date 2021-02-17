@@ -38,14 +38,9 @@ class processor =
   let supply_index v i = v ^ "_" ^ string_of_int i in
   fun p (trs : trs) (estimator : Estimator.t) (dg : dg) ->
   let dim = Array.length p.w_templates in
-  let weight_ty = p.base_ty in
   let usables = ref [] in
   let dplist = ref [] in
-  let solver =
-    let (tool,options) = p.smt_tool in
-    create_solver p.tmpvar p.linear p.base_ty p.peek_to p.peek_in p.peek_out tool options
-  in
-  let () = solver#set_base_ty weight_ty in
+  let solver = create_solver p.smt_params in
   (* Signature as the set of function symbols with their informations. *)
   let sigma : (string,wpo_sym) Hashtbl.t = Hashtbl.create 256 in
   let lookup_name name =
@@ -61,7 +56,7 @@ class processor =
   let pmin = LI 0 in
   let pmax = ref (LI 0) in
   let add_prec_default fname finfo =
-    let fp = solver#new_variable ("p_" ^ fname) weight_ty in
+    let fp = solver#new_variable_base ("p_" ^ fname) in
     finfo#set_prec fp;
     solver#add_assertion (pmin <=^ fp);
     solver#add_assertion (fp <=^ !pmax);
@@ -865,11 +860,7 @@ object (x)
     end;
 
   method reset =
-    begin
-      match p.reset_mode with
-      | RESET_reset -> solver#reset;
-      | RESET_reboot -> solver#reboot;
-    end;
+    solver#reset;
     Hashtbl.clear dp_flag_table;
     Hashtbl.clear rule_flag_table;
     initialized <- false;

@@ -19,11 +19,11 @@ OCAML_SRCS=\
 	util.ml \
 	txtr.ml \
 	MyXML.ml \
-	Strategy.ml \
 	matrix.ml \
-	params.ml \
 	proc.ml \
 	smt.ml \
+	Strategy.ml \
+	params.ml \
 	preorder.ml \
 	mset.ml \
 	abbrev.ml \

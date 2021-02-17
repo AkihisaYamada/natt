@@ -5,10 +5,31 @@ type ty = Nat | Int | Real | Bool | Prod of ty * ty
 
 type name = string
 
-class virtual ['e,'d] base =
+type params = {
+  cmd : string;
+  args : string list;
+  base_ty : ty;
+  tmpvar : bool;
+  linear : bool;
+  peek_in : bool;
+  peek_out : bool;
+  peek_to : out_channel;
+}
+
+let default_params cmd args = {
+  cmd = cmd;
+  args = args;
+  base_ty = Int;
+  tmpvar = true;
+  linear = true;
+  peek_in = false;
+  peek_out = false;
+  peek_to = stderr;
+}
+
+class virtual ['e,'d] base p =
   object (x:'b)
-    val mutable base_ty = Int
-    method set_base_ty ty = base_ty <- ty
+    val base_ty = p.base_ty
     method virtual add_assertion : 'e -> unit
     method virtual add_definition : name -> ty -> 'e -> unit
     method virtual add_declaration : 'd -> unit
@@ -17,6 +38,8 @@ class virtual ['e,'d] base =
     method virtual temp_variable : ty -> 'e
     method virtual refer : ty -> 'e -> 'e
     method add_variable_base v = x#add_variable v base_ty
+    method new_variable_base v = x#new_variable v base_ty
+    method temp_variable_base = x#temp_variable base_ty
     method refer_base e = x#refer base_ty e
     method virtual expand : 'e -> 'e
   end;;
@@ -285,7 +308,7 @@ module OrderKnow = Map.Make(StringPair)
 
 let rec simplify_knowing kn e =
   match e with
-(*  | LB _ | LI _ | LR _ -> e
+  | LB _ | LI _ | LR _ -> e
   | EV v -> (try LB (BoolKnow.find v kn) with _ -> e)
   | Not e -> smt_not (simplify_knowing kn e)
   | And(e1,e2) -> (
@@ -322,7 +345,7 @@ let rec simplify_knowing kn e =
     | LB b -> if b then simplify_knowing kn t else simplify_knowing kn e
     | c -> If(c, simplify_knowing (assume_true c kn) t, simplify_knowing (assume_false c kn) e, p)
   )
-*)  | _ -> e
+  | _ -> e
 and assume_true e kn =
   match e with
   | EV v -> BoolKnow.add v true kn
@@ -487,7 +510,7 @@ and ( *^) e1 e2 =
   | _, LR 1.0 -> e1
   | LI i1, LI i2 -> LI(i1 * i2)
   | LR r1, LR r2 -> LR(r1 *. r2)
-(*  | If(c,t,e,p), _ when is_zero t ->
+  | If(c,t,e,p), _ when is_zero t ->
     let nc = smt_not c in smt_pre_if c nc t (e *^ simplify_under nc e2)
   | If(c,t,e,p), _ when is_zero e ->
     smt_pre_if c (smt_not c) (t *^ simplify_under c e2) e
@@ -495,7 +518,7 @@ and ( *^) e1 e2 =
     let nc = smt_not c in smt_pre_if c nc t (simplify_under nc e1 *^ e)
   | _, If(c,t,e,p) when is_zero e ->
     smt_pre_if c (smt_not c) (simplify_under c e1 *^ t) e
-*)  | _ -> Mul(e1,e2)
+  | _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
     match t, e with
     | LB b, _ -> if b then c |^ e else nc &^ e
@@ -541,23 +564,13 @@ and (>=^) e1 e2 =
     | t', LB be -> if be then c =>^ t' else c &^ t'
     | _ -> Ge(e1, e2)
     )
-(*  | _, If(c,t,e,p) -> (
-    match e1 >=^ t with
-    | LB b -> (
-      match e1 >=^ e with
-      | LB b' ->
-        if b then if b' then LB true else c
-        else if b' then smt_not c else LB false
-      | e' -> if b then c |^ e' else smt_not c &^ e'
-      )
-    | t' -> (
-      match e1 >=^ e with
-      | LB b' ->
-        if b' then c =>^ t' else c &^ t'
-      | _ -> Ge(e1, e2)
-      )
+  | _, If(c,t,e,p) -> (
+    match simplify_under c e1 >=^ t, simplify_under (smt_not c) e1 >=^ e with
+    | LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
+    | t', LB be -> if be then c =>^ t' else c &^ t'
+    | _ -> Ge(e1, e2)
     )
-*)  | _ -> Ge(e1, e2)
+  | _ -> Ge(e1, e2)
 and (>^) e1 e2 =
   match e1, e2 with
   | EV v1, EV v2 when v1 = v2 -> LB false
@@ -565,39 +578,19 @@ and (>^) e1 e2 =
   | LI i1, LR r2 -> LB(float_of_int i1 > r2)
   | LR r1, LI i2 -> LB(r1 > float_of_int i2)
   | LR r1, LR r2 -> LB(r1 > r2)
-(*  | If(c,t,e,p), _ -> (
-    match t >^ e2 with
-    | LB b -> (
-      match e >^ e2 with
-      | LB b' ->
-        if b then if b' then LB true else c
-        else if b' then smt_not c else LB false
-      | e' -> if b then c |^ e' else smt_not c &^ e'
-      )
-    | t' -> (
-      match e >^ e2 with
-      | LB b' ->
-        if b' then c =>^ t' else c &^ t'
-      | _ -> Gt(e1,e2)
-      )
+  | If(c,t,e,p), e2 -> (
+    match t >^ simplify_under c e2, e >^ simplify_under (smt_not c) e2 with
+    | LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
+    | t', LB be -> if be then c =>^ t' else c &^ t'
+    | _ -> Gt(e1, e2)
     )
   | _, If(c,t,e,p) -> (
-    match e1 >^ t with
-    | LB b -> (
-      match e1 >^ e with
-      | LB b' ->
-        if b then if b' then LB true else c
-        else if b' then smt_not c else LB false
-      | e' -> if b then c |^ e' else smt_not c &^ e'
-      )
-    | t' -> (
-      match e1 >^ e with
-      | LB b' ->
-        if b' then c =>^ t' else c &^ t'
-      | _ -> Gt(e1,e2)
-      )
+    match simplify_under c e1 >^ t, simplify_under (smt_not c) e1 >^ e with
+    | LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
+    | t', LB be -> if be then c =>^ t' else c &^ t'
+    | _ -> Gt(e1, e2)
     )
-*)  | _ -> Gt(e1,e2)
+  | _ -> Gt(e1,e2)
 
 let (<>^) e1 e2 = smt_not (e1 =^ e2)
 
@@ -652,15 +645,15 @@ let smt_split e f =
 
 ;;
 
-class virtual context tmpvar linear =
+class virtual context p =
 
   object (x:'t)
-    inherit [exp,dec] base
+    inherit [exp,dec] base p
 
     method virtual private add_assertion_body : exp -> unit
     method virtual private add_declaration_body : dec -> unit
 
-    method private branch = new subcontext tmpvar linear
+    method private branch = new subcontext p
 
     val mutable consistent = true
 
@@ -701,7 +694,7 @@ class virtual context tmpvar linear =
       x#new_variable x#temp_name ty
 
     method private refer_sub ty e =
-      if not tmpvar || not consistent || is_simple e then e
+      if not p.tmpvar || not consistent || is_simple e then e
       else
         match e with
           (* Impure formula will not be represented by a variable *)
@@ -784,7 +777,7 @@ class virtual context tmpvar linear =
       x#gt_purify (x#expand e1) (x#expand e2)
 
     method private add_purify e1 e2 =
-      if linear then
+      if p.linear then
         match e1, e2 with
         | If(c,t,e,_), _ ->
           let nc = smt_not c in
@@ -804,12 +797,12 @@ class virtual context tmpvar linear =
     method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
     method private mul_purify e1 e2 =
-      if linear then
+      if p.linear then
         match e1, e2 with
-        | LI 0, _
-        | LR 0.0, _ -> e1
-        | _, LI 0
-        | _, LR 0.0 -> e2
+        | LI 0, _ | LR 0.0, _ -> e1
+        | _, LI 0 | _, LR 0.0 -> e2
+        | LI 1, _ | LR 1.0, _ -> e2
+        | _, LI 1 | _, LR 1.0 -> e1
         | If(c,t,e,_), _ when is_zero t ->
           let nc = smt_not c in
           smt_pre_if c nc t (x#mul_purify e (simplify_under nc e2))
@@ -963,9 +956,9 @@ class virtual context tmpvar linear =
       | Delay f   -> x#expand_delay f
       | e         -> raise (Invalid_formula ("expand",e))
   end
-and subcontext tmpvar linear =
+and subcontext p =
   object (x)
-    inherit context tmpvar linear
+    inherit context p
     val mutable assertion = LB true
     val mutable declarations = []
     method private add_assertion_body e = assertion <- e &^ assertion
@@ -984,9 +977,9 @@ and subcontext tmpvar linear =
       ForAll(declarations,assertion =>^ e)
   end
 
-class virtual solver tmpvar linear ty =
+class virtual solver p =
   object
-    inherit context tmpvar linear
+    inherit context p
     method virtual init : unit
     method virtual check : unit
     method virtual get_bool : exp -> bool
@@ -1106,10 +1099,10 @@ let rec smt_eval_int e =
 let test_sat str = Str.string_match (Str.regexp "sat.*") str 0
 let test_unsat str = Str.string_match (Str.regexp "un\\(sat\\|known\\).*") str 0
 
-class virtual smt_lib_2_0 tmpvar linear ty =
+class virtual smt_lib_2_0 p =
   object (x)
     inherit Io.t
-    inherit solver tmpvar linear ty
+    inherit solver p
     inherit sexp_printer
     inherit parser
 
@@ -1118,10 +1111,9 @@ class virtual smt_lib_2_0 tmpvar linear ty =
     method init =
       if not initialized then begin
         initialized <- true;
-        x#puts ("(set-logic QF_" ^ (if linear then "L" else "N") ^ (if ty = Int then "I" else "R") ^ "A)");
+        x#puts ("(set-logic QF_" ^ (if p.linear then "L" else "N") ^ (if base_ty = Int then "I" else "R") ^ "A)");
         x#endl;
       end;
-
 
     method private add_declaration_body d =
       match d with
@@ -1212,10 +1204,6 @@ class virtual smt_lib_2_0 tmpvar linear ty =
     method pop =
       x#puts "(pop)";
       x#endl;
-    method reboot =
-      x#puts "(exit)"; x#endl; consistent <- true; temp_names <- 0;
-      x#close;
-      initialized <- false;
     method reset =
       x#puts "(reset)"; x#endl; consistent <- true; temp_names <- 0;
 
@@ -1261,13 +1249,13 @@ class virtual smt_lib_2_0 tmpvar linear ty =
       | d::ds -> x#puts "("; pr_d d; x#puts ") "; x#pr_ds ds;
   end
 
-let create_solver tmpvar linear ty debug_to debug_in debug_out command options =
+let create_solver p =
   object (x)
-    inherit smt_lib_2_0 tmpvar linear ty as super
+    inherit smt_lib_2_0 p as super
     inherit Proc.finalized (fun y -> y#close)
-    val main = new Proc.t command options
-    val dout = if debug_out then new pretty_wrap_out debug_to else (Io.null :> printer)
-    val din = if debug_in then new pretty_wrap_out debug_to else (Io.null :> printer)
+    val main = new Proc.t p.cmd p.args
+    val dout = if p.peek_out then new pretty_wrap_out p.peek_to else (Io.null :> printer)
+    val din = if p.peek_in then new pretty_wrap_out p.peek_to else (Io.null :> printer)
     method endl = main#endl; dout#endl;
     method putc c = main#putc c; dout#putc c;
     method puts s = main#puts s; dout#puts s;

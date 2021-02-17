@@ -18,22 +18,38 @@ type 'a t =
 let zero_w = Smt (LI 0)
 let one_w = Smt (LI 1)
 
-let sum ws =
-   match List.filter (fun w -> w <> zero_w) ws with
-   | [] -> zero_w
-   | [w] -> w
-   | ws -> Sum ws
+let sum =
+  let rec sub acc ws =
+    match ws with
+    | [] -> (match acc with [] -> zero_w | [w] -> w | _ -> Sum acc)
+    | Smt e :: ws -> sub2 e acc ws
+    | Sum ws1 :: ws -> sub acc (ws1 @ ws)
+    | w :: ws -> sub (w::acc) ws
+  and sub2 e acc ws =
+    match ws with
+    | [] -> (match acc with [] -> Smt e | _ -> Sum(Smt e :: acc))
+    | Smt e1 :: ws -> sub2 (e +^ e1) acc ws
+    | Sum ws1 :: ws -> sub2 e acc (ws1 @ ws)
+    | w :: ws -> sub2 e (w::acc) ws
+  in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
-let prod ws =
-  if List.exists (fun w -> w = zero_w) ws then zero_w else
-  match List.filter (fun w -> w <> one_w) ws with
-  | [] -> one_w
-  | [w] -> w
-  | ws -> Prod ws
+let prod =
+  let rec sub acc ws =
+    match ws with
+    | [] -> (match acc with [] -> one_w | [w] -> w | _ -> Prod acc)
+    | Smt e :: ws -> if is_zero e then zero_w else sub2 e acc ws
+    | Prod ws1 :: ws -> sub acc (ws1 @ ws)
+    | w :: ws -> sub (w::acc) ws
+  and sub2 e acc ws =
+    match ws with
+    | [] -> (match acc with [] -> one_w | _ -> Prod acc)
+    | Smt e1 :: ws -> if is_zero e1 then zero_w else sub2 (e *^ e1) acc ws
+    | Prod ws1 :: ws -> sub2 e acc (ws1 @ ws)
+    | w :: ws -> sub2 e (w::acc) ws
+  in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
 let max =
-  let rec sub =
-    fun acc ws ->
+  let rec sub acc ws =
     match ws with
     | [] -> Max acc
     | Max ws' :: ws -> sub (ws' @ acc) ws
@@ -198,6 +214,14 @@ let put_w var : 'a t -> #printer -> unit =
 
 let put_vec var wa = puts "(" << put_list (put_w var) (puts ", ") (puts "-") (Array.to_list wa) << puts ")"
 
+let put_range s = puts (
+  match s with Full -> "full" | Pos -> "pos" | Neg -> "neg" | Bool -> "bool"
+)
+
+let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
+
+let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_range s << putc '>'
+
 let cw_op =
   let sub (c1,w1) (c2,ws) = match c1 &^ c2 with LB false -> None | c -> Some (c, w1 :: ws) in
   fun f cws -> List.map (fun (c,ws) -> (c, f ws)) (list_product_fold_filter sub cws [(LB true,[])])
@@ -218,64 +242,105 @@ let put_cws var cws =
   put_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n  ") (puts "??") cws <<
   puts "}"
 
+let rec maxable e =
+  match e with
+  | LI _ | LR _ -> true
+  | If(c,t,e,_) -> maxable t && maxable e
+  | _ -> false
+
+let rec simple_max e1 e2 =
+  match e1, e2 with
+  | LI i1, LI i2 -> LI(Stdlib.max i1 i2)
+  | LR r1, LR r2 -> LR(Stdlib.max r1 r2)
+  | If(c,t,e,f), _ -> If(c, simple_max t e2, simple_max e e2, f)
+  | _, If(c,t,e,f) -> If(c, simple_max e1 t, simple_max e1 e, f)
+  | _ -> Nil
+
 let expand_max =
-  let rec sub w =
-  match w with
-  | BVar(_,_) | Smt _ -> [w]
-  | Max ws -> List.concat (List.map sub ws)
-  | Sum ws -> List.map (fun ws -> sum ws) (list_product (List.map sub ws))
-  | Prod ws -> (* This works only if monotonicity is ensured *)
+  let rec sub w = sub_max [] [w]
+  and sub_max acc ws =
+    match ws with
+    | [] -> acc
+    | Max ws1 :: ws -> sub_max acc (ws1 @ ws)
+    | Sum ws1 :: ws -> sub_max (sub_sum ws1 @ acc) ws
+    | Prod ws1 :: ws -> sub_max (sub_prod ws1 @ acc) ws
+    | Smt e :: ws when maxable e -> sub_max2 e acc ws
+    | w :: ws -> sub_max (w :: acc) ws
+  and sub_max2 e acc ws =
+    match ws with
+    | [] -> Smt e :: acc
+    | Max ws1 :: ws -> sub_max2 e acc (ws1 @ ws)
+    | Sum ws1 :: ws -> sub_max2 e (sub_sum ws1 @ acc) ws
+    | Prod ws1 :: ws -> sub_max2 e (sub_prod ws1 @ acc) ws
+    | (Smt e1 as w) :: ws when maxable e1 -> sub_max2 (simple_max e e1) acc ws
+    | w :: ws -> sub_max2 e (w::acc) ws
+  and sub_sum ws = List.map (fun ws -> sum ws) (list_product (List.map sub ws))
+  and sub_prod ws = (* This works only if monotonicity is ensured *)
     List.map (fun ws -> prod ws) (list_product (List.map sub ws))
   in sub
 
-let rec expand_sum w =
-  match w with
-  | BVar(_,_) | Smt _ -> [w]
-  | Sum ws -> List.concat (List.map expand_sum ws)
-  | Prod ws -> List.map (fun ws -> prod ws) (
-      list_product_fold_filter (fun x y ->
-        match x with Smt e when is_zero e -> None | _ -> Some (x::y)
-      ) (List.map expand_sum ws) []
-    )
+let expand_sum =
+  let rec sub w =
+    match w with
+    | BVar(_,_) | Smt _ -> [w]
+    | Sum ws -> List.concat (List.map sub ws)
+    | Prod ws -> List.map (fun ws -> prod ws) (
+        list_product_fold_filter (fun x y ->
+          match x with Smt e when is_zero e -> None | _ -> Some (x::y)
+        ) (List.map sub ws) []
+      )
+  in fun w ->
+  let ret = sub w in
+  debug (puts "[expand_sum] " << put_list (put_w put_var) (puts ", ") nop ret << endl);
+  ret
 
 (* A polynomial is represented by a map. *)
-module StrIntListMap = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
-
-let put_range s = puts (
-  match s with Full -> "full" | Pos -> "pos" | Neg -> "neg" | Bool -> "bool"
-)
-
-let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
-
-let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_range s << putc '>'
+module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
 
 let poly_coeff vs p =
-  match StrIntListMap.find_opt vs p with
+  match Poly.find_opt vs p with
   | Some e -> e
   | _ -> LI 0
 
-let put_poly p os =
-  StrIntListMap.iter (fun vs e -> os#puts " + "; put_exp e os; List.iter (fun v -> puts "*" os; put_svar v os) vs) p
+let put_monom vs e os = put_exp e os; List.iter (fun v -> puts "*" os; put_svar v os) vs
+
+let put_poly p os = puts "SUM {" os; Poly.iter (fun vs e -> put_monom vs e os; os#puts ", ") p; putc '}' os
 
 let put_epoly ep = puts "max {" << put_list put_poly (puts ", ") nop ep << puts "}"
 
-let add_poly = StrIntListMap.union (fun vs e1 e2 -> Some (e1 +^ e2))
+let add_poly = Poly.union (fun vs e1 e2 -> Some (e1 +^ e2))
 
-let sum_poly = List.fold_left add_poly StrIntListMap.empty
+let sum_poly = List.fold_left add_poly Poly.empty
 
-let mul_monom vs1 e1 =
-  let sub vs2 e2 acc = StrIntListMap.add (List.merge compare vs1 vs2) (e1 *^ e2) acc in
-  fun p2 -> StrIntListMap.fold sub p2 StrIntListMap.empty
+(* Product of sorted variable lists. Boolean variables are idempotent. *)
+let mul_vars =
+  let rec sub ret vs1 vs2 =
+    match vs1,vs2 with
+    | [], _ -> ret @ vs2
+    | _, [] -> ret @ vs1
+    | (_,_,r1 as v1)::vs1', v2::vs2' ->
+      let c = compare v1 v2 in
+      if c = 0 then sub (v1::(if r1 = Bool then ret else v2::ret)) vs1' vs2'
+      else if c < 0 then sub (v1::ret) vs1' vs2
+      else sub (v2::ret) vs1 vs2'
+  in sub []
 
-let mul_poly = StrIntListMap.fold mul_monom
+let add_monom_poly vs1 e1 = Poly.update vs1 (function None -> Some e1 | Some e2 -> Some (e1 +^ e2))
 
-let prod_poly = List.fold_left mul_poly (StrIntListMap.singleton [] (LI 1))
+let mul_poly p1 p2 =
+  let folder1 vs1 e1 acc =
+    let folder2 vs2 e2 acc = add_monom_poly (mul_vars vs1 vs2) (e1 *^ e2) acc in
+    Poly.fold folder2 p2 acc
+  in
+  Poly.fold folder1 p1 Poly.empty
+
+let prod_poly = List.fold_left mul_poly (Poly.singleton [] (LI 1))
 
 let poly_of_w =
   let rec sub w =
     match w with
-    | BVar((v,i),s) -> StrIntListMap.singleton [(v,i,s)] (LI 1)
-    | Smt e -> StrIntListMap.singleton [] e
+    | BVar((v,i),s) -> Poly.singleton [(v,i,s)] (LI 1)
+    | Smt e -> Poly.singleton [] e
     | Sum ws -> sum_poly (List.map sub ws)
     | Prod ws -> prod_poly (List.map sub ws)
   in sub
@@ -299,7 +364,7 @@ let ge_poly_merged =
     | None   , Some e2 -> ge_monom vs (LI 0) e2
     )
   in
-  fun p1 p2 -> StrIntListMap.(bindings (merge merger p1 p2))
+  fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
 
 let ge_poly p1 p2 = smt_for_all (fun (vs,e) -> e) (ge_poly_merged p1 p2)
 
@@ -398,7 +463,6 @@ class interpreter p =
     if dim = 1 then fun (k,_) -> puts "x" << put_int (k+1)
     else fun (k,i) -> puts "x" << put_int (k+1) << putc '_' << put_int (i+1)
   in
-  let ty = p.base_ty in
   object (x)
     val table = Hashtbl.create 64
     method init : 't. (#context as 't) -> Trs.trs -> Dp.dg -> unit = fun solver trs dg ->
@@ -411,7 +475,7 @@ class interpreter p =
               let v = solver#temp_variable Smt.Bool in
               Smt(smt_if v (LI 1) (LI 0))
             | Strategy.Var r ->
-              let v = solver#temp_variable ty in
+              let v = solver#temp_variable_base in
               if r = Pos then solver#add_assertion (v >=^ LI 0)
               else if r = Neg then solver#add_assertion (v <=^ LI 0);
               Smt v

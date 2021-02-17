@@ -26,7 +26,7 @@
               </sum>
             </max>
           </args>
-          <var range="pos"/>
+          <const>0</const>
         </max>
       </entry>
       <entry range="full">
