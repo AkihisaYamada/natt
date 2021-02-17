@@ -51,7 +51,7 @@ let prod =
 let max =
   let rec sub acc ws =
     match ws with
-    | [] -> Max acc
+    | [] -> (match acc with [w] -> w | _ -> Max acc)
     | Max ws' :: ws -> sub (ws' @ acc) ws
     | w :: ws -> sub (w :: acc) ws
   in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
@@ -63,7 +63,7 @@ let eval_w solver =
     | Smt e -> Smt (solver#get_value e)
     | Prod ws -> prod (List.map sub ws)
     | Sum ws -> sum (List.map sub ws)
-    | Max ws -> Max (remdups (List.map sub ws))
+    | Max ws -> max (remdups (List.map sub ws))
     | Cond(e,w1,w2) -> (
         match solver#get_value e with
         | LB b -> sub (if b then w1 else w2)
@@ -231,7 +231,7 @@ let expand_cond : 'a. 'a t -> (exp * 'a t) list =
     if c = LB false then []
     else match w with
     | BVar(_,_) | Smt _ -> [(c,w)]
-    | Max ws -> cw_op (fun ws -> Max ws) (List.map (sub c) ws)
+    | Max ws -> cw_op (fun ws -> max ws) (List.map (sub c) ws)
     | Sum ws -> cw_op (fun ws -> sum ws) (List.map (sub c) ws)
     | Prod ws -> cw_op (fun ws -> prod ws) (List.map (sub c) ws)
     | Cond(c1,w1,w2) -> sub (c &^ c1) w1 @ sub (c &^ smt_not c1) w2
@@ -278,21 +278,6 @@ let expand_max =
   and sub_prod ws = (* This works only if monotonicity is ensured *)
     List.map (fun ws -> prod ws) (list_product (List.map sub ws))
   in sub
-
-let expand_sum =
-  let rec sub w =
-    match w with
-    | BVar(_,_) | Smt _ -> [w]
-    | Sum ws -> List.concat (List.map sub ws)
-    | Prod ws -> List.map (fun ws -> prod ws) (
-        list_product_fold_filter (fun x y ->
-          match x with Smt e when is_zero e -> None | _ -> Some (x::y)
-        ) (List.map sub ws) []
-      )
-  in fun w ->
-  let ret = sub w in
-  debug (puts "[expand_sum] " << put_list (put_w put_var) (puts ", ") nop ret << endl);
-  ret
 
 (* A polynomial is represented by a map. *)
 module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
@@ -441,8 +426,8 @@ let order_vec param solver =
       Cons(ge &^ ge_rest, gt &^ ge_rest)
     )
 
-let smult e = Array.map (fun w -> Prod [Smt e;w])
-let add v1 v2 = Array.mapi (fun i w1 -> Sum [w1;v2.(i)]) v1
+let smult e = Array.map (fun w -> prod [Smt e; w])
+let add v1 v2 = Array.mapi (fun i w1 -> sum [w1; v2.(i)]) v1
 
 type pos_info = {
   const : exp;
@@ -489,11 +474,12 @@ class interpreter p =
               )
             | Strategy.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
             | Strategy.Const n -> Smt(LI n)
-            | Strategy.Prod ts -> Prod(List.map (sub k) ts)
-            | Strategy.Sum ts -> Sum(List.map (sub k) ts)
-            | Strategy.Max ts -> max (List.map (sub k) ts)
-            | Strategy.SumArgs t -> Sum(List.map (fun l -> sub l t) to_n)
-            | Strategy.MaxArgs t -> max (List.map (fun l -> sub l t) to_n)
+            | Strategy.Prod ts -> prod(List.map (sub k) ts)
+            | Strategy.Sum ts -> sum(List.map (sub k) ts)
+            | Strategy.Max ts -> max(List.map (sub k) ts)
+            | Strategy.ProdArgs t -> prod(List.map (fun l -> sub l t) to_n)
+            | Strategy.SumArgs t -> sum(List.map (fun l -> sub l t) to_n)
+            | Strategy.MaxArgs t -> max(List.map (fun l -> sub l t) to_n)
             | Strategy.ArityChoice fn -> sub k (fn n)
         in
         let vec = Array.map (fun (r,t) -> sub 0 t) p.w_templates in
@@ -546,9 +532,9 @@ class interpreter p =
         match w with
         | Smt e -> Smt e
         | BVar((k,i),s) -> subst.(k).(i)
-        | Max ws -> Max (List.map sub ws)
-        | Sum ws -> Sum (List.map sub ws)
-        | Prod ws -> Prod (List.map sub ws)
+        | Max ws -> max (List.map sub ws)
+        | Sum ws -> sum (List.map sub ws)
+        | Prod ws -> prod (List.map sub ws)
         | Cond(e,w1,w2) -> Cond(e, sub w1, sub w2)
       in
       if f#is_var then Array.init dim (fun i -> BVar((f#name,i), range_of_coord i))

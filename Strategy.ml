@@ -13,6 +13,7 @@ type template =
 | Var of range
 | Choice of template list
 | Arg of int * int
+| ProdArgs of template
 | SumArgs of template
 | MaxArgs of template
 | MaxOrSumArgs of template
@@ -101,8 +102,9 @@ let rec exp_element xmls = (
     return (Arg(i,j))
   ) <|>
   element "args" (
-    default "sum" (validated_attribute "mode" "sum|max") >>= fun mode -> exp_element >>= fun s ->
-    return (match mode with "max" -> MaxArgs s | _ -> SumArgs s)
+    default "sum" (validated_attribute "mode" "sum|max|prod") >>= fun mode ->
+    exp_element >>= fun s ->
+    return (match mode with "max" -> MaxArgs s | "prod" -> ProdArgs s | _ -> SumArgs s)
   )
 ) xmls
 
