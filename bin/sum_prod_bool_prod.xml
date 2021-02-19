@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<strategy>
+	<edg/>
+	<order>
+		<template name="sum_prod_bool_prod">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<args mode="sum">
+					<sum>
+						<prod>
+							<var range="bool"/>
+							<arg coord="0"/>
+						</prod>
+						<prod>
+							<var range="pos"/>
+							<arg coord="1"/>
+						</prod>
+					</sum>
+				</args>
+			</entry>
+			<entry range="bool">
+				<prod>
+					<args mode="prod">
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+					</args>
+					<var range="bool"/>
+				</prod>
+			</entry>
+		</template>
+	</order>
+</strategy>

@@ -1,0 +1,58 @@
+<strategy>
+  <edg/>
+  <order>
+    <template name="maxsum_neg_sum">
+      <entry range="pos">
+        <case arity="0">
+          <var range="pos"/>
+        </case>
+        <choice>
+          <max>
+            <sum>
+              <args mode="sum">
+                <sum>
+                  <prod>
+                    <var range="bool"/>
+                    <arg coord="0"/>
+                  </prod>
+                  <prod>
+                    <var range="bool"/>
+                    <arg coord="1"/>
+                  </prod>
+                </sum>
+              </args>
+              <var range="full"/>
+            </sum>
+            <const>0</const>
+          </max>
+          <max>
+            <args mode="max">
+              <max>
+                <sum>
+                  <prod><var range="bool"/><arg coord="0"/></prod>
+                  <var range="full"/>
+                </sum>
+                <sum>
+                  <prod><var range="bool"/><arg coord="1"/></prod>
+                  <var range="full"/>
+                </sum>
+              </max>
+            </args>
+            <const>0</const>
+          </max>
+        </choice>
+      </entry>
+      <entry range="neg">
+        <sum>
+          <args>
+            <prod>
+              <var range="bool"/>
+              <arg coord="1"/>
+            </prod>
+          </args>
+          <var range="neg"/>
+        </sum>
+      </entry>
+    </template>
+  </order>
+</strategy>

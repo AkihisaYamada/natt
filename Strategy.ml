@@ -139,7 +139,7 @@ let weight_element mono =
   ) <|>
   element "maxSum" (
     default false (bool_attribute "neg") >>= fun neg ->
-    default 3 (int_attribute "maxArity") >>= fun m ->
+    default 4 (int_attribute "maxArity") >>= fun m ->
     return (if neg then neg_max_sum_weight m else max_sum_weight mono m)) <|>
   element "matrix" (
     mandatory (int_attribute "dim") >>= fun dim ->
