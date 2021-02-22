@@ -452,7 +452,7 @@ object (x)
       let argvss = List.map get_weight args in
       let vs =
         if f#is_var then [Mset.singleton f#name]
-        else if get_max f#name then
+        else if x#get_max f#name then
           List.concat argvss
         else
           List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
@@ -464,21 +464,16 @@ object (x)
     in
     let rec sub (WT(f,ss,svss) as s) (WT(g,ts,tvss)) =
       List.iter (sub s) ts;
-      if not (vcond svss tvss) && (not x#get_max g#name || debug (puts "ok it happens..." << endl); false)
+      if not (vcond svss tvss) && (not (x#get_max g#name) || (debug (puts "ok it happens..." << endl); false))
       then (x#set_max g#name; raise Continue);
     in
-    let annotate_sub (_,lr) =
+    let annotate_sub i lr =
       sub (annotate_vs lr#l) (annotate_vs lr#r);
     in
-    let rec loop rulelist =
-      try List.iter annotate_sub rulelist with Continue -> loop rulelist
-    in
-    loop
-
     let rec loop () =
       try
-        trs#iter_rules iterer;
-        dg#iter_dps iterer;
+        trs#iter_rules annotate_sub;
+        dg#iter_dps annotate_sub;
       with Continue -> loop ()
     in
     loop ();
