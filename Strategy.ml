@@ -16,7 +16,7 @@ type template =
 | ProdArgs of template
 | SumArgs of template
 | MaxArgs of template
-| MaxOrSumArgs of template
+| Heuristic1 of template * template
 | ArityChoice of (int -> template)
 
 let ( *?) s t = Prod[s;t]
@@ -55,9 +55,12 @@ let max_sum_weight mono maxarity =
     Pos, ArityChoice(function
       | 0 -> Var Pos
       | 1 -> arg +? Var Pos
+      | _ -> Heuristic1(SumArgs(arg) +? Var Pos, MaxArgs(arg +? Var Pos))
+(*
       | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
         MaxArgs(arg +? Var Pos)
       | _ -> Choice[SumArgs(arg) +? Var Pos; MaxArgs(arg +? Var Pos);]
+*)
     )
   ]
 let neg_max_sum_weight maxarity =
@@ -65,14 +68,21 @@ let neg_max_sum_weight maxarity =
     Pos, ArityChoice(function
       | 0 -> Var Pos
       | 1 -> Max[Var Bool *? Arg(0,0) +? Var Full; Const 0]
+      | _ -> Heuristic1(
+        Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0],
+        Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0]
+      )
+(*
       | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
         Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0]
       | _ -> Choice[
           Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0];
           Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0];
         ]
+*)
     )
   ]
+
 let bmat_weight mono dim =
   let entry =
     if mono then
@@ -96,6 +106,11 @@ let rec exp_element xmls = (
   element "min" (many ~minOccurs:1 exp_element >>= fun ss -> return (Min ss)) <|>
   element "var" (range_attribute >>= fun r -> return (Var r)) <|>
   element "choice" (many ~minOccurs:1 exp_element >>= fun ss -> return (Choice ss)) <|>
+  element "heuristic" (validated_attribute "mode" "maxsum" >>= fun m ->
+    exp_element >>= fun s ->
+    exp_element >>= fun t ->
+    return (Heuristic1(s,t))
+  ) <|>
   element "arg" (
     default (-1) (int_attribute "index") >>= fun i ->
     default 0 (int_attribute "coord") >>= fun j ->

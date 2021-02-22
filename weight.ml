@@ -371,10 +371,6 @@ let order_poly solver p1 p2 =
   let e2 = poly_coeff [] p2 in
   let ge = (e1 >=^ e2) &^ pre in
   let gt = (e1 >^ e2) &^ pre in
-  debug2 (
-    endl << puts "[order_poly] "  << put_poly p1 << puts " vs. " << put_poly p2 <<
-    endl << puts "[order_poly] ge: " << put_exp ge <<
-    endl << puts "[order_poly] gt: " << put_exp gt);
   (ge, gt)
 
 let order_max solver w1 w2 =
@@ -382,7 +378,6 @@ let order_max solver w1 w2 =
   let ew2 = expand_max w2 in
   let ep1 = List.map poly_of_w ew1 in
   let ep2 = List.map poly_of_w ew2 in
-  debug2(endl << puts "[order_max] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   let (ge,gt) =
     List.fold_left (fun (all_ge,all_gt) p2 ->
       let (ge,gt) =
@@ -403,7 +398,6 @@ let order_max solver w1 w2 =
 let order_w solver w1 w2 =
   let cws1 = expand_cond w1 in
   let cws2 = expand_cond w2 in
-  debug2(endl << puts "[order_w] " << put_w put_var w1 << puts " vs. " << put_w put_var w2);
   let ords = list_prod_filter (fun (c1,w1) (c2,w2) ->
       match c1 &^ c2 with
       | LB false -> None
@@ -439,6 +433,58 @@ type sym_info = {
   pos_info : pos_info array;
 }
 
+exception Continue
+
+let maxsum_heuristic (trs:Trs.trs) (dg:Dp.dg) =
+object (x)
+  val sym_table : (string, bool) Hashtbl.t = Hashtbl.create 64
+  val mutable initialized = false
+  method sym_mode f = if not initialized then x#init; x#get_max f
+  method private set_max f =
+    Hashtbl.replace sym_table f true
+  method private get_max f =
+    try Hashtbl.find sym_table f
+    with Not_found -> false
+
+  method private init =
+    let rec annotate_vs (Node(f,ss)) =
+      let args = List.map annotate_vs ss in
+      let argvss = List.map get_weight args in
+      let vs =
+        if f#is_var then [Mset.singleton f#name]
+        else if get_max f#name then
+          List.concat argvss
+        else
+          List.map (List.fold_left Mset.union Mset.empty) (list_product argvss)
+      in
+      WT(f,args,vs)
+    in
+    let vcond svss tvss =
+      List.for_all (fun tvs -> List.exists (Mset.subseteq tvs) svss) tvss
+    in
+    let rec sub (WT(f,ss,svss) as s) (WT(g,ts,tvss)) =
+      List.iter (sub s) ts;
+      if not (vcond svss tvss) && (not x#get_max g#name || debug (puts "ok it happens..." << endl); false)
+      then (x#set_max g#name; raise Continue);
+    in
+    let annotate_sub (_,lr) =
+      sub (annotate_vs lr#l) (annotate_vs lr#r);
+    in
+    let rec loop rulelist =
+      try List.iter annotate_sub rulelist with Continue -> loop rulelist
+    in
+    loop
+
+    let rec loop () =
+      try
+        trs#iter_rules iterer;
+        dg#iter_dps iterer;
+      with Continue -> loop ()
+    in
+    loop ();
+    initialized <- true;
+end;;
+
 class interpreter p =
   let dim = Array.length p.w_templates in
   let range_of_coord i = fst p.w_templates.(i)
@@ -451,6 +497,7 @@ class interpreter p =
   object (x)
     val table = Hashtbl.create 64
     method init : 't. (#context as 't) -> Trs.trs -> Dp.dg -> unit = fun solver trs dg ->
+      let heu = maxsum_heuristic trs dg in
       let iterer f =
         let n = f#arity in
         let to_n = int_list 0 (n-1) in
@@ -480,6 +527,7 @@ class interpreter p =
             | Strategy.ProdArgs t -> prod(List.map (fun l -> sub l t) to_n)
             | Strategy.SumArgs t -> sum(List.map (fun l -> sub l t) to_n)
             | Strategy.MaxArgs t -> max(List.map (fun l -> sub l t) to_n)
+            | Strategy.Heuristic1(t1,t2) -> sub k (if heu#sym_mode f#name then t2 else t1)
             | Strategy.ArityChoice fn -> sub k (fn n)
         in
         let vec = Array.map (fun (r,t) -> sub 0 t) p.w_templates in

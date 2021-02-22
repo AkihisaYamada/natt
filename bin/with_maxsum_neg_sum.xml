@@ -23,7 +23,23 @@
 				<case arity="0">
 					<var range="pos"/>
 				</case>
-				<choice>
+				<case arity="1">
+					<max>
+						<sum>
+							<prod>
+								<var range="bool"/>
+								<arg coord="0"/>
+							</prod>
+							<prod>
+								<var range="bool"/>
+								<arg coord="1"/>
+							</prod>
+							<var range="full"/>
+						</sum>
+						<const>0</const>
+					</max>
+				</case>
+				<heuristic mode="maxsum">
 					<max>
 						<sum>
 							<args mode="sum">
@@ -63,7 +79,7 @@
 						</args>
 						<const>0</const>
 					</max>
-				</choice>
+				</heuristic>
 			</entry>
 			<entry range="neg">
 				<sum>

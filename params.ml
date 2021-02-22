@@ -1,7 +1,7 @@
 open Util
 open Strategy
 
-let version = "1.8";
+let version = "2.0";
 
 
 type estimator_mode =
