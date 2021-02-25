@@ -10,14 +10,14 @@
 				<max>
 					<args mode="max">
 						<prod>
-							<sum>
-								<prod>
-									<var range="bool"/>
+							<prod>
+								<var range="bool"/>
+								<sum>
 									<arg coord="0"/>
-								</prod>
-								<var range="pos"/>
-							</sum>
-						<arg coord="1"/>
+									<var range="pos"/>
+								</sum>
+							</prod>
+							<arg coord="1"/>
 						</prod>
 					</args>
 					<var range="pos"/>

@@ -1,51 +1,51 @@
 <?xml version="1.0"?>
 <strategy>
-  <edg/>
-  <order>
-    <template name="sum_pos_max">
-      <entry range="pos">
-        <case arity="0">
-          <var range="pos"/>
-        </case>
-        <sum>
-          <args mode="sum">
-            <sum>
-              <prod>
-                <var range="bool"/>
-                <arg coord="0"/>
-              </prod>
-              <prod>
-                <var range="bool"/>
-                <arg coord="1"/>
-              </prod>
-            </sum>
-          </args>
-          <var range="pos"/>
-        </sum>
-      </entry>
-      <entry range="pos">
-        <case arity="0">
-          <var range="pos"/>
-        </case>
-        <args mode="max">
-          <max>
-            <sum>
-              <prod>
-                <var range="bool"/>
-                <arg coord="0"/>
-              </prod>
-              <var range="pos"/>
-            </sum>
-            <sum>
-              <prod>
-                <var range="bool"/>
-                <arg coord="1"/>
-              </prod>
-              <var range="pos"/>
-            </sum>
-          </max>
-        </args>
-      </entry>
-    </template>
-  </order>
+	<edg/>
+	<order>
+		<template name="sum_pos_max">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<sum>
+					<args mode="sum">
+						<sum>
+							<prod>
+								<var range="bool"/>
+								<arg coord="0"/>
+							</prod>
+							<prod>
+								<var range="bool"/>
+								<arg coord="1"/>
+							</prod>
+						</sum>
+					</args>
+					<var range="pos"/>
+				</sum>
+			</entry>
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<args mode="max">
+					<max>
+						<prod>
+							<var range="bool"/>
+							<sum>
+								<arg coord="0"/>
+								<var range="pos"/>
+							</sum>
+						</prod>
+						<prod>
+							<var range="bool"/>
+							<sum>
+								<arg coord="1"/>
+								<var range="pos"/>
+							</sum>
+						</prod>
+					</max>
+				</args>
+			</entry>
+		</template>
+	</order>
 </strategy>

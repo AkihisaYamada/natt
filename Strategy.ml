@@ -24,15 +24,18 @@ let (+?) s t = Sum[s;t]
 
 let weight name temps = (name,temps)
 
+let arg mono x = if mono then x else Var Bool *? x
+
 let sum_weight mono =
-  weight "Sum" [Pos, SumArgs(if mono then Arg(-1,0) else Var Bool *? Arg(-1,0)) +? Var Pos]
+  weight "Sum" [Pos, SumArgs(arg mono (Arg(-1,0))) +? Var Pos]
 let mono_bpoly_weight =
   weight "poly" [Pos, SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
 let max_weight mono =
   weight "Max" [
     Pos, ArityChoice(function
       | 0 -> Var Pos
-      | _ -> MaxArgs(if mono then Arg(-1,0) else Var Bool *? Arg(-1,0) +? Var Pos)
+      | 1 -> arg mono (Arg (0,0)) +? Var Pos
+      | _ -> MaxArgs(arg mono (Arg(-1,0) +? Var Pos))
     )
   ]
 let neg_sum_weight =
@@ -46,16 +49,15 @@ let neg_max_weight =
   weight "NegMax" [
     Pos, ArityChoice(function
       | 0 -> Var Pos
-      | _ -> Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0]
+      | _ -> Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
     )
   ]
 let max_sum_weight mono maxarity =
-  let arg = if mono then Arg(-1,0) else Var Bool *? Arg(-1,0) in
   weight "MaxSum" [
     Pos, ArityChoice(function
       | 0 -> Var Pos
-      | 1 -> arg +? Var Pos
-      | _ -> Heuristic1(SumArgs(arg) +? Var Pos, MaxArgs(arg +? Var Pos))
+      | 1 -> arg mono (Arg(-1,0)) +? Var Pos
+      | _ -> Heuristic1(SumArgs(arg mono (Arg(-1,0))) +? Var Pos, MaxArgs(arg mono (Arg(-1,0) +? Var Pos)))
 (*
       | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
         MaxArgs(arg +? Var Pos)
@@ -67,10 +69,10 @@ let neg_max_sum_weight maxarity =
   weight "NegMaxSum" [
     Pos, ArityChoice(function
       | 0 -> Var Pos
-      | 1 -> Max[Var Bool *? Arg(0,0) +? Var Full; Const 0]
+      | 1 -> Max[Var Bool *? (Arg(0,0) +? Var Full); Const 0]
       | _ -> Heuristic1(
         Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0],
-        Max[MaxArgs(Var Bool *? Arg(-1,0) +? Var Full); Const 0]
+        Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
       )
 (*
       | i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)

@@ -61,20 +61,20 @@
 					<max>
 						<args mode="max">
 							<max>
-								<sum>
-									<prod>
-										<var range="bool"/>
+								<prod>
+									<var range="bool"/>
+									<sum>
 										<arg coord="0"/>
-									</prod>
-									<var range="full"/>
-								</sum>
-								<sum>
-									<prod>
-										<var range="bool"/>
+										<var range="full"/>
+									</sum>
+								</prod>
+								<prod>
+									<var range="bool"/>
+									<sum>
 										<arg coord="1"/>
-									</prod>
-									<var range="full"/>
-								</sum>
+										<var range="full"/>
+									</sum>
+								</prod>
 							</max>
 						</args>
 						<const>0</const>

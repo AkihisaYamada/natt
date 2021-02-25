@@ -1,43 +1,43 @@
 <?xml version="1.0"?>
 <strategy>
-  <edg/>
-  <order>
-    <template name="max_sum_pos_sum">
-      <entry range="pos">
-        <case arity="0">
-          <var range="pos"/>
-        </case>
-  <args mode="max">
-    <sum>
-      <prod>
-        <var range="bool"/>
-        <arg coord="0"/>
-      </prod>
-      <prod>
-        <var range="bool"/>
-        <arg coord="1"/>
-      </prod>
-      <var range="pos"/>
-    </sum>
-  </args>
-      </entry>
-      <entry range="pos">
-        <sum>
-          <args>
-            <sum>
-              <prod>
-                <var range="bool"/>
-                <arg coord="0"/>
-              </prod>
-              <prod>
-                <var range="bool"/>
-                <arg coord="1"/>
-              </prod>
-            </sum>
-          </args>
-          <var range="pos"/>
-        </sum>
-      </entry>
-    </template>
-  </order>
+	<edg/>
+	<order>
+		<template name="max_sum_pos_sum">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<args mode="max">
+					<sum>
+						<prod>
+							<var range="bool"/>
+							<arg coord="0"/>
+						</prod>
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+						<var range="pos"/>
+					</sum>
+				</args>
+			</entry>
+			<entry range="pos">
+				<sum>
+					<args>
+						<sum>
+							<prod>
+								<var range="bool"/>
+								<arg coord="0"/>
+							</prod>
+							<prod>
+								<var range="bool"/>
+								<arg coord="1"/>
+							</prod>
+						</sum>
+					</args>
+					<var range="pos"/>
+				</sum>
+			</entry>
+		</template>
+	</order>
 </strategy>

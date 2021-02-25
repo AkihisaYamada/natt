@@ -1,23 +1,7 @@
 <?xml version="1.0"?>
 <strategy>
-  <edg/>
-  <order>
-    <template name="max_neg">
-      <case arity="0">
-        <var range="pos"/>
-      </case>
-      <max>
-        <args mode="max">
-          <sum>
-            <prod>
-              <var range="bool"/>
-              <arg/>
-            </prod>
-            <var range="full"/>
-          </sum>
-        </args>
-        <const>0</const>
-      </max>
-    </template>
-  </order>
+	<edg/>
+	<order>
+		<max neg="true">
+	</order>
 </strategy>
