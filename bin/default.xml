@@ -1,14 +1,139 @@
 <strategy>
- <order><poly/></order>
- <freezing/>
- <edg/>
- <order><sum/></order>
- <order><max/></order>
- <order precedence="quasi" status="partial"/>
- <order><maxSum neg="true"/></order>
- <order precedence="quasi" status="partial">
-  <maxSum/>
- </order>
- <order><matrix dim="2"/></order>
- <loop steps="3"/>
+	<order>
+		<poly/>
+	</order>
+	<freezing/>
+	<edg/>
+	<order>
+		<sum/>
+	</order>
+	<order>
+		<max/>
+	</order>
+	<order precedence="quasi" status="partial"/>
+	<order>
+		<maxSum neg="true"/>
+	</order>
+	<order precedence="quasi" status="partial">
+		<maxSum/>
+	</order>
+	<order>
+		<matrix dim="2"/>
+	</order>
+	<order>
+		<template name="sum_neg_sum">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<max>
+					<sum>
+						<args mode="sum">
+							<sum>
+								<prod>
+									<var range="bool"/>
+									<arg coord="0"/>
+								</prod>
+								<prod>
+									<var range="bool"/>
+									<arg coord="1"/>
+								</prod>
+							</sum>
+						</args>
+						<var range="full"/>
+					</sum>
+					<const>0</const>
+				</max>
+			</entry>
+			<entry range="neg">
+				<sum>
+					<args>
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+					</args>
+					<var range="neg"/>
+				</sum>
+			</entry>
+		</template>
+	</order>
+	<order>
+		<template name="maxsum_neg_sum">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<case arity="1">
+					<max>
+						<sum>
+							<prod>
+								<var range="bool"/>
+								<arg coord="0"/>
+							</prod>
+							<prod>
+								<var range="bool"/>
+								<arg coord="1"/>
+							</prod>
+							<var range="full"/>
+						</sum>
+						<const>0</const>
+					</max>
+				</case>
+				<heuristic mode="maxsum">
+					<max>
+						<sum>
+							<args mode="sum">
+								<sum>
+									<prod>
+										<var range="bool"/>
+										<arg coord="0"/>
+									</prod>
+									<prod>
+										<var range="bool"/>
+										<arg coord="1"/>
+									</prod>
+								</sum>
+							</args>
+							<var range="full"/>
+						</sum>
+						<const>0</const>
+					</max>
+					<max>
+						<args mode="max">
+							<max>
+								<prod>
+									<var range="bool"/>
+									<sum>
+										<arg coord="0"/>
+										<var range="full"/>
+									</sum>
+								</prod>
+								<prod>
+									<var range="bool"/>
+									<sum>
+										<arg coord="1"/>
+										<var range="full"/>
+									</sum>
+								</prod>
+							</max>
+						</args>
+						<const>0</const>
+					</max>
+				</heuristic>
+			</entry>
+			<entry range="neg">
+				<sum>
+					<args>
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+					</args>
+					<var range="neg"/>
+				</sum>
+			</entry>
+		</template>
+	</order>
+	<loop steps="3"/>
 </strategy>
