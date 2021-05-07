@@ -1,0 +1,92 @@
+<strategy>
+	<edg/>
+	<order>
+		<template name="maxsum_full_tri_max">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<case arity="1">
+					<max>
+						<sum>
+							<prod>
+								<var range="bool"/>
+								<arg coord="0"/>
+							</prod>
+							<prod>
+								<var range="bool"/>
+								<arg coord="1"/>
+							</prod>
+							<var range="full"/>
+						</sum>
+						<const>0</const>
+					</max>
+				</case>
+				<heuristic mode="maxsum">
+					<max>
+						<sum>
+							<args mode="sum">
+								<sum>
+									<prod>
+										<var range="bool"/>
+										<arg coord="0"/>
+									</prod>
+									<prod>
+										<var range="bool"/>
+										<arg coord="1"/>
+									</prod>
+								</sum>
+							</args>
+							<var range="full"/>
+						</sum>
+						<const>0</const>
+					</max>
+					<max>
+						<args mode="max">
+							<max>
+								<prod>
+									<var range="bool"/>
+									<sum>
+										<arg coord="0"/>
+										<var range="full"/>
+									</sum>
+								</prod>
+								<prod>
+									<var range="bool"/>
+									<sum>
+										<arg coord="1"/>
+										<var range="full"/>
+									</sum>
+								</prod>
+							</max>
+						</args>
+						<const>0</const>
+					</max>
+				</heuristic>
+			</entry>
+			<entry range="full">
+				<case arity="0">
+					<var range="full"/>
+				</case>
+				<case arity="1">
+					<sum>
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+						<var range="full"/>
+					</sum>
+				</case>
+				<args mode="max">
+					<prod>
+						<var range="bool"/>
+						<sum>
+							<arg coord="1"/>
+							<var range="full"/>
+						</sum>
+					</prod>
+				</args>
+			</entry>
+		</template>
+	</order>
+</strategy>

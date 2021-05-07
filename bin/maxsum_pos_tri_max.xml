@@ -1,0 +1,83 @@
+<strategy>
+	<edg/>
+	<order>
+		<template name="maxsum_pos_tri_max">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<case arity="1">
+					<sum>
+						<prod>
+							<var range="bool"/>
+							<arg coord="0"/>
+						</prod>
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+						<var range="pos"/>
+					</sum>
+				</case>
+				<heuristic mode="maxsum">
+					<sum>
+						<args mode="sum">
+							<sum>
+								<prod>
+									<var range="bool"/>
+									<arg coord="0"/>
+								</prod>
+								<prod>
+									<var range="bool"/>
+									<arg coord="1"/>
+								</prod>
+							</sum>
+						</args>
+						<var range="pos"/>
+					</sum>
+					<args mode="max">
+						<max>
+							<prod>
+								<var range="bool"/>
+								<sum>
+									<arg coord="0"/>
+									<var range="pos"/>
+								</sum>
+							</prod>
+							<prod>
+								<var range="bool"/>
+								<sum>
+									<arg coord="1"/>
+									<var range="pos"/>
+								</sum>
+							</prod>
+						</max>
+					</args>
+				</heuristic>
+			</entry>
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<case arity="1">
+					<sum>
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+						<var range="pos"/>
+					</sum>
+				</case>
+				<args mode="max">
+					<prod>
+						<var range="bool"/>
+						<sum>
+							<arg coord="1"/>
+							<var range="pos"/>
+						</sum>
+					</prod>
+				</args>
+			</entry>
+		</template>
+	</order>
+</strategy>

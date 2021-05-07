@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<strategy>
+	<edg/>
+	<order>
+		<template name="sum_max_neg_sum">
+			<entry range="pos">
+				<case arity="0">
+					<var range="pos"/>
+				</case>
+				<args mode="sum">
+					<max>
+						<prod>
+							<var range="bool"/>
+							<sum>
+								<arg coord="0"/>
+								<var range="full"/>
+							</sum>
+						</prod>
+						<prod>
+							<var range="bool"/>
+							<sum>
+								<arg coord="1"/>
+								<var range="full"/>
+							</sum>
+						</prod>
+						<const>0</const>
+					</max>
+				</args>
+			</entry>
+			<entry range="neg">
+				<sum>
+					<args mode="sum">
+						<prod>
+							<var range="bool"/>
+							<arg coord="1"/>
+						</prod>
+					</args>
+					<var range="neg"/>
+				</sum>
+			</entry>
+		</template>
+	</order>
+</strategy>
