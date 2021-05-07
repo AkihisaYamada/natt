@@ -1,0 +1,31 @@
+Nagoya Termination Tool (NaTT)
+=============================================
+
+This is NaTT ver.2.0.
+
+## Compilation ##
+
+Please install OPAM (https://opam.ocaml.org/). Then please install required packages by
+```
+opam install ocamlfind ocamlgraph xml-light
+```
+Then please just `make`.
+
+## Usage ##
+
+The command line of NaTT is in the following syntax:
+```
+./bin/NaTT [file] [option]...
+```
+The TRS whose termination should be verified is read from either the specified file or the standard input. The format should follow the [WST format](https://www.lri.fr/~marche/tpdb/format.html).
+
+To execute NaTT, an [SMT-LIB 2.0](http://smtlib.org) compliant solver must be installed. One can choose one by the following option:
+<!-- The following options are provided for specifying such an SMT solver for back-end of NaTT:
+
+* `--smt:'<smt><command></command></smt>'`: Uses the solver invoked by command for back-end. The solver should be configured to process SMT-LIB 2.0 scripts given through the standard input.
+-->
+* `--z3`: Specifies [Z3](https://github.com/Z3Prover/z3) version 4.0 or later for back-end (default).
+* `--cvc4`: Specifies [CVC4](https://cvc4.github.io/) for backend.
+
+## Contact ##
+In case you find bugs, comments, or suggestions, please contact [the author](https://akihisayamada.github.io/).

@@ -74,8 +74,8 @@ let params = {
   acdp_mode = ACDP_new;
   rdp_mode = RDP_move;
   ac_mark_mode = AC_mark;
-  orders_removal = Array.make 0 default_order;
-  orders_dp = Array.make 0 default_order;
+  orders_removal = [||];
+  orders_dp = [||];
   result = true;
   cpf = false;
   cpf_to = stdout;
@@ -106,18 +106,21 @@ let prerr_help () =
   let pr = prerr_string in
   let pe = prerr_endline in
   pr "NaTT ver."; pe version;
-  pr "Usage: "; pr argv.(0); pe " [FILE] [OPTION]... [PROCESSOR]...";
+  pr "Usage: "; pr argv.(0); pe " [FILE] [OPTION]...";
   pe "";
   pe "Checks termination of TRS specified by FILE (stdin by default).";
   pe "";
   pe "OPTIONs:";
   pe "  -v:<n>         set verbosity (0 to 6, default: 3).";
-  pe "  -s:<file>      reads strategy file.";
+  pe "  --SMT:<xml>    set SMT parameters.";
+  pe "  -S:<xml>       set strategy.";
 in
 let i = ref 1 in
 let erro str = err ("unknown option: " ^ str ^ "!") in
 let safe_atoi s arg = (try int_of_string s with _ -> erro arg) in
-let default = ref true in
+let strategy_str = ref "" in
+let strategy_file = ref "default.xml" in
+let default_smt = ref Smt.z3_params in
 while !i < argc do
   let arg = argv.(!i) in
   if arg.[0] = '-' then begin
@@ -130,9 +133,11 @@ while !i < argc do
     in
     match opt, optarg with
     | "-help", _ -> prerr_help (); exit 0;
-    | "s", Some file ->
-      set_strategy (Strategy.of_file (progdir ^ "/" ^ file));
-      default := false;
+    | "s", Some file -> strategy_file := file;
+    | "S", Some str -> strategy_str := str;
+    | "-smt", Some str -> default_smt := Txtr.parse_string Smt.params_of_xml str;
+    | "-z3", None -> default_smt := Smt.z3_params;
+    | "-cvc4", None -> default_smt := Smt.cvc4_params;
     | "-Sort", None -> params.sort_scc <- SORT_none;
     | "-sort", _ -> (
       match optarg with
@@ -184,25 +189,10 @@ while !i < argc do
       params.cpf_to <- open_out file;
       params.naive_C <- true;
       params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
-    | "n", _ ->
-      begin
-        match optarg with
-        | Some s -> params.max_narrowing <- safe_atoi s arg;
-        | None -> params.max_narrowing <- 7;
-      end;
-    | "-N", None -> params.max_narrowing <- 0;
-    | "l", _ ->
-      begin
-        match optarg with
-        | Some s -> params.max_loop <- safe_atoi s arg;
-        | None -> params.max_loop <- 3;
-      end;
-    | "-L", None -> params.max_loop <- 0;
-    | "-dup", None -> default := false; params.mode <- MODE_dup;
+    | "-dup", None -> params.mode <- MODE_dup;
     | "-tcap", None -> params.edge_mode <- E_tcap;
     | "-edge", Some s -> params.edge_length <- safe_atoi s arg;
     | "t", mode -> (
-      default := false;
       match mode with
       | Some "ho" -> params.mode <- MODE_higher_xml;
       | Some "x" -> params.mode <- MODE_xml;
@@ -216,9 +206,10 @@ while !i < argc do
   end;
   i := !i + 1;
 done;
-if !default then begin
-  set_strategy (Strategy.of_file (progdir ^ "/default.xml"))
-end
+if !strategy_str <> "" then
+	set_strategy (Strategy.of_string !default_smt !strategy_str)
+else 
+	set_strategy (Strategy.default !default_smt);;
 
 let cpf =
   if params.cpf then

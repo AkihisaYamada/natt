@@ -21,7 +21,7 @@
 		<matrix dim="2"/>
 	</order>
 	<order>
-		<template name="sum_neg_sum">
+		<template name="sum_sum_int,sum_neg">
 			<entry range="pos">
 				<case arity="0">
 					<var range="pos"/>
@@ -59,7 +59,7 @@
 		</template>
 	</order>
 	<order>
-		<template name="maxsum_neg_sum">
+		<template name="heuristic_int,sum_neg">
 			<entry range="pos">
 				<case arity="0">
 					<var range="pos"/>

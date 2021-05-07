@@ -26,6 +26,7 @@ let weight name temps = (name,temps)
 
 let arg mono x = if mono then x else Var Bool *? x
 
+let no_weight = weight "no weight" []
 let sum_weight mono =
   weight "Sum" [Pos, SumArgs(arg mono (Arg(-1,0))) +? Var Pos]
 let mono_bpoly_weight =
@@ -203,31 +204,24 @@ type order_params = {
   use_scope_ratio : int;
 }
 
-let z3cmd = "z3"
-let z3args = ["-smt2";"-in"]
-let cvc4cmd = "cvc4"
-let cvc4args = ["--lang=smt2"; "--incremental"; "--produce-models"]
-
-let default_smt = Smt.default_params z3cmd z3args
-
-let default_order = {
-  smt_params = default_smt;
-  dp = false;
-  w_name = "???";
-  w_templates = Array.make 0 (Pos,Const 0);
-  ext_mset = false;
-  ext_lex = false;
-  status_mode = S_empty;
-  status_copy = false;
+let order_params smt dp prec status collapse usable (w_name,w_templates) = {
+  smt_params = smt;
+  dp = dp;
+  w_name = w_name;
+  w_templates = Array.of_list w_templates;
+  prec_mode = prec;
+  status_mode = status;
   status_nest = 0;
-  prec_mode = PREC_none;
+  status_copy = false;
+  ext_lex = (match status with S_partial | S_total -> true | _ -> false);
+  ext_mset = false;
+  collapse = collapse;
+  usable = usable;
+  usable_w = false;
   mincons = false;
   maxcons = false;
-  ac_w = false;
+  ac_w = true;
   strict_equal = false;
-  collapse = false;
-  usable = false;
-  usable_w = false;
   remove_all = false;
   use_scope = true;
   use_scope_ratio = 0;
@@ -255,34 +249,7 @@ let put_order p =
       | _ -> "???"
     ) << puts status << puts (if weighted then p.w_name else "")
 
-let smt_element =
-  element "smt" (
-    default (false,stderr) (
-      (bool_attribute "peek" >>= fun b -> return (b,stderr)) <|>
-      (attribute "peekTo" >>= fun file -> return (true,open_out file))
-    ) >>= fun (peek,peek_to) ->
-    default false (bool_attribute "tempvars") >>= fun tmpvar ->
-    default true (bool_attribute "linear") >>= fun linear ->
-    ( ( element "command" string >>= fun cmd ->
-        many (element "arg" string) >>= fun args ->
-        return (cmd,args)
-      ) <|>
-      element "z3" (return (z3cmd,z3args)) <|>
-      element "cvc4" (return (cvc4cmd,cvc4args))
-    ) >>= fun (cmd,args) ->
-    return Smt.{
-      cmd = cmd;
-      args = args;
-      base_ty = Smt.Int;
-      tmpvar = tmpvar;
-      linear = linear;
-      peek_in = peek;
-      peek_out = peek;
-      peek_to = peek_to;
-    }
-  )
-
-let order_element mono =
+let order_element default_smt mono =
   element "order" (
     default PREC_none (
       validated_attribute "precedence" "none|quasi|strict" >>= fun str ->
@@ -291,47 +258,64 @@ let order_element mono =
     default S_empty (
       validated_attribute "status" "none|partial|total|empty" >>= fun str ->
       return (match str with "none" -> S_none | "partial" -> S_partial | "total" -> S_total | _ -> S_empty)
-    ) >>= fun status ->
-    default (not mono && status <> S_empty) (bool_attribute "collapse") >>= fun collapse ->
-    default (not mono) (bool_attribute "usable") >>= fun usable ->
-    default default_smt smt_element >>= fun smt ->
-    default ("no weight",[]) (weight_element mono) >>= fun (w_name,w_templates) ->
-    return {
-      smt_params = smt;
-      dp = not mono;
-      w_name = w_name;
-      w_templates = Array.of_list w_templates;
-      prec_mode = prec;
-      status_mode = status;
-      status_nest = 0;
-      status_copy = false;
-      ext_lex = (match status with S_partial | S_total -> true | _ -> false);
-      ext_mset = false;
-      collapse = collapse;
-      usable = usable;
-      usable_w = false;
-      mincons = false;
-      maxcons = false;
-      ac_w = true;
-      strict_equal = false;
-      remove_all = false;
-      use_scope = true;
-      use_scope_ratio = 0;
-    }
+    ) >>= fun status -> (
+      if mono then return false
+      else default (status <> S_empty) (bool_attribute "collapse")
+    ) >>= fun collapse -> (
+      if mono then return false
+      else default true (bool_attribute "usable")
+    ) >>= fun usable ->
+    default default_smt Smt.params_of_xml >>= fun smt ->
+    default no_weight (
+      weight_element (mono && (status = S_none || status = S_total))
+    ) >>= fun weight ->
+    return (order_params smt (not mono) prec status collapse usable weight)
   )
 
-let strategy_element =
+let strategy_element default_smt =
   element "strategy" (
-    many (order_element true) >>= fun pre ->
+    default default_smt Smt.params_of_xml >>= fun default_smt ->
+    many (order_element default_smt true) >>= fun pre ->
     default false (element "freezing" (return true)) >>= fun freezing ->
     optional (
       element "edg" (return ()) >>= fun _ ->
-      many (order_element false) >>= fun post ->
+      many (order_element default_smt false) >>= fun post ->
       default 0 (element "loop" (int_attribute "steps" >>= return)) >>= fun loop ->
       return (post,loop)
     ) >>= fun rest ->
     return (pre,freezing,rest)
   )
 
-let of_string = Txtr.parse_string strategy_element
-let of_file = Txtr.parse_file strategy_element
+let of_string default_smt =
+  Txtr.parse_string (strategy_element default_smt)
+let of_file default_smt =
+  Txtr.parse_file (strategy_element default_smt)
+
+let default smt = (
+	[order_params smt false PREC_none S_empty false false mono_bpoly_weight],
+	true, Some ( [
+		order_params smt true PREC_none S_empty true true (sum_weight false);
+		order_params smt true PREC_none S_empty true true (max_weight false);
+		order_params smt true PREC_quasi S_partial true true no_weight;
+		order_params smt true PREC_none S_empty true true (neg_max_sum_weight 0);
+		order_params smt true PREC_quasi S_partial true true (max_sum_weight false 0);
+		order_params smt true PREC_none S_empty true true (bmat_weight false 2);
+		order_params smt true PREC_none S_empty true true (weight "sum_sum_int,sum_neg" [
+			(Pos, ArityChoice(function
+				| 0 -> Var Pos
+				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
+			) );
+			(Neg, SumArgs((Var Bool *? Arg(-1,1)) +? Var Neg));
+		]);
+		order_params smt true PREC_none S_empty true true (weight "heuristic_int,sum_neg" [
+			(Pos, ArityChoice(function
+				| 0 -> Var Pos
+				| 1 -> Max[(Var Bool *? Arg(0,0)) +? (Var Bool *? Arg(0,1)) +? Var Full; Const 0]
+				| _ -> Heuristic1 (
+        Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0],
+        Max[MaxArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1)) +? Var Full); Const 0]
+			) ) );
+			(Neg, SumArgs((Var Bool *? Arg(-1,1)) +? Var Neg));
+		]);
+	], 3)
+)

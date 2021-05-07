@@ -103,7 +103,7 @@ let rule_remove (trs : #trs) next =
   else
     let proc_list =
       let folder p procs =
-        new Wpo.processor p trs dummy_estimator dummy_dg :: procs
+        new Wpo.t p trs dummy_estimator dummy_dg :: procs
       in
       Array.fold_right folder params.orders_removal []
     in
@@ -172,7 +172,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
       end else begin
         use_all_rules := true;
       end;
-      new Wpo.processor p trs estimator dg :: procs
+      new Wpo.t p trs estimator dg :: procs
     in
     Array.fold_right folder params.orders_dp []
   in

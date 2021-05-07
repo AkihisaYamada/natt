@@ -24,7 +24,7 @@ let delete_common =
   in
   sub []
 
-class processor =
+class t =
   (* SMT variables *)
   let usable_v i = "u" ^ string_of_int i in
   let usable_w_v i = "uw" ^ string_of_int i in

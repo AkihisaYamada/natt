@@ -1,5 +1,6 @@
 open Util
 open Io
+open Txtr
 
 type ty = Nat | Int | Real | Bool | Prod of ty * ty
 
@@ -26,6 +27,31 @@ let default_params cmd args = {
   peek_out = false;
   peek_to = stderr;
 }
+
+let params_of_xml =
+  element "smt" (
+    default (false,stderr) (
+      (bool_attribute "peek" >>= fun b -> return (b,stderr)) <|>
+      (attribute "peekTo" >>= fun file -> return (true,open_out file))
+    ) >>= fun (peek,peek_to) ->
+    default false (bool_attribute "tempvars") >>= fun tmpvar ->
+    default true (bool_attribute "linear") >>= fun linear ->
+    element "command" string >>= fun cmd ->
+    many (element "arg" string) >>= fun args ->
+    return {
+      cmd = cmd;
+      args = args;
+      base_ty = Int;
+      tmpvar = tmpvar;
+      linear = linear;
+      peek_in = peek;
+      peek_out = peek;
+      peek_to = peek_to;
+    }
+  )
+
+let z3_params = default_params "z3" ["-smt2";"-in"]
+let cvc4_params = default_params "cvc4" ["--lang=smt2"; "--incremental"; "--produce-models"]
 
 class virtual ['e,'d] base p =
   object (x:'b)

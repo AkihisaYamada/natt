@@ -48,7 +48,7 @@ OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
 OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
 
 ## If you need a statically linked binary
-#OCAMLFLAGS= -cclib '-static'
+OCAMLFLAGS= -cclib '-static'
 
 #OCAMLFLAGS+= -g
 
