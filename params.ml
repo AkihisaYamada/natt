@@ -112,8 +112,7 @@ let prerr_help () =
   pe "";
   pe "OPTIONs:";
   pe "  -v:<n>         set verbosity (0 to 6, default: 3).";
-  pe "  --SMT:<xml>    set SMT parameters.";
-  pe "  -S:<xml>       set strategy.";
+  pe "  --cvc4         use CVC4 instead of Z3.";
 in
 let i = ref 1 in
 let erro str = err ("unknown option: " ^ str ^ "!") in
