@@ -272,7 +272,7 @@ let expand_max =
     | Max ws1 :: ws -> sub_max2 e acc (ws1 @ ws)
     | Sum ws1 :: ws -> sub_max2 e (sub_sum ws1 @ acc) ws
     | Prod ws1 :: ws -> sub_max2 e (sub_prod ws1 @ acc) ws
-    | (Smt e1 as w) :: ws when maxable e1 -> sub_max2 (simple_max e e1) acc ws
+    | Smt e1 :: ws when maxable e1 -> sub_max2 (simple_max e e1) acc ws
     | w :: ws -> sub_max2 e (w::acc) ws
   and sub_sum ws = List.map (fun ws -> sum ws) (list_product (List.map sub ws))
   and sub_prod ws = (* This works only if monotonicity is ensured *)
@@ -584,7 +584,7 @@ class interpreter p =
       else Array.map sub (x#encode_sym f)
 
     method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, (string * int) t array) wterm =
-      fun solver (Node(f,ss) as t) ->
+      fun solver (Node(f,ss)) ->
       let ts = List.map (x#annotate solver) ss in
       let vec = x#interpret f (List.map get_weight ts) in
       WT(f, ts, refer_vec solver vec)

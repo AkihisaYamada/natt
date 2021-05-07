@@ -19,13 +19,13 @@ The command line of NaTT is in the following syntax:
 ```
 The TRS whose termination should be verified is read from either the specified file or the standard input. The format should follow the [WST format](https://www.lri.fr/~marche/tpdb/format.html).
 
-To execute NaTT, an [SMT-LIB 2.0](http://smtlib.org) compliant solver must be installed. One can choose one by the following option:
+To execute NaTT, an [SMT-LIB 2.0](http://smtlib.org) compliant solver must be installed. One can choose one by the following options:
 <!-- The following options are provided for specifying such an SMT solver for back-end of NaTT:
 
 * `--smt:'<smt><command></command></smt>'`: Uses the solver invoked by command for back-end. The solver should be configured to process SMT-LIB 2.0 scripts given through the standard input.
 -->
-* `--z3`: Specifies [Z3](https://github.com/Z3Prover/z3) version 4.0 or later for back-end (default).
-* `--cvc4`: Specifies [CVC4](https://cvc4.github.io/) for backend.
+* `--z3`: [Z3](https://github.com/Z3Prover/z3) version 4.0 or later (default).
+* `--cvc4`: [CVC4](https://cvc4.github.io/).
 
 ## Contact ##
 In case you find bugs, comments, or suggestions, please contact [the author](https://akihisayamada.github.io/).

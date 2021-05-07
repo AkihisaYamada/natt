@@ -127,7 +127,7 @@ do
 	outfile=`mktemp`
 	if [ "${f##*.}" = "xml" ]
 	then
-		xsltproc "$dir/xtc2tpdb.xml" "$d$f"
+		xsltproc "$dir/xtc2tpdb.xsl" "$d$f"
 	else
 		cat "$d$f"
 	fi | {

@@ -294,20 +294,20 @@ let of_file default_smt =
 let default smt = (
 	[order_params smt false PREC_none S_empty false false mono_bpoly_weight],
 	true, Some ( [
-		order_params smt true PREC_none S_empty true true (sum_weight false);
-		order_params smt true PREC_none S_empty true true (max_weight false);
+		order_params smt true PREC_none S_empty false true (sum_weight false);
+		order_params smt true PREC_none S_empty false true (max_weight false);
 		order_params smt true PREC_quasi S_partial true true no_weight;
-		order_params smt true PREC_none S_empty true true (neg_max_sum_weight 0);
+		order_params smt true PREC_none S_empty false true (neg_max_sum_weight 0);
 		order_params smt true PREC_quasi S_partial true true (max_sum_weight false 0);
-		order_params smt true PREC_none S_empty true true (bmat_weight false 2);
-		order_params smt true PREC_none S_empty true true (weight "sum_sum_int,sum_neg" [
+		order_params smt true PREC_none S_empty false true (bmat_weight false 2);
+		order_params smt true PREC_none S_empty false true (weight "sum_sum_int,sum_neg" [
 			(Pos, ArityChoice(function
 				| 0 -> Var Pos
 				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
 			) );
-			(Neg, SumArgs((Var Bool *? Arg(-1,1)) +? Var Neg));
+			(Neg, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
 		]);
-		order_params smt true PREC_none S_empty true true (weight "heuristic_int,sum_neg" [
+		order_params smt true PREC_none S_empty false true (weight "heuristic_int,sum_neg" [
 			(Pos, ArityChoice(function
 				| 0 -> Var Pos
 				| 1 -> Max[(Var Bool *? Arg(0,0)) +? (Var Bool *? Arg(0,1)) +? Var Full; Const 0]
@@ -315,7 +315,7 @@ let default smt = (
         Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0],
         Max[MaxArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1)) +? Var Full); Const 0]
 			) ) );
-			(Neg, SumArgs((Var Bool *? Arg(-1,1)) +? Var Neg));
+			(Neg, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
 		]);
 	], 3)
 )
