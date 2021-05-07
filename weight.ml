@@ -198,15 +198,20 @@ let put_w var : 'a t -> #printer -> unit =
   let rec sub l w =
     match w with
     | BVar(v,_) -> var v
+    | Smt (LI i) -> put_int i
     | Smt e -> put_exp e
     | Prod ws ->
       if List.exists (fun w -> w = Smt (LI 0)) ws then putc '0'
-      else
-       let ws = List.filter (fun w -> w <> Smt (LI 1)) ws in 
-       paren l 2 (put_list (sub 2) (puts " * ") (putc '1') ws)
-    | Sum ws ->
-      let ws = List.filter (fun w -> w <> Smt (LI 0)) ws in
-      paren l 1 (put_list (sub 1) (puts " + ") (putc '0') ws)
+      else (
+        match List.filter (fun w -> w <> Smt (LI 1)) ws with
+        | [w] -> sub l w
+        | ws -> paren l 2 (put_list (sub 2) (puts " * ") (putc '1') ws)
+			)
+    | Sum ws -> (
+      match List.filter (fun w -> w <> Smt (LI 0)) ws with
+      | [w] -> sub l w
+      | ws -> paren l 1 (put_list (sub 1) (puts " + ") (putc '0') ws)
+		)
     | Max ws -> puts "max{" << put_list (sub 0) (puts ", ") (puts "-oo") ws << puts "}"
     | Cond(e,w1,w2) -> paren l 0 (put_exp e << puts " ? " << sub 1 w1 << puts " : " << sub 0 w2)
   in
