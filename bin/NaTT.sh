@@ -127,9 +127,9 @@ do
 	outfile=`mktemp`
 	if [ "${f##*.}" = "xml" ]
 	then
-		xsltproc "$dir/xtc2tpdb.xsl" "$d$f"
-	else
 		cat "$d$f"
+	else
+		java -jar "$dir/txtr.jar" "$dir/trs.xml.txtr" "$d$f"
 	fi | {
 		time -p {
 			timeout $t "$dir/NaTT.exe" $cpfopt "$@" $options 1> "$outfile"

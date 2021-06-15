@@ -392,10 +392,7 @@ object (x)
   method duplicating = trs#exists_rule (fun _ rule -> rule#is_duplicating)
 
   method run =
-    if params.file = "" then
-      trs#read_stdin
-    else
-      trs#read params.file;
+    trs#input_xml (if params.file = "" then stdin else Stdlib.open_in params.file);
 
     cpf (
       puts "<?xml version=\"1.0\"?>" << endl <<

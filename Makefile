@@ -10,11 +10,6 @@ OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool"
 
 # The list of ocaml source files
 OCAML_SRCS=\
-	trs_ast.ml \
-	trs_parser.mly \
-	trs_lexer.mll \
-	trs_sem.ml \
-	read.ml \
 	io.ml \
 	util.ml \
 	txtr.ml \
