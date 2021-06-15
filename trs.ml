@@ -235,10 +235,11 @@ class trs =
 			element "sym" (
 				string >>= fun fname ->
 				let f = x#get_sym_name fname Fun in
+				if f#arity_is_unknown then f#set_arity 0;
 				return (Node((f:>sym),[]))
 			) <|>
 			element "app" (
-				attribute "fun" >>= fun fname ->
+				element "sym" string >>= fun fname ->
 				many x#term_element >>= fun ss ->
 				let f = x#get_sym_name fname Fun in
 				if f#arity_is_unknown then f#set_arity (List.length ss);
@@ -254,7 +255,7 @@ class trs =
 								attribute "theory" >>= fun th ->
 								string >>= fun name ->
 								if th = "AC" || th = "A" || th = "C" then
-								(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2;
+								(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th));
 								return ()
 							) <|>
 							element "var" (
