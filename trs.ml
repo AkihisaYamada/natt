@@ -235,14 +235,19 @@ class trs =
 			element "sym" (
 				string >>= fun fname ->
 				let f = x#get_sym_name fname Fun in
-				if f#arity_is_unknown then f#set_arity 0;
+				if f#arity_is_unknown then f#set_arity 0
+				else if f#arity <> 0 then
+					raise (No_support (string_of_int f#arity ^ "-ary symbol " ^ fname ^ " appeared unapplied"));
 				return (Node((f:>sym),[]))
 			) <|>
 			element "app" (
 				element "sym" string >>= fun fname ->
 				many x#term_element >>= fun ss ->
 				let f = x#get_sym_name fname Fun in
-				if f#arity_is_unknown then f#set_arity (List.length ss);
+				let n = List.length ss in
+				if f#arity_is_unknown then f#set_arity n
+				else if f#arity <> n then
+					raise (No_support (string_of_int f#arity ^ "-ary symbol "^fname^" is applied to " ^ string_of_int n ^ " arguments"));
 				return (Node((f:>sym),ss))
 			)
 		) xmls
