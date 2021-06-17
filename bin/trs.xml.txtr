@@ -1,24 +1,17 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<txtruct indent="yes">
-	<class name="comment-decl">
-		<match>\(COMMENT\s</match>
+<txtruct>
+	<class name="comment">
+		<match>\(COMMENT[ \t\r\n]</match>
 		<match as="cmt">([^)]*)\)\s*</match>
-		<value-of select="cmt"/>
-	</class>
-	<class name="problem-decl">
-		<match>\(PROBLEM\s+</match>
-		<choice>
-			<option>
-				<match>INFEASIBILITY</match>
-			</option>
-		</choice>
-		<match>\s*\)\s*</match>
+		<comment>
+			<value-of select="cmt/group[1]"/>
+		</comment>
 	</class>
 	<class name="symbol">
 		<match as="s">([0-9A-Za-z_+\-*/.\\:=!?&lt;>\[\]']+)\s*</match>
 		<value-of select="s/group[1]"/>
 	</class>
-	<class name="sym-decl">
+	<class name="syms">
 		<option>
 			<match>\(VAR(\s+|(?=[\(\)\[\]\{\}]))</match>
 			<group maxOccurs="unbounded">
@@ -48,19 +41,19 @@
 		</option>
 	</class>
 	<class name="term">
-		<read ref="symbol" as="sym"/>
+		<read ref="symbol" as="s"/>
 		<choice>
 			<option>
-				<match as="ignore">\(\s*</match>
+				<match>\(\s*</match>
 				<element name="app">
 					<element name="sym">
-						<value-of select="sym"/>
+						<value-of select="s"/>
 					</element>
 					<group minOccurs="0">
-						<parse ref="term"/>
+						<read ref="term"/>
 						<group minOccurs="0" maxOccurs="unbounded">
 							<match>\s*,\s*</match>
-							<parse ref="term"/>
+							<read ref="term"/>
 						</group>
 					</group>
 					<match>\)\s*</match>
@@ -68,34 +61,85 @@
 			</option>
 			<option>
 				<element name="sym">
-					<value-of select="sym"/>
+					<value-of select="s"/>
 				</element>
 			</option>
 		</choice>
 	</class>
+	<class name="eq">
+		<read ref="term" as="lhs"/>
+		<match>\=\=\s*</match>
+		<read ref="term" as="rhs"/>
+		<element name="eq">
+			<value-of select="lhs"/>
+			<value-of select="rhs"/>
+		</element>
+	</class>
+	<class name="eqs">
+		<read ref="eq"/>
+		<group minOccurs="0" maxOccurs="unbounded">
+			<match>,\s*</match>
+			<read ref="eq"/>
+		</group>
+	</class>
 	<class name="rule">
 		<read ref="term" as="lhs"/>
-		<match as="ignore">->\s*</match>
+		<match>->\s*</match>
 		<read ref="term" as="rhs"/>
 		<element name="rule">
+			<group minOccurs="0">
+				<match>\|\s+</match>
+				<element name="condition">
+					<read ref="eqs"/>
+				</element>
+			</group>
 			<value-of select="lhs"/>
 			<value-of select="rhs"/>
 		</element>
 		<match>\s*</match>
 	</class>
-	<class name="rules-decl">
+	<class name="rules">
 		<match>\(RULES\s+</match>
 		<element name="rules">
-			<parse ref="rule" maxOccurs="unbounded"/>
+			<read ref="rule" maxOccurs="unbounded"/>
 			<match>\)\s*</match>
 		</element>
 	</class>
 	<element name="trs">
-		<parse ref="comment-decl" minOccurs="0" maxOccurs="unbounded"/>
+		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+		<group minOccurs="0">
+			<match>\(PROBLEM\s+</match>
+			<choice>
+				<option>
+					<match>INFEASIBILITY</match>
+				</option>
+			</choice>
+			<match>\s*\)\s*</match>
+		</group>
+		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+		<group minOccurs="0">
+			<match as="ct">\(CONDITIONTYPE\s+(.*)\)\s*</match>
+			<attribute name="condition-type">
+				<value-of select="ct/group[1]"/>
+			</attribute>
+		</group>
+		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		<element name="syms">
-			<parse ref="sym-decl" minOccurs="0" maxOccurs="unbounded"/>
+			<read ref="syms" minOccurs="0" maxOccurs="unbounded"/>
 		</element>
-		<parse ref="rules-decl"/>
-		<parse ref="comment-decl" minOccurs="0" maxOccurs="unbounded"/>
+		<read ref="rules"/>
+		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+		<group minOccurs="0">
+			<read ref="syms" minOccurs="0" maxOccurs="unbounded" as="csym"/>
+			<match>\(CONDITION\s+</match>
+			<element name="infeasibility">
+				<element name="syms">
+					<value-of select="csym"/>
+				</element>
+				<read ref="eqs"/>
+			</element>
+			<match>\)\s*</match>
+		</group>
+		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 	</element>
 </txtruct>

@@ -1,4 +1,5 @@
 open Util
+open Term
 open Strategy
 
 let version = "2.1";
@@ -30,7 +31,7 @@ type mode =
 | MODE_through
 | MODE_higher_xml
 | MODE_xml
-
+| MODE_infeasibility of (Sym.sym term * Sym.sym term) list
 
 (* checks monotonicity *)
 let nonmonotone p =

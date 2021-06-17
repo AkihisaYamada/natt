@@ -251,51 +251,51 @@ class trs =
 				return (Node((f:>sym),ss))
 			)
 		) xmls
-		method input_element =
-			element "trs" (
-				optional (
-					element "syms" (
-						many (
-							element "sym" (
-								attribute "theory" >>= fun th ->
-								string >>= fun name ->
-								if th = "AC" || th = "A" || th = "C" then
-								(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th));
-								return ()
-							) <|>
-							element "var" (
-								string >>= fun s ->
-								x#add_sym (new sym_unmarked Var s);
-								return ()
-							)
-						)
+		method input_syms =
+			element "syms" (
+				many (
+					element "sym" (
+						attribute "theory" >>= fun th ->
+						string >>= fun name ->
+						if th = "AC" || th = "A" || th = "C" then
+						(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th));
+						return ()
+					) <|>
+					element "var" (
+						string >>= fun s ->
+						x#add_sym (new sym_unmarked Var s);
+						return ()
 					)
-				) >>= fun _ ->
-				element "rules" (
-					many (
-						element "rule" (
-							x#term_element >>= fun l -> (
-								x#term_element >>= fun r ->
-								x#add_rule (rule l r);
-								return ()
-							) <|> (
-								many (
-									element "distrib" (
-										default 1 (int_attribute "w") >>= fun w ->
-										x#term_element >>= fun r ->
-										return (w,r)
-									)
-								) >>= fun wrs ->
-								x#add_prule (new prule l wrs);
-								return ()
-							)
-						) <|>
-						element "relative" (
-							x#term_element >>= fun l ->
+				)
+			)
+		method input_rules =
+			element "rules" (
+				many (
+					element "rule" (
+						optional (
+							element "condition" (many any)
+						) >>= fun _ ->
+						x#term_element >>= fun l -> (
 							x#term_element >>= fun r ->
-							x#add_rule (weak_rule l r);
+							x#add_rule (rule l r);
+							return ()
+						) <|> (
+							many (
+								element "distrib" (
+									default 1 (int_attribute "w") >>= fun w ->
+									x#term_element >>= fun r ->
+									return (w,r)
+								)
+							) >>= fun wrs ->
+							x#add_prule (new prule l wrs);
 							return ()
 						)
+					) <|>
+					element "relative" (
+						x#term_element >>= fun l ->
+						x#term_element >>= fun r ->
+						x#add_rule (weak_rule l r);
+						return ()
 					)
 				) >>= fun _ ->
 				return ()
@@ -322,34 +322,23 @@ class trs =
 				element "rhs" x#term_xtc >>= fun r ->
 				return (l,r)
 			)
-		method input_element_xtc =
-			element "problem" (
-				element "trs" (
-					element "rules" (
-						many (
-							x#rule_xtc >>= fun (l,r) ->
-							x#add_rule (rule l r);
-							return ()
-						) >>= fun _ ->
-						optional (
-							element "relrules" (
-								many (
-									x#rule_xtc >>= fun (l,r) ->
-									x#add_rule (weak_rule l r);
-									return ()
-								)
-							)
-						)
-					) >>= fun _ ->
-					element "signature" (many any) >>= fun _ ->
-					optional (element "comment" (many any)) >>= fun _ ->
+		method input_rules_xtc =
+			element "rules" (
+				many (
+					x#rule_xtc >>= fun (l,r) ->
+					x#add_rule (rule l r);
 					return ()
 				) >>= fun _ ->
-				return ()
+				optional (
+					element "relrules" (
+						many (
+							x#rule_xtc >>= fun (l,r) ->
+							x#add_rule (weak_rule l r);
+							return ()
+						)
+					)
+				)
 			)
-
-		method input_xml = parse_in (x#input_element <|> x#input_element_xtc)
-
 (* counting nests *)
 		val mutable nest_map = Mset.empty
 		method count_nest = 
@@ -496,3 +485,33 @@ type path = int * (int list)
 
 let path_append (c1,is1) (c2,is2) = (c1 + c2, is1 @ is2)
 let cu_append (c1,u1) (c2,u2) = (c1 + c2, u1#compose u2)
+
+
+let problem_xml trs =
+	element "trs" (
+		optional (attribute "condition-type") >>= fun ct ->
+		if ct <> None && ct <> Some "ORIENTED" then raise (No_support "conditional");
+		optional trs#input_syms >>= fun _ ->
+		trs#input_rules >>= fun _ ->
+		optional (
+			element "infeasibility" (
+				optional trs#input_syms >>= fun _ ->
+				many (
+					element "eq" (
+						trs#term_element >>= fun l ->
+						trs#term_element >>= fun r ->
+						return (l,r)
+					)
+				)
+			)
+		)
+	) <|>
+	element "problem" ((* XTC format *)
+		element "trs" (
+			trs#input_rules_xtc >>= fun _ ->
+			element "signature" (many any) >>= fun _ ->
+			optional (element "comment" (many any)) >>= fun _ ->
+			return ()
+		) >>= fun _ ->
+		return None
+	)

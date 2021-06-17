@@ -9,6 +9,8 @@ type 'a state =
 
 let return v elm = Parse(v,elm)
 
+let delay = return ()
+
 let fatal pr _ = Fatal pr
 
 let none _ = Mismatch []
@@ -22,7 +24,7 @@ let describe (tag,_,xmls) =
 	| PCData str :: _ -> puts "text \"" << puts str << putc '"'
 	| Element(tag,_,_) :: _ -> put_tag tag
 
-let mandatory p ((tag,_,_) as elm) =
+let mandatory p elm =
 	match p elm with
 	| Mismatch cands -> Fatal (
 			puts "expecting " <<
@@ -93,18 +95,6 @@ let validated_attribute name pat =
 		else Fatal (puts "attribute \"" << puts name << puts "\" should match \"" << puts pat << puts "\" but has value \"" << puts v << putc '"')
 	| err -> err
 
-let rec many ?(minOccurs = 0) ?(maxOccurs = -1) p elm =
-	if maxOccurs = 0 then Mismatch []
-	else
-		match p elm with
-		| Parse(v,elm') -> (
-			match many ~minOccurs:(minOccurs-1) ~maxOccurs:(maxOccurs-1) p elm' with
-			| Parse(vs,elm'') -> Parse(v::vs, elm'')
-			| err -> err
-		)
-		| Mismatch cands -> if minOccurs <= 0 then Parse([],elm) else Mismatch cands
-		| Fatal err -> Fatal err
-
 let bind p1 p2 elm =
 	match p1 elm with
 	| Parse(x,elm') -> mandatory (p2 x) elm'
@@ -112,6 +102,18 @@ let bind p1 p2 elm =
 	| Fatal err -> Fatal err
 
 let (>>=) = bind
+
+let many =
+	let rec sub acc minOccurs maxOccurs p elm =
+		if maxOccurs = 0 then Parse(List.rev acc, elm)
+		else
+			match if minOccurs > 0 then mandatory p elm else p elm with
+			| Parse(v,elm') -> sub (v::acc) (minOccurs-1) (maxOccurs-1) p elm'
+			| Mismatch _ as ret -> Parse(List.rev acc, elm)
+			| Fatal err -> Fatal err
+	in
+	fun ?(minOccurs = 0) ?(maxOccurs = -1) ->
+		sub [] minOccurs maxOccurs
 
 let (<|>) p1 p2 elm =
 	match p1 elm with
@@ -124,7 +126,7 @@ let (<|>) p1 p2 elm =
 
 let element tag p = function
 	| (parentTag, atts, Element ((tag',_,_) as elm) :: xmls) when tag = tag' -> (
-		match p elm with
+		match mandatory p elm with
 		| Parse(v,(_,[],[])) -> Parse(v,(parentTag,atts,xmls))
 		| Parse(_,((_,[],_) as elm')) ->
 			Fatal (puts "expecting </" << puts tag << puts "> but encountered " << describe elm')
@@ -136,7 +138,7 @@ let element tag p = function
 
 let any (parentTag,atts,xmls) = match xmls with
 	| [] -> Mismatch ["*"]
-	| xml::xmls -> Parse(xml,(parentTag,atts,xmls))
+	| xml::xmls' -> Parse(xml,(parentTag,atts,xmls'))
 
 let parse p xml =
 	match mandatory p ("",[],[xml]) with
