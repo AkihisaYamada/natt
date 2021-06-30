@@ -1,5 +1,5 @@
 #!/bin/sh
 DIR=${0%/*}
 PATH=$DIR:$PATH
-xsltproc "$DIR/xtc2tpdb.xml" "$1" | NaTT.exe -v:0 -x:"$2/cpf.xml" --tcap --edge:1
+NaTT.exe -v:0 -x:"$2/cpf.xml" --tcap --edge:1 "$1"
 cat $2/cpf.xml
