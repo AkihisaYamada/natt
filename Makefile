@@ -79,7 +79,6 @@ $(TARG): $(OCAML_CMOS)
 # Clean up
 clean:
 	rm -f $(TARG) $(TARG_OPT) *.cm[iox] *.o *.mli .depend
-	rm trs_parser.ml trs_lexer.ml
 
 # Consistency test
 test: $(TARG_OPT)
