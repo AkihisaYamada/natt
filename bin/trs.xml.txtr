@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <txtruct>
 	<class name="comment">
-		<match>\(COMMENT[ \t\r\n]</match>
-		<match as="cmt">([^)]*)\)\s*</match>
+		<match as="cmt">\(COMMENT\s([^)]*)\)\s*</match>
 		<comment>
 			<value-of select="cmt/group[1]"/>
 		</comment>
