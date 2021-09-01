@@ -10,11 +10,6 @@ OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool"
 
 # The list of ocaml source files
 OCAML_SRCS=\
-	trs_ast.ml \
-	trs_parser.mly \
-	trs_lexer.mll \
-	trs_sem.ml \
-	read.ml \
 	io.ml \
 	util.ml \
 	txtr.ml \
@@ -48,7 +43,7 @@ OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
 OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
 
 ## If you need a statically linked binary
-OCAMLFLAGS= -cclib '-static'
+#OCAMLFLAGS= -cclib '-static'
 
 #OCAMLFLAGS+= -g
 
@@ -84,7 +79,6 @@ $(TARG): $(OCAML_CMOS)
 # Clean up
 clean:
 	rm -f $(TARG) $(TARG_OPT) *.cm[iox] *.o *.mli .depend
-	rm trs_parser.ml trs_lexer.ml
 
 # Consistency test
 test: $(TARG_OPT)

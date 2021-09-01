@@ -78,7 +78,7 @@ let freeze (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
       let args = ref (varlist "_" 1 n) in
       let r = ref (app (f :> sym) !args) in
       for i = 1 to aa do
-        let fi = trs#get_sym_name (freeze_name a#name fname i) in
+        let fi = trs#get_sym_name (freeze_name a#name fname i) Fun in
         fi#set_arity (n + i * nargs);
         let new_args = varlist "_" (n + i * nargs) nargs in
         let l = app (a :> sym) (!r :: new_args) in

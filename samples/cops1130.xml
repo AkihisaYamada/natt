@@ -1,0 +1,53 @@
+<trs>
+  <!--COPS 1129-->
+  <syms>
+    <var>x</var>
+    <var>y</var>
+  </syms>
+  <rules>
+    <rule>
+      <app>
+        <sym>+</sym>
+        <sym>0</sym>
+        <sym>x</sym>
+      </app>
+      <sym>x</sym>
+    </rule>
+    <rule>
+      <app>
+        <sym>+</sym>
+        <app>
+          <sym>s</sym>
+          <sym>x</sym>
+        </app>
+        <sym>y</sym>
+      </app>
+      <app>
+        <sym>s</sym>
+        <app>
+          <sym>+</sym>
+          <sym>x</sym>
+          <sym>y</sym>
+        </app>
+      </app>
+    </rule>
+  </rules>
+  <infeasibility>
+    <syms>
+      <var>x</var>
+    </syms>
+    <eq>
+      <app>
+        <sym>+</sym>
+        <sym>x</sym>
+        <sym>a</sym>
+      </app>
+      <sym>0</sym>
+    </eq>
+  </infeasibility>
+  <!--
+submitted by: Yusuke Oi
+secret problem 2019
+category: INF
+-->
+</trs>

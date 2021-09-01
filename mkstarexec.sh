@@ -10,10 +10,8 @@ pwd=`pwd`
 bak=~/NaTT.backup
 tar="tar"
 
-doc="README.txt"
+doc="README.md"
 bin="NaTT.exe NaTT.sh *.xml"
-
-chmod -x $src $common
 
 if [ -e "$bak" ]
 then

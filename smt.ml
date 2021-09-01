@@ -1023,7 +1023,9 @@ let smt_apply =
   | [EV "not"; e] -> Not e
   | [EV "+"; e] -> e
   | [EV "+"; e1; e2] -> Add(e1,e2)
-  | [EV "-"; e] -> Neg e
+  | [EV "-"; e] -> (
+    match e with LI i -> LI(-i) | LR r -> LR(-.r) | e -> Neg e
+	)
   | [EV "-"; e1; e2] -> Sub(e1,e2)
   | [EV "/"; e1; e2] -> Div(e1,e2)
   | es -> App es
