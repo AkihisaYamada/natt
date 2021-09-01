@@ -4,3 +4,4 @@
 *.cmx
 *.mli
 *.exe
+.depend
