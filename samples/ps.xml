@@ -1,0 +1,36 @@
+<trs>
+  <syms>
+    <var>x</var>
+  </syms>
+  <rules>
+    <rule>
+      <app>
+        <sym>f</sym>
+        <app>
+          <sym>s</sym>
+          <sym>x</sym>
+        </app>
+      </app>
+      <app>
+        <sym>f</sym>
+        <app>
+          <sym>p</sym>
+          <app>
+            <sym>s</sym>
+            <sym>x</sym>
+          </app>
+        </app>
+      </app>
+    </rule>
+    <rule>
+      <app>
+        <sym>p</sym>
+        <app>
+          <sym>s</sym>
+          <sym>x</sym>
+        </app>
+      </app>
+      <sym>x</sym>
+    </rule>
+  </rules>
+</trs>

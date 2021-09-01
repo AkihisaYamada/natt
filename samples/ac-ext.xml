@@ -1,0 +1,29 @@
+<trs>
+  <syms>
+    <var>x</var>
+    <var>y</var>
+    <sym theory="AC">+</sym>
+  </syms>
+  <rules>
+    <rule>
+      <app>
+        <sym>+</sym>
+        <sym>a</sym>
+        <sym>b</sym>
+      </app>
+      <sym>c</sym>
+    </rule>
+    <rule>
+      <sym>c</sym>
+      <app>
+        <sym>+</sym>
+        <sym>a</sym>
+        <app>
+          <sym>+</sym>
+          <sym>b</sym>
+          <sym>d</sym>
+        </app>
+      </app>
+    </rule>
+  </rules>
+</trs>

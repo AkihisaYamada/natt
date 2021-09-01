@@ -1,0 +1,32 @@
+<trs>
+  <syms>
+    <var>x</var>
+  </syms>
+  <rules>
+    <rule>
+      <app>
+        <sym>f</sym>
+        <app>
+          <sym>g</sym>
+          <app>
+            <sym>h</sym>
+            <sym>x</sym>
+          </app>
+        </app>
+      </app>
+      <app>
+        <sym>g</sym>
+        <app>
+          <sym>f</sym>
+          <app>
+            <sym>h</sym>
+            <app>
+              <sym>g</sym>
+              <sym>x</sym>
+            </app>
+          </app>
+        </app>
+      </app>
+    </rule>
+  </rules>
+</trs>
