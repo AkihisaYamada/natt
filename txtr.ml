@@ -103,17 +103,18 @@ let bind p1 p2 elm =
 
 let (>>=) = bind
 
-let many =
-	let rec sub acc minOccurs maxOccurs p elm =
-		if maxOccurs = 0 then Parse(List.rev acc, elm)
+let many_i ?(minOccurs = 0) ?(maxOccurs = -1) =
+	let rec sub i acc p elm =
+		if i >= maxOccurs then Parse(List.rev acc, elm)
 		else
-			match if minOccurs > 0 then mandatory p elm else p elm with
-			| Parse(v,elm') -> sub (v::acc) (minOccurs-1) (maxOccurs-1) p elm'
+			match if i < minOccurs then mandatory (p i) elm else p i elm with
+			| Parse(v,elm') -> sub (i+1) (v::acc) p elm'
 			| Mismatch _ as ret -> Parse(List.rev acc, elm)
 			| Fatal err -> Fatal err
 	in
-	fun ?(minOccurs = 0) ?(maxOccurs = -1) ->
-		sub [] minOccurs maxOccurs
+	sub 0 []
+let many ?(minOccurs = 0) ?(maxOccurs = -1) p =
+	many_i ~minOccurs:minOccurs ~maxOccurs:maxOccurs (fun i -> p)
 
 let (<|>) p1 p2 elm =
 	match p1 elm with
