@@ -206,11 +206,14 @@ while !i < argc do
   end;
   i := !i + 1;
 done;
-if !strategy_str <> "" then
-	set_strategy (Strategy.of_string !default_smt !strategy_str)
-else 
-	set_strategy (Strategy.default !default_smt);;
-
+set_strategy (
+	if !strategy_str <> "" then
+		Strategy.of_string !default_smt !strategy_str
+	else if !strategy_file <> "" then
+		Strategy.of_file !default_smt !strategy_file
+	else
+		Strategy.default !default_smt
+);;
 let cpf =
   if params.cpf then
     let os = new Io.pretty_wrap_out params.cpf_to in

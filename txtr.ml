@@ -105,7 +105,7 @@ let (>>=) = bind
 
 let many_i ?(minOccurs = 0) ?(maxOccurs = -1) =
 	let rec sub i acc p elm =
-		if i >= maxOccurs then Parse(List.rev acc, elm)
+		if i = maxOccurs then Parse(List.rev acc, elm)
 		else
 			match if i < minOccurs then mandatory (p i) elm else p i elm with
 			| Parse(v,elm') -> sub (i+1) (v::acc) p elm'
