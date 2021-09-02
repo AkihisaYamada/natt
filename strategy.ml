@@ -26,6 +26,7 @@ type order_mode =
 | O_strict
 | O_weak
 | O_eq
+| O_strict_or_bottom (* a < b || a = b = bot *)
 
 let weight name temps = (name,temps)
 
@@ -149,8 +150,12 @@ let template_entry_element i =
 	element "entry" (
 		range_attribute >>= fun r ->
 		default (if i = 0 then O_strict else O_weak) (
-			validated_attribute "order" "strict|weak" >>= fun str ->
-			return (match str with "strict" -> O_strict | _ -> O_weak)
+			validated_attribute "order" "strict(-or-bottom)?|weak" >>= fun str ->
+			return (match str with
+				| "strict" -> O_strict
+				| "weak" -> O_weak
+				| _ -> O_strict_or_bottom
+			)
 		) >>= fun ord ->
 		exp_seq >>= fun t ->
 		return (r,ord,t)

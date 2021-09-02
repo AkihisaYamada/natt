@@ -418,15 +418,21 @@ let order_vec param solver =
 	let tmps = param.w_templates in
 	let dim = Array.length tmps in
 	if dim = 0 then fun _ _ -> weakly_ordered
-	else fun w1 w2 ->
+	else fun v1 v2 ->
 		Delay (fun solver ->
 			let (_,ge,gt) =
 				Array.fold_left (fun (i,ge_rest,gt_rest) (_,mode,_) ->
+				let w1 = v1.(i) in
+				let w2 = v2.(i) in
 				match mode with
-				| O_strict -> let (ge,gt) = order_w solver w1.(i) w2.(i) in
+				| O_strict ->
+					let (ge,gt) = order_w solver w1 w2 in
 					(i+1, ge_rest &^ ge, gt_rest &^ gt)
-				| O_weak -> let ge = solver#refer Smt.Bool (ge_w w1.(i) w2.(i)) in
-					(i+1, ge_rest &^ ge, gt_rest)
+				| O_weak ->
+					(i+1, ge_rest &^ ge_w w1 w2, gt_rest)
+				| O_strict_or_bottom ->
+					let (ge,gt) = order_w solver w1 w2 in
+					(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_w w2))
 				) (0, LB true, LB true) tmps
 			in Cons(ge,gt)
 		)
