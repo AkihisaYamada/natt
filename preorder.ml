@@ -9,20 +9,18 @@ let strictly = smt_cdr
 let weakly = smt_car
 
 let compose trit1 trit2 =
-  smt_split trit1
-  (fun ge1 gt1 ->
+  smt_split trit1 (fun ge1 gt1 ->
     if ge1 = LB false then not_ordered
     else if gt1 = LB true then strictly_ordered
     else
-      smt_split trit2
-      (fun ge2 gt2 ->
+      smt_split trit2 (fun ge2 gt2 ->
         if ge2 = LB false then Dup(Bool,gt1)
         else if gt2 = LB true then Dup(Bool,ge1)
         else
-          smt_let Bool gt1
-          (fun  gt1 ->
-            smt_let Bool ge1
-              (fun ge1 -> Cons(gt1 |^ (ge1 &^ ge2), gt1 |^ (ge1 &^ gt2)))
+          smt_let Bool gt1 (fun gt1 ->
+            smt_let Bool ge1 (fun ge1 ->
+              Cons(gt1 |^ (ge1 &^ ge2), gt1 |^ (ge1 &^ gt2))
+            )
           )
       )
   )
