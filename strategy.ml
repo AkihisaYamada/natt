@@ -59,12 +59,12 @@ let neg_max_weight =
 			| _ -> Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
 		)
 	]
-let max_sum_weight mono maxarity =
+let max_sum_weight weak_simple maxarity =
 	weight "MaxSum" [
 		Pos, O_strict, ArityChoice(function
 			| 0 -> Var Pos
-			| 1 -> arg mono (Arg(-1,0)) +? Var Pos
-			| _ -> Heuristic1(SumArgs(arg mono (Arg(-1,0))) +? Var Pos, MaxArgs(arg mono (Arg(-1,0) +? Var Pos)))
+			| 1 -> arg weak_simple (Arg(-1,0)) +? Var Pos
+			| _ -> Heuristic1(SumArgs(arg weak_simple (Arg(-1,0))) +? Var Pos, MaxArgs(arg weak_simple (Arg(-1,0) +? Var Pos)))
 (*
 			| i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
 				MaxArgs(arg +? Var Pos)
