@@ -910,23 +910,23 @@ class virtual context p =
 			| LB b -> LB b
 			| LI i -> LI i
 			| LR r -> LR r
-			| And(e1,e2)	-> x#expand_and e1 e2
-			| Or(e1,e2)	 -> x#expand_or e1 e2
-			| Xor(e1,e2)	-> smt_xor (x#expand e1) (x#expand e2)
-			| Imp(e1,e2)	-> x#expand_imp e1 e2
-			| Not(e)		-> smt_not (x#expand e)
-			| Add(e1,e2)	-> x#expand e1 +^ x#expand e2
-			| Sub(e1,e2)	-> x#expand e1 -^ x#expand e2
-			| Mul(e1,e2)	-> x#expand_mul e1 e2
-			| Div(e1,e2)	-> x#expand e1 /^ x#expand e2
-			| Mod(e1,e2)	-> smt_mod (x#expand e1) (x#expand e2)
-			| Max es		-> x#expand_max es
-			| Eq(e1,e2)	 -> x#expand e1 =^ x#expand e2
-			| Ge(e1,e2)	 -> x#expand e1 >=^ x#expand e2
-			| Gt(e1,e2)	 -> x#expand e1 >^ x#expand e2
-			| Le(e1,e2)	 -> x#expand e1 <=^ x#expand e2
-			| Lt(e1,e2)	 -> x#expand e1 <^ x#expand e2
-			| ForAll(ds,e)	->
+			| And(e1,e2) -> x#expand_and e1 e2
+			| Or(e1,e2)  -> x#expand_or e1 e2
+			| Xor(e1,e2) -> smt_xor (x#expand e1) (x#expand e2)
+			| Imp(e1,e2) -> x#expand_imp e1 e2
+			| Not(e)     -> smt_not (x#expand e)
+			| Add(e1,e2) -> x#expand e1 +^ x#expand e2
+			| Sub(e1,e2) -> x#expand e1 -^ x#expand e2
+			| Mul(e1,e2) -> x#expand_mul e1 e2
+			| Div(e1,e2) -> x#expand e1 /^ x#expand e2
+			| Mod(e1,e2) -> smt_mod (x#expand e1) (x#expand e2)
+			| Max es     -> x#expand_max es
+			| Eq(e1,e2)  -> x#expand e1 =^ x#expand e2
+			| Ge(e1,e2)  -> x#expand e1 >=^ x#expand e2
+			| Gt(e1,e2)  -> x#expand e1 >^ x#expand e2
+			| Le(e1,e2)  -> x#expand e1 <=^ x#expand e2
+			| Lt(e1,e2)  -> x#expand e1 <^ x#expand e2
+			| ForAll(ds,e) ->
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
 				branch#close_for_all e

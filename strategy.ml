@@ -92,11 +92,9 @@ let neg_max_sum_weight maxarity =
 		)
 	]
 
-let bmat_weight mono dim =
-	let entry =
-		if mono then
-			fun j -> (if j = 0 then Choice[Const 2; Const 1] else Var Bool) *? Arg(-1,j)
-		else fun j -> Var Bool *? Arg(-1,j)
+let bmat_weight mono simp dim =
+	let entry j =
+		(if simp || (mono && j = 0) then (debug (puts "hoa"); Choice[Const 2; Const 1]) else Var Bool) *? Arg(-1,j)
 	in
 	weight (string_of_int dim ^ "D-Mat") (
 		List.init dim (fun j ->
@@ -161,7 +159,7 @@ let template_entry_element i =
 		return (r,ord,t)
 	)
 
-let weight_element mono =
+let weight_element mono simp =
 	element "poly" (return (mono_bpoly_weight)) <|>
 	element "sum" (
 		default false (bool_attribute "neg") >>= fun neg ->
@@ -172,12 +170,13 @@ let weight_element mono =
 		return (if neg then neg_max_weight else max_weight mono)
 	) <|>
 	element "maxSum" (
+		if mono then fatal (puts "not allowed in rule removal") else
 		default false (bool_attribute "neg") >>= fun neg ->
 		default 4 (int_attribute "maxArity") >>= fun m ->
-		return (if neg then neg_max_sum_weight m else max_sum_weight mono m)) <|>
+		return (if neg then neg_max_sum_weight m else max_sum_weight simp m)) <|>
 	element "matrix" (
 		mandatory (int_attribute "dim") >>= fun dim ->
-		return (bmat_weight mono dim)
+		return (bmat_weight mono simp dim)
 	) <|>
 	element "template" (
 		mandatory (attribute "name") >>= fun name ->
@@ -283,7 +282,7 @@ let order_element default_smt mono =
 		) >>= fun usable ->
 		default default_smt Smt.params_of_xml >>= fun smt ->
 		default no_weight (
-			weight_element (mono && (status = S_none || status = S_total))
+			weight_element (mono && status = S_empty) (status = S_none || status = S_total)
 		) >>= fun weight ->
 		return (order_params smt (not mono) prec status collapse usable weight)
 	)
@@ -315,7 +314,7 @@ let default smt = (
 		order_params smt true PREC_quasi S_partial true true no_weight;
 		order_params smt true PREC_none S_empty false true (neg_max_sum_weight 0);
 		order_params smt true PREC_quasi S_partial true true (max_sum_weight false 0);
-		order_params smt true PREC_none S_empty false true (bmat_weight false 2);
+		order_params smt true PREC_none S_empty false true (bmat_weight false false 2);
 		order_params smt true PREC_none S_empty false true (weight "sum_sum_int,sum_neg" [
 			(Pos, O_strict, ArityChoice(function
 				| 0 -> Var Pos
