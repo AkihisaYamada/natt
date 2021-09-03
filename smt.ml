@@ -68,6 +68,7 @@ class virtual ['e,'d] base p =
 		method temp_variable_base = x#temp_variable base_ty
 		method refer_base e = x#refer base_ty e
 		method virtual expand : 'e -> 'e
+		method virtual expand_pair : 'e -> 'e * 'e
 	end;;
 
 type exp =
@@ -322,8 +323,13 @@ let rec smt_not =
 	| If(c,t,e,p) -> If(c, smt_not t, smt_not e, p)
 	| e	 -> Not(e)
 
-let smt_expand e f =
+let smt_delay e f =
 	if is_simple e then f e else Delay(fun context -> f (context#expand e))
+
+let smt_split e f =
+	match e with
+	| Cons(e1,e2) -> f e1 e2
+	| _ -> Delay(fun context -> let (e1,e2) = context#expand_pair e in f e1 e2)
 
 let smt_let ty e f =
 	if is_simple e then f e else Delay(fun context -> f (context#refer ty e))
@@ -675,12 +681,6 @@ let smt_cdr =
 	| Dup(_,e) -> e
 	| e -> Cdr e
 
-let smt_split e f =
-	match e with
-	| Cons(e1,e2) -> f e1 e2
-	| _ -> smt_expand e (function Cons(e1,e2) -> f e1 e2 | _ -> raise (Invalid_formula ("smt_split", e)))
-
-
 ;;
 
 class virtual context p =
@@ -968,6 +968,8 @@ class virtual context p =
 			| App es  -> App(List.map x#expand es)
 			| Delay f -> x#expand_delay f
 			| e	      -> raise (Invalid_formula ("expand",e))
+		method expand_pair e =
+			match x#expand e with Cons(e1,e2) -> (e1,e2) | _ -> raise (Invalid_formula ("smt_split", e))
 	end
 and subcontext p =
 	object (x)

@@ -223,13 +223,13 @@ class t =
             done;
             solver#add_assertion (p_i =>^ smt_exists (finfo#perm i) to_n);
           end else begin
-            let (zero,one) = split (ZeroOne (List.map (finfo#perm i) to_n)) solver in
+            let (zero,one) = solver#expand_pair (ZeroOne (List.map (finfo#perm i) to_n)) in
             solver#add_assertion (p_i =>^ one);
             solver#add_assertion (p_i |^ zero);
           end;
           let m_i = finfo#mapped i in
           let mapper j = finfo#perm j i in
-          let (zero,one) = split (ZeroOne (List.map mapper to_n)) solver in
+          let (zero,one) = solver#expand_pair (ZeroOne (List.map mapper to_n)) in
           solver#add_assertion (m_i =>^ one);
           solver#add_assertion (m_i |^ zero);
         done;
@@ -366,10 +366,10 @@ class t =
       Delay
       (fun context ->
         let (lge,lgt) =
-          split (lexperm_compargs finfo ginfo order ss ts) context
+          context#expand_pair (lexperm_compargs finfo ginfo order ss ts) 
         in
         let (mge,mgt) =
-          split (filtered_mset_extension finfo#permed ginfo#permed order ss ts) context
+          context#expand_pair (filtered_mset_extension finfo#permed ginfo#permed order ss ts)
         in
         Cons
         ( (finfo#mset_status &^ ginfo#mset_status &^ mge) |^
@@ -507,11 +507,11 @@ class t =
           step2 ge gt ss' tss
         else if tcs = LB false then
           (* this is at best \pi(t), so go real comparison *)
-          let (ge2,gt2) = split (comparg_ac finfo order ss' ts') context in
+          let (ge2,gt2) = context#expand_pair (comparg_ac finfo order ss' ts') in
           let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
           step2 ge gt ss' tss
         else
-          let (ge3,gt3) = split (ac_rpo_compargs fname finfo ss' ts' order) context in
+          let (ge3,gt3) = context#expand_pair (ac_rpo_compargs fname finfo ss' ts' order) in
           let (ge,gt) =
             (ge &^ (tcw =>^ smt_if tcs gt3 ge3),
              gt |^ (tcw =>^ (smt_not tcs &^ gt3)))
@@ -532,7 +532,7 @@ class t =
           let (ge,gt) = (ge |^ (scw &^ ge2), gt |^ (scw &^ gt2)) in
           step1 ge gt sss
         else
-          let (ge3,gt3) = split (ac_rpo_compargs fname finfo ss' ts order) context in
+          let (ge3,gt3) = context#expand_pair (ac_rpo_compargs fname finfo ss' ts order) in
           (* if this is strict embedding, weak order results strict order *)
           step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
       in
@@ -582,8 +582,7 @@ class t =
       match ss with
       | []  -> Cons(some_ge, some_gt)
       | s::ss ->
-        smt_split (order s t)
-        (fun curr_ge curr_gt ->
+        smt_split (order s t) (fun curr_ge curr_gt ->
           sub (i+1) 
           (some_ge |^ (finfo#permed i &^ curr_ge))
           (some_gt |^ (finfo#permed i &^ curr_gt)) order finfo ss t
@@ -603,8 +602,7 @@ class t =
       match ts with
       | []  -> Cons(all_ge, all_gt)
       | t::ts ->
-        smt_split (order s t)
-        (fun curr_ge curr_gt ->
+        smt_split (order s t) (fun curr_ge curr_gt ->
           smt_let Bool curr_gt
           (fun curr_gt ->
             sub (j+1)
@@ -655,8 +653,7 @@ class t =
     else wpo3 s t
   and wpo3 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     let finfo = lookup f in
-    smt_split (order_by_some_arg wpo finfo ss t)
-    (fun some_ge some_gt ->
+    smt_split (order_by_some_arg wpo finfo ss t) (fun some_ge some_gt ->
       smt_let Bool some_ge
       (fun some_ge ->
         let col_f = finfo#collapse in
@@ -667,14 +664,12 @@ class t =
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
-          smt_split (order_all_args wpo s ginfo ts)
-          (fun all_ge all_gt ->
+          smt_split (order_all_args wpo s ginfo ts) (fun all_ge all_gt ->
             let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
-              smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts))
-              (fun rest_ge rest_gt ->
+              smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts)) (fun rest_ge rest_gt ->
                 smt_let Bool all_gt
                 (fun all_gt ->
                   let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
@@ -787,7 +782,7 @@ object (x)
         Weight.add_vec acc w
       in
       let rw = prule#fold_rs folder (Weight.zero_vec dim) in
-      let (ge,gt) = split (wo lw rw) solver in
+      let (ge,gt) = solver#expand_pair (wo lw rw) in
       if p.remove_all then begin
         solver#add_assertion gt;
       end else begin
@@ -811,14 +806,14 @@ object (x)
         if p.usable_w then begin
           solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
           solver#add_assertion (usable i =>^ set_usable permed usable rule#r);
-          let wge, wgt = split (wo lw rw) solver in
+          let wge, wgt = solver#expand_pair (wo lw rw) in
           let wge = solver#refer Bool wge in
           solver#add_assertion (usable_w i =>^ wge);
           if wge = LB false then begin
             solver#add_definition (ge_r_v i) Bool (LB false);
             solver#add_definition (gt_r_v i) Bool (LB false);
           end else begin
-            let (rge,rgt) = split (wpo2 la ra) solver in
+            let (rge,rgt) = solver#expand_pair (wpo2 la ra) in
             solver#add_definition (ge_r_v i) Bool (wge &^ rge);
             solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
           end;
@@ -836,7 +831,7 @@ object (x)
         solver#add_assertion (strictly (frame la ra));
       end else begin
         (* rule removal mode *)
-        let (ge,gt) = split (frame la ra) solver in
+        let (ge,gt) = solver#expand_pair (frame la ra) in
         solver#add_assertion (usable i =>^ ge);
         solver#add_definition (gt_r_v i) Bool gt;
       end;
@@ -849,7 +844,7 @@ object (x)
       Hashtbl.add dp_flag_table i ();
       debug2 (puts "    initializing DP #" << put_int i << endl);
       let dp = dg#find_dp i in
-      let (ge,gt) = split (frame (interpreter#annotate solver dp#l) (interpreter#annotate solver dp#r)) solver in
+      let (ge,gt) = solver#expand_pair (frame (interpreter#annotate solver dp#l) (interpreter#annotate solver dp#r)) in
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)

@@ -5,12 +5,6 @@ let not_ordered = Cons(LB false, LB false)
 let weakly_ordered = Cons(LB true, LB false)
 let strictly_ordered = Cons(LB true, LB true)
 
-let split trit context =
-  match context#expand trit with
-  | Cons(ge,gt) -> ge,gt
-  | e -> raise (Invalid_formula ("split",e))
-
-
 let strictly = smt_cdr
 let weakly = smt_car
 
@@ -58,7 +52,7 @@ let lex_extension order =
     | [], _   -> let gts = context#refer Bool gts in Cons(gts, gts)
     | _, []   -> let gts = context#refer Bool (gts |^ eqs) in Cons(gts, gts)
     | x::xs, y::ys  ->
-      let eq,gt = split (order x y) context in
+      let eq,gt = context#expand_pair (order x y) in
       let eqs = context#refer Bool eqs in
       sub (eq &^ eqs) ((gt &^ eqs) |^ gts) xs ys context
   in
@@ -90,7 +84,7 @@ let filtered_lex_extension filter order =
     | [],_  -> let gts = context#refer Bool gts in yrest (eqs |^ gts) gts i ys
     | _,[]  -> xrest eqs gts (LB false) i xs context
     | x::xs, y::ys  ->
-      let eq,gt = split (order x y) context in
+      let eq,gt = context#expand_pair (order x y) in
       let eqs = context#refer Bool eqs in
       sub ((smt_not (filter i) |^ eq) &^ eqs)
         ((filter i &^ gt &^ eqs) |^ gts) (i+1) xs ys context
@@ -104,7 +98,7 @@ let filtered_lex_extension filter order =
 (* Lexicographic extension with permutation. *)
 let permuted_lex_extension perm mapped order xs ys =
   Delay(fun context ->
-    let elemcomp = Array.of_list (List.map2 (fun x y -> split (order x y) context) xs ys) in
+    let elemcomp = Array.of_list (List.map2 (fun x y -> context#expand_pair (order x y)) xs ys) in
     let min = Array.length elemcomp in
     let rec sub eqs gts k =
       if k > min then
@@ -153,7 +147,7 @@ let permuted_lex_extension2 xperm yperm xmapped ymapped order xs ys =
         let xp = xperm i k in
         for j = 1 to yn do
           let yp = yperm j k in
-          let (curr_ge,curr_gt) = split (order xa.(i-1) ya.(j-1)) context in
+          let (curr_ge,curr_gt) = context#expand_pair (order xa.(i-1) ya.(j-1)) in
           context#add_assertion (Not v_eq |^ smt_not xp |^ smt_not yp |^ curr_ge);
           context#add_assertion (Not v_gt |^ smt_not xp |^ smt_not yp |^ curr_gt);
         done
@@ -236,7 +230,7 @@ let filtered_mset_extension_body ifilter jfilter nxs nys compa =
           (* if $x_i$ and $y_j$ are compared, then $x_i$ must not be filtered. *)
           context#add_assertion (c.(i).(j) =>^ fx);
           (* comparing $x_i$ and $y_j$. *)
-          let (eq,gt) = split compa.(i).(j) context in
+          let (eq,gt) = context#expand_pair compa.(i).(j) in
           (* if $x_i$ and $y_j$ are equally-compared, then $x_i \sim y_j$ must hold. *)
           context#add_assertion (Not c.(i).(j) |^ Not e.(i) |^ eq);
           (* if $x_i$ and $y_j$ are inequally-compared, then $x_i > y_j$ must hold. *)
