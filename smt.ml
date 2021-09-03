@@ -525,11 +525,7 @@ and (=^) e1 e2 =
 		match e1, e2 with
 		| LB b1, _ -> if b1 then e2 else smt_not e2
 		| _, LB b2 -> if b2 then e1 else smt_not e1
-		| LI i1, LI i2	-> LB (i1 = i2)
-		| LR r1, LR r2	-> LB (r1 = r2)
 		| Not e1, Not e2 -> e1 =^ e2
-		| Nil, Nil -> LB true
-		| EV v1, EV v2 when v1 = v2 -> LB true
 		| Ge(l1,r1),Ge(l2,r2) when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true -> LB true
 		| Gt(l1,r1),Gt(l2,r2) when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true -> LB true
 		| Eq(l1,r1),Eq(l2,r2)
@@ -641,6 +637,9 @@ let (<>^) e1 e2 = smt_not (e1 =^ e2)
 let (<=^) e1 e2 = e2 >=^ e1
 let (<^) e1 e2 = e2 >^ e1
 
+let (-^) e1 e2 =
+	if is_zero e2 then e1 else Sub(e1,e2)
+
 let (/^) e1 e2 =
 	if e1 = LI 0 || e2 = LI 1 then e1
 	else Div(e1,e2)
@@ -649,8 +648,7 @@ let smt_xor e1 e2 =
 	match e1, e2 with
 	| LB b, _ -> if b then smt_not e2 else e2
 	| _, LB b -> if b then smt_not e1 else e1
-	| _ ->
-		match e1 =^ e2 with LB b -> LB (not b) | _ -> Xor(e1,e2)
+	| _ -> match e1 =^ e2 with LB b -> LB (not b) | _ -> Xor(e1,e2)
 
 let smt_conjunction = List.fold_left (&^) (LB true)
 let smt_disjunction = List.fold_left (|^) (LB false)
@@ -684,7 +682,6 @@ let smt_cdr =
 ;;
 
 class virtual context p =
-
 	object (x:'t)
 		inherit [exp,dec] base p
 
@@ -769,25 +766,6 @@ class virtual context p =
 			match x#expand e1 with
 			| LB false	-> LB true
 			| e1		-> e1 =>^ x#expand e2
-
-		method private expand_xor e1 e2 =
-			smt_xor (x#expand e1) (x#expand e2)
-
-		method private expand_eq e1 e2 =
-			let e1 = x#expand e1 in
-			let e2 = x#expand e2 in
-			match e1, e2 with
-			| If(c,t,e,p), e2 when is_simple e2 -> smt_pre_if c (smt_not c) (t =^ e2) (e =^ e2)
-			| e1, If(c,t,e,p) when is_simple e1 -> smt_pre_if c (smt_not c) (e1 =^ t) (e1 =^ e)
-			| _ -> e1 =^ e2
-
-		method private expand_ge e1 e2 = x#expand e1 >=^ x#expand e2
-
-		method private expand_gt e1 e2 = x#expand e1 >^ x#expand e2
-
-		method private expand_add e1 e2 = x#expand e1 +^ x#expand e2
-
-		method private expand_sub e1 e2 = Sub (x#expand e1, x#expand e2)
 
 		method private linearize_add e1 e2 =
 			match x#linearize e1, x#linearize e2 with
@@ -934,20 +912,20 @@ class virtual context p =
 			| LR r -> LR r
 			| And(e1,e2)	-> x#expand_and e1 e2
 			| Or(e1,e2)	 -> x#expand_or e1 e2
-			| Xor(e1,e2)	-> x#expand_xor e1 e2
+			| Xor(e1,e2)	-> smt_xor (x#expand e1) (x#expand e2)
 			| Imp(e1,e2)	-> x#expand_imp e1 e2
 			| Not(e)		-> smt_not (x#expand e)
-			| Add(e1,e2)	-> x#expand_add e1 e2
-			| Sub(e1,e2)	-> x#expand_sub e1 e2
+			| Add(e1,e2)	-> x#expand e1 +^ x#expand e2
+			| Sub(e1,e2)	-> x#expand e1 -^ x#expand e2
 			| Mul(e1,e2)	-> x#expand_mul e1 e2
 			| Div(e1,e2)	-> x#expand e1 /^ x#expand e2
 			| Mod(e1,e2)	-> smt_mod (x#expand e1) (x#expand e2)
 			| Max es		-> x#expand_max es
-			| Eq(e1,e2)	 -> x#expand_eq e1 e2
-			| Ge(e1,e2)	 -> x#expand_ge e1 e2
-			| Gt(e1,e2)	 -> x#expand_gt e1 e2
-			| Le(e1,e2)	 -> x#expand_ge e2 e1
-			| Lt(e1,e2)	 -> x#expand_gt e2 e1
+			| Eq(e1,e2)	 -> x#expand e1 =^ x#expand e2
+			| Ge(e1,e2)	 -> x#expand e1 >=^ x#expand e2
+			| Gt(e1,e2)	 -> x#expand e1 >^ x#expand e2
+			| Le(e1,e2)	 -> x#expand e1 <=^ x#expand e2
+			| Lt(e1,e2)	 -> x#expand e1 <^ x#expand e2
 			| ForAll(ds,e)	->
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
@@ -1147,18 +1125,15 @@ class virtual smt_lib_2_0 p =
 				x#puts " () ";
 				x#pr_ty ty;
 				x#puts " ";
-				if	match e with
-					| Or(_,_) -> true
-					| And(_,_)	-> true
-					| Imp(_,_)	-> true
-					| _ -> false
-				then begin
+				if ty = Bool then begin
 					x#endl;
 					x#enter 2;
 					x#pr_e e;
 					x#leave 2;
 				end else begin
+					x#enter_inline;
 					x#pr_e e;
+					x#leave_inline;
 				end;
 				x#puts ")";
 				x#endl;
