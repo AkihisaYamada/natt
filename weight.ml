@@ -214,62 +214,10 @@ let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
 
 let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_range s << putc '>'
 
-let cw_op =
-	let sub (c1,w1) (c2,ws) = match c1 &^ c2 with LB false -> None | c -> Some (c, w1 :: ws) in
-	fun f cws -> List.map (fun (c,ws) -> (c, f ws)) (list_product_fold_filter sub cws [(LB true,[])])
-
-let expand_cond : 'a. 'a t -> (exp * 'a t) list =
-	let rec sub c w =
-		if c = LB false then []
-		else match w with
-		| BVar(_,_) | Smt _ -> [(c,w)]
-		| Max ws -> cw_op (fun ws -> max ws) (List.map (sub c) ws)
-		| Sum ws -> cw_op (fun ws -> sum ws) (List.map (sub c) ws)
-		| Prod ws -> cw_op (fun ws -> prod ws) (List.map (sub c) ws)
-		| Cond(c1,w1,w2) -> sub (c &^ c1) w1 @ sub (c &^ smt_not c1) w2
-	in fun w -> sub (LB true) w
-
 let put_cws var cws =
 	puts "{ " <<
 	put_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n	") (puts "??") cws <<
 	puts "}"
-
-let rec maxable e =
-	match e with
-	| LI _ | LR _ -> true
-	| If(c,t,e,_) -> maxable t && maxable e
-	| _ -> false
-
-let rec simple_max e1 e2 =
-	match e1, e2 with
-	| LI i1, LI i2 -> LI(Stdlib.max i1 i2)
-	| LR r1, LR r2 -> LR(Stdlib.max r1 r2)
-	| If(c,t,e,f), _ -> If(c, simple_max t e2, simple_max e e2, f)
-	| _, If(c,t,e,f) -> If(c, simple_max e1 t, simple_max e1 e, f)
-	| _ -> Nil
-
-let expand_max =
-	let rec sub w = sub_max [] [w]
-	and sub_max acc ws =
-		match ws with
-		| [] -> acc
-		| Max ws1 :: ws -> sub_max acc (ws1 @ ws)
-		| Sum ws1 :: ws -> sub_max (sub_sum ws1 @ acc) ws
-		| Prod ws1 :: ws -> sub_max (sub_prod ws1 @ acc) ws
-		| Smt e :: ws when maxable e -> sub_max2 e acc ws
-		| w :: ws -> sub_max (w :: acc) ws
-	and sub_max2 e acc ws =
-		match ws with
-		| [] -> Smt e :: acc
-		| Max ws1 :: ws -> sub_max2 e acc (ws1 @ ws)
-		| Sum ws1 :: ws -> sub_max2 e (sub_sum ws1 @ acc) ws
-		| Prod ws1 :: ws -> sub_max2 e (sub_prod ws1 @ acc) ws
-		| Smt e1 :: ws when maxable e1 -> sub_max2 (simple_max e e1) acc ws
-		| w :: ws -> sub_max2 e (w::acc) ws
-	and sub_sum ws = List.map (fun ws -> sum ws) (list_product (List.map sub ws))
-	and sub_prod ws = (* This works only if monotonicity is ensured *)
-		List.map (fun ws -> prod ws) (list_product (List.map sub ws))
-	in sub
 
 (* A polynomial is represented by a map. *)
 module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
