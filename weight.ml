@@ -7,21 +7,22 @@ open Params
 open Io
 open Strategy
 
-type 'a t =
+type 'a template =
 | BVar of 'a * range
 | Smt of exp
-| Prod of 'a t list
-| Sum of 'a t list
-| Max of 'a t list
-| Cond of exp * 'a t * 'a t
+| Prod of 'a template list
+| Sum of 'a template list
+| Max of 'a template list
+| Cond of exp * 'a template * 'a template
 
-let zero_w = Smt (LI 0)
-let one_w = Smt (LI 1)
+let zero_template = Smt (LI 0)
 
-let sum =
+let one_template = Smt (LI 1)
+
+let sum_template =
 	let rec sub acc ws =
 		match ws with
-		| [] -> (match acc with [] -> zero_w | [w] -> w | _ -> Sum acc)
+		| [] -> (match acc with [] -> zero_template | [w] -> w | _ -> Sum acc)
 		| Smt e :: ws -> sub2 e acc ws
 		| Sum ws1 :: ws -> sub acc (ws1 @ ws)
 		| w :: ws -> sub (w::acc) ws
@@ -33,22 +34,22 @@ let sum =
 		| w :: ws -> sub2 e (w::acc) ws
 	in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
-let prod =
+let prod_template =
 	let rec sub acc ws =
 		match ws with
-		| [] -> (match acc with [] -> one_w | [w] -> w | _ -> Prod acc)
-		| Smt e :: ws -> if is_zero e then zero_w else sub2 e acc ws
+		| [] -> (match acc with [] -> one_template | [w] -> w | _ -> Prod acc)
+		| Smt e :: ws -> if is_zero e then zero_template else sub2 e acc ws
 		| Prod ws1 :: ws -> sub acc (ws1 @ ws)
 		| w :: ws -> sub (w::acc) ws
 	and sub2 e acc ws =
 		match ws with
 		| [] -> (match acc with [] -> Smt e | _ -> Prod (Smt e::acc))
-		| Smt e1 :: ws -> if is_zero e1 then zero_w else sub2 (e *^ e1) acc ws
+		| Smt e1 :: ws -> if is_zero e1 then zero_template else sub2 (e *^ e1) acc ws
 		| Prod ws1 :: ws -> sub2 e acc (ws1 @ ws)
 		| w :: ws -> sub2 e (w::acc) ws
 	in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
-let max =
+let max_template =
 	let rec sub acc ws =
 		match ws with
 		| [] -> (match acc with [w] -> w | _ -> Max acc)
@@ -56,14 +57,14 @@ let max =
 		| w :: ws -> sub (w :: acc) ws
 	in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
-let eval_w solver =
+let eval_template solver =
 	let rec sub w =
 		match w with
 		| BVar(_,_) -> w
 		| Smt e -> Smt (solver#get_value e)
-		| Prod ws -> prod (List.map sub ws)
-		| Sum ws -> sum (List.map sub ws)
-		| Max ws -> max (remdups (List.map sub ws))
+		| Prod ws -> prod_template (List.map sub ws)
+		| Sum ws -> sum_template (List.map sub ws)
+		| Max ws -> max_template (remdups (List.map sub ws))
 		| Cond(e,w1,w2) -> (
 				match solver#get_value e with
 				| LB b -> sub (if b then w1 else w2)
@@ -72,9 +73,9 @@ let eval_w solver =
 	in
 	fun w -> sub w
 
-let eval_vec solver = Array.map (eval_w solver)
+let eval_template_vec solver = Array.map (eval_template solver)
 
-let eq_0_w =
+let eq_0_template =
 	let rec sub w =
 		match w with
 		| BVar(_,_) -> LB false (* incomplete *)
@@ -85,7 +86,7 @@ let eq_0_w =
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	in sub
 
-let eq_1_w =
+let eq_1_template =
 	let rec sub w =
 		match w with
 		| BVar(_,_) -> LB false (* incomplete *)
@@ -97,10 +98,10 @@ let eq_1_w =
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_0_w ws) |^ (eq_0_w w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_sum ws)
 	in sub
 
-let ge_0_w =
+let ge_0_template =
 	let rec sub w =
 		match w with
 		| BVar(_,Pos) | BVar(_,Bool) -> LB true
@@ -113,7 +114,7 @@ let ge_0_w =
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	in sub
 
-let ge_1_w =
+let ge_1_template =
 	let rec sub w =
 		match w with
 		| BVar(_,_) -> LB false (* incomplete *)
@@ -124,21 +125,21 @@ let ge_1_w =
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all ge_0_w ws) |^ (ge_0_w w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_for_all ge_0_template ws) |^ (ge_0_template w &^ sub_sum ws)
 	in sub
 
-let const_on_w x =
+let const_on_template x =
 	let rec sub w =
 		match w with
 		| BVar(v,_) -> LB (x <> v)
 		| Smt e -> LB true
-		| Prod ws -> smt_for_all sub ws |^ smt_exists eq_0_w ws
+		| Prod ws -> smt_for_all sub ws |^ smt_exists eq_0_template ws
 		| Sum ws -> smt_for_all sub ws
 		| Max ws -> smt_for_all sub ws
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	in sub
 
-let is_var_w x =
+let is_var_template x =
 	let rec sub w =
 		match w with
 		| BVar(v,_) -> LB(x = v)
@@ -150,18 +151,18 @@ let is_var_w x =
 	and sub_prod ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_1_w ws) |^ (eq_1_w w &^ sub_prod ws)
+		| w::ws -> (sub w &^ smt_for_all eq_1_template ws) |^ (eq_1_template w &^ sub_prod ws)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_0_w ws) |^ (eq_0_w w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_sum ws)
 	and sub_max ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_0_w ws) |^ (eq_0_w w &^ sub_max ws)
+		| w::ws -> (sub w &^ smt_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_max ws)
 	in sub
 
-let weak_simple_on_w x =
+let weak_simple_on_template x =
 	let rec sub w =
 		match w with
 		| BVar(v,_) -> LB(x = v)
@@ -173,14 +174,14 @@ let weak_simple_on_w x =
 	and sub_prod ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all ge_1_w ws) |^ (ge_1_w w &^ sub_prod ws)
+		| w::ws -> (sub w &^ smt_for_all ge_1_template ws) |^ (ge_1_template w &^ sub_prod ws)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all ge_0_w ws) |^ (ge_0_w w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_for_all ge_0_template ws) |^ (ge_0_template w &^ sub_sum ws)
 	in sub
 
-let put_w var : 'a t -> #printer -> unit =
+let put_template var : 'a template -> #printer -> unit =
 	let paren l l' m = if l <= l' then m else putc '(' << m << putc ')' in
 	let rec sub l w =
 		match w with
@@ -204,7 +205,8 @@ let put_w var : 'a t -> #printer -> unit =
 	in
 	fun w os -> (sub 0 w) os
 
-let put_vec var wa = puts "(" << put_list (put_w var) (puts ", ") (puts "-") (Array.to_list wa) << puts ")"
+let put_template_vec var wa =
+	puts "(" << put_list (put_template var) (puts ", ") (puts "-") (Array.to_list wa) << puts ")"
 
 let put_range s = puts (
 	match s with Full -> "full" | Pos -> "pos" | Neg -> "neg" | Bool -> "bool"
@@ -213,11 +215,6 @@ let put_range s = puts (
 let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
 
 let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_range s << putc '>'
-
-let put_cws var cws =
-	puts "{ " <<
-	put_list (fun (c,w) -> put_exp c << puts "\t:--> " << put_w var w) (puts "\n	") (puts "??") cws <<
-	puts "}"
 
 (* A polynomial is represented by a map. *)
 module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
@@ -430,7 +427,7 @@ type pos_info = {
 	weak_simple : exp;
 }
 type sym_info = {
-	encodings : (int * int) t array;
+	encodings : (int * int) template array;
 	pos_info : pos_info array;
 }
 
@@ -516,12 +513,12 @@ class interpreter p =
 							)
 						| Strategy.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
 						| Strategy.Const n -> Smt(LI n)
-						| Strategy.Prod ts -> prod(List.map (sub k) ts)
-						| Strategy.Sum ts -> sum(List.map (sub k) ts)
-						| Strategy.Max ts -> max(List.map (sub k) ts)
-						| Strategy.ProdArgs t -> prod(List.map (fun l -> sub l t) to_n)
-						| Strategy.SumArgs t -> sum(List.map (fun l -> sub l t) to_n)
-						| Strategy.MaxArgs t -> max(List.map (fun l -> sub l t) to_n)
+						| Strategy.Prod ts -> prod_template (List.map (sub k) ts)
+						| Strategy.Sum ts -> sum_template (List.map (sub k) ts)
+						| Strategy.Max ts -> max_template (List.map (sub k) ts)
+						| Strategy.ProdArgs t -> prod_template (List.map (fun l -> sub l t) to_n)
+						| Strategy.SumArgs t -> sum_template (List.map (fun l -> sub l t) to_n)
+						| Strategy.MaxArgs t -> max_template (List.map (fun l -> sub l t) to_n)
 						| Strategy.Heuristic1(t1,t2) -> sub k (if heu#sym_mode f#name then t2 else t1)
 						| Strategy.ArityChoice fn -> sub k (fn n)
 				in
@@ -532,10 +529,10 @@ class interpreter p =
 						List.map (fun k ->
 							{
 								const = smt_for_all (fun i ->
-									smt_for_all (fun j -> const_on_w (k,i) vec.(j)) to_dim
+									smt_for_all (fun j -> const_on_template(k,i) vec.(j)) to_dim
 								) to_dim;
-								just = smt_for_all (fun i -> is_var_w (k,i) vec.(i)) to_dim;
-								weak_simple = smt_for_all (fun i -> weak_simple_on_w (k,i) vec.(i)) to_dim;
+								just = smt_for_all (fun i -> is_var_template(k,i) vec.(i)) to_dim;
+								weak_simple = smt_for_all (fun i -> weak_simple_on_template(k,i) vec.(i)) to_dim;
 							}
 						) (int_list 0 (f#arity - 1))
 					);
@@ -568,7 +565,7 @@ class interpreter p =
 		method private encode_sym : 'f. (#sym as 'f) -> _ =
 			fun f -> (x#find f).encodings
 
-		method interpret : 'f. (#sym as 'f) -> cmpoly array list -> cmpoly array =
+		method private interpret : 'f. (#sym as 'f) -> cmpoly array list -> cmpoly array =
 			fun f vs ->
 			let subst = Array.of_list vs in
 			let rec sub w =
@@ -590,10 +587,10 @@ class interpreter p =
 			WT(f, ts, refer_vec solver vec)
 
 		method output_sym : 't 'f 'o. (#solver as 't) -> (#Trs.sym_detailed as 'f) -> (#printer as 'o) -> unit =
-			fun solver f os -> put_vec put_arg (eval_vec solver (x#encode_sym f)) os;
+			fun solver f os -> put_template_vec put_arg (eval_template_vec solver (x#encode_sym f)) os;
 
 		method output_sym_template : 'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
-			fun f -> f#output << puts ": " << put_vec put_arg (x#encode_sym f)
+			fun f -> f#output << puts ": " << put_template_vec put_arg (x#encode_sym f)
 	end
 
 
