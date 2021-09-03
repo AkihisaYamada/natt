@@ -120,7 +120,7 @@ let very_simple e =
 let rec is_simple_conj e =
 	very_simple e ||
 	match e with
-	| Add(e1,e2) -> is_simple_conj e1 && is_simple_conj e2
+	| And(e1,e2) -> is_simple_conj e1 && is_simple_conj e2
 	| _ -> false
 let rec is_simple_disj e =
 	very_simple e ||
@@ -134,9 +134,7 @@ let rec is_simple_sum e =
 	| _ -> false
 let rec is_simple e =
 	very_simple e ||
-	is_simple_sum e ||
 	match e with
-	| If(c,t,e, _) -> is_simple_conj c && very_simple t && very_simple e
 	| Eq(e1,e2) -> very_simple e1 && very_simple e2
 	| Gt(e1,e2) -> very_simple e1 && very_simple e2
 	| Ge(e1,e2) -> very_simple e1 && very_simple e2
@@ -738,9 +736,8 @@ class virtual context p =
 			else
 				match e with
 					(* Impure formula will not be represented by a variable *)
-					(* We don't abstract If-condition *) 
 				| If(c,t,e,false) -> If(c, x#refer_sub ty t, x#refer_sub ty e, false)
-				| If(c,t,e,true) when very_simple t && very_simple e -> If(c,t,e,true)
+				| If(c,t,e,true) when very_simple c && very_simple t && very_simple e -> If(c,t,e,true)
 				| Cons(e1,e2) ->
 					(match ty with
 					 | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
@@ -795,13 +792,11 @@ class virtual context p =
 		method private linearize_add e1 e2 =
 			match x#linearize e1, x#linearize e2 with
 			| If(c,t,e,_), _ ->
-				let nc = smt_not c in
 				let e2 = x#refer_base e2 in
-				smt_pre_if c nc (x#linearize_add t e2) (x#linearize_add e e2)
+				smt_if c (x#linearize_add t e2) (x#linearize_add e e2)
 			| _, If(c,t,e,_) ->
-				let nc = smt_not c in
 				let e1 = x#refer_base e1 in
-				smt_pre_if c nc (x#linearize_add e1 t) (x#linearize_add e1 e)
+				smt_if c (x#linearize_add e1 t) (x#linearize_add e1 e)
 			| _ -> Add(e1,e2)
 
 		method private linearize_mul e1 e2 =
@@ -810,24 +805,24 @@ class virtual context p =
 			let e2 = x#linearize e2 in
 			if is_zero e2 then e2 else
 			match e1, e2 with
-			| If(c,t,e,_), _ when is_zero t ->
-				let nc = smt_not c in
-				smt_pre_if c nc t (x#linearize_mul e (simplify_under nc e2))
-			| If(c,t,e,_), _ when is_zero e ->
-				let nc = smt_not c in
-				smt_pre_if c nc (x#linearize_mul t (simplify_under c e2)) e
-			| _, If(c,t,e,_) when is_zero t ->
-				let nc = smt_not c in
-				smt_pre_if c nc t (x#linearize_mul (simplify_under nc e1) e)
-			| _, If(c,t,e,_) when is_zero e ->
-				let nc = smt_not c in
-				smt_pre_if c nc (x#linearize_mul (simplify_under nc e1) t) e
 			| If(c,t,e,_), _ ->
-				let e2 = x#refer_sub base_ty e2 in
-				smt_pre_if c (smt_not c) (x#linearize_mul t e2) (x#linearize_mul e e2)
+				let nc = smt_not c in
+				if is_zero t then
+					smt_pre_if c nc t (e *^ simplify_under nc e2)
+				else if is_zero e then
+					smt_pre_if c nc (t *^ simplify_under c e2) e
+				else
+					let e2 = x#refer_sub base_ty e2 in
+					smt_pre_if c nc (t *^ e2) (e *^ e2)
 			| _, If(c,t,e,_) ->
-				let e1 = x#refer_sub base_ty e1 in
-				smt_pre_if c (smt_not c) (x#linearize_mul e1 t) (x#linearize_mul e1 e)
+				let nc = smt_not c in
+				if is_zero t then
+					smt_pre_if c nc t (simplify_under nc e1 *^ e)
+				else if is_zero e then
+					smt_pre_if c nc (simplify_under nc e1 *^ t) e
+				else
+					let e1 = x#refer_sub base_ty e1 in
+					smt_pre_if c (smt_not c) (e1 *^ t) (e1 *^ e)
 			| _ -> Mul(e1,e2)
 
 		method private linearize_if c t e =
@@ -961,18 +956,18 @@ class virtual context p =
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
 				branch#close_exists e
-			| ZeroOne es	-> x#expand_zero_one es
-			| ES1 es		-> x#expand_es1 es
-			| AtMost1 es	-> x#expand_atmost1 es
-			| OD es		 -> x#expand_od es
-			| Car e		 -> x#expand_car e
-			| Cdr e		 -> x#expand_cdr e
+			| ZeroOne es -> x#expand_zero_one es
+			| ES1 es     -> x#expand_es1 es
+			| AtMost1 es -> x#expand_atmost1 es
+			| OD es      -> x#expand_od es
+			| Car e	     -> x#expand_car e
+			| Cdr e	     -> x#expand_cdr e
 			| Cons(e1,e2) -> Cons(x#expand e1,x#expand e2)
-			| Dup(ty,e)	 -> let e = x#refer ty e in Cons(e,e)
+			| Dup(ty,e)  -> let e = x#refer ty e in Cons(e,e)
 			| If(c,t,e,p) -> x#expand_if c t e
-			| App es		-> App(List.map x#expand es)
-			| Delay f	 -> x#expand_delay f
-			| e				 -> raise (Invalid_formula ("expand",e))
+			| App es  -> App(List.map x#expand es)
+			| Delay f -> x#expand_delay f
+			| e	      -> raise (Invalid_formula ("expand",e))
 	end
 and subcontext p =
 	object (x)

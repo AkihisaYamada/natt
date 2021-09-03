@@ -74,19 +74,6 @@ let eval_w solver =
 
 let eval_vec solver = Array.map (eval_w solver)
 
-let refer_w solver =
-	let rec sub w =
-		match w with
-		| BVar(_,_) -> w
-		| Smt e -> Smt (solver#refer_base e)
-		| Prod ws -> Prod (List.map sub ws)
-		| Sum ws -> Sum (List.map sub ws)
-		| Max ws -> Max (List.map sub ws)
-		| Cond(e,w1,w2) -> Cond(solver#refer Smt.Bool e, sub w1, sub w2)
-	in sub
-
-let refer_vec solver = Array.map (refer_w solver)
-
 let eq_0_w =
 	let rec sub w =
 		match w with
@@ -287,6 +274,8 @@ let expand_max =
 (* A polynomial is represented by a map. *)
 module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
 
+let zero_poly = Poly.empty
+
 let poly_coeff vs p =
 	match Poly.find_opt vs p with
 	| Some e -> e
@@ -296,7 +285,11 @@ let put_monom vs e os = put_exp e os; List.iter (fun v -> puts "*" os; put_svar 
 
 let put_poly p os = puts "SUM {" os; Poly.iter (fun vs e -> put_monom vs e os; os#puts ", ") p; putc '}' os
 
-let put_epoly ep = puts "max {" << put_list put_poly (puts ", ") nop ep << puts "}"
+let refer_poly solver = Poly.map solver#refer_base
+
+let var_poly v i r = Poly.singleton [(v,i,r)] (LI 1)
+
+let const_poly = Poly.singleton []
 
 let add_poly = Poly.union (fun vs e1 e2 -> Some (e1 +^ e2))
 
@@ -326,14 +319,9 @@ let mul_poly p1 p2 =
 
 let prod_poly = List.fold_left mul_poly (Poly.singleton [] (LI 1))
 
-let poly_of_w =
-	let rec sub w =
-		match w with
-		| BVar((v,i),s) -> Poly.singleton [(v,i,s)] (LI 1)
-		| Smt e -> Poly.singleton [] e
-		| Sum ws -> sum_poly (List.map sub ws)
-		| Prod ws -> prod_poly (List.map sub ws)
-	in sub
+let eq_0_poly p =
+	let folder vs1 e1 acc = acc &^ (e1 =^ LI 0) in
+	Poly.fold folder p (LB true)
 
 let ge_monom =
 	let rec sub flag vs = 
@@ -350,25 +338,13 @@ let ge_poly_merged =
 	let merger vs e1opt e2opt = Some(
 		match e1opt, e2opt with
 		| Some e1, Some e2 -> ge_monom vs e1 e2
-		| Some e1, None		-> ge_monom vs e1 (LI 0)
-		| None	 , Some e2 -> ge_monom vs (LI 0) e2
+		| Some e1, None    -> ge_monom vs e1 (LI 0)
+		| None   , Some e2 -> ge_monom vs (LI 0) e2
 		)
 	in
 	fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
 
 let ge_poly p1 p2 = smt_for_all (fun (vs,e) -> e) (ge_poly_merged p1 p2)
-
-let ge_max w1 w2 =
-	let ew1 = expand_max w1 in
-	let ew2 = expand_max w2 in
-	let ep1 = List.map poly_of_w ew1 in
-	let ep2 = List.map poly_of_w ew2 in
-	smt_for_all (fun p2 -> smt_exists (fun p1 -> ge_poly p1 p2) ep1) ep2
-
-let ge_w w1 w2 =
-	let cws1 = expand_cond w1 in
-	let cws2 = expand_cond w2 in
-	smt_conjunction (list_prod (fun(c1,w1) (c2,w2) -> (c1 &^ c2) =>^ ge_max w1 w2) cws1 cws2)
 
 let order_poly solver p1 p2 =
 	let pre = solver#refer Smt.Bool (smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_merged p1 p2)) in
@@ -378,11 +354,33 @@ let order_poly solver p1 p2 =
 	let gt = (e1 >^ e2) &^ pre in
 	(ge, gt)
 
-let order_max solver w1 w2 =
-	let ew1 = expand_max w1 in
-	let ew2 = expand_max w2 in
-	let ep1 = List.map poly_of_w ew1 in
-	let ep2 = List.map poly_of_w ew2 in
+(* Max Polynomials *)
+type mpoly = exp Poly.t list
+
+let bottom_mpoly = []
+
+let zero_mpoly = [zero_poly]
+
+let put_mpoly mp = puts "max {" << put_list put_poly (puts ", ") nop mp << puts "}"
+
+let refer_mpoly solver = List.map (refer_poly solver)
+
+let var_mpoly v i r = [var_poly v i r]
+
+let const_mpoly e = [const_poly e]
+
+let max_mpoly = List.concat
+
+let sum_mpoly mps : mpoly = List.map sum_poly (list_product mps)
+
+let prod_mpoly mps = List.map prod_poly (list_product mps)
+
+let eq_0_mpoly = smt_for_all eq_0_poly
+
+let ge_mpoly mp1 mp2 =
+	smt_for_all (fun p2 -> smt_exists (fun p1 -> ge_poly p1 p2) mp1) mp2
+
+let order_mpoly solver mp1 mp2 =
 	let (ge,gt) =
 		List.fold_left (fun (all_ge,all_gt) p2 ->
 			let (ge,gt) =
@@ -391,28 +389,69 @@ let order_max solver w1 w2 =
 					(ex_ge |^ ge, ex_gt |^ gt)
 				)
 				(LB false, LB false)
-				ep1
+				mp1
 			in
 			(all_ge &^ ge, all_gt &^ gt)
 		)
 		(LB true, LB true)
-		ep2
+		mp2
 	in
 	(ge,gt)
 
-let order_w solver w1 w2 =
-	let cws1 = expand_cond w1 in
-	let cws2 = expand_cond w2 in
-	let ords = list_prod_filter (fun (c1,w1) (c2,w2) ->
+(* Conditioned Max Polynomials *)
+type cmpoly = (exp * mpoly) list
+
+let bottom_cmpoly = [(LB true, bottom_mpoly)]
+
+let zero_cmpoly = [(LB true, zero_mpoly)]
+
+let refer_cmpoly solver = List.map (fun (c,mp) -> (solver#refer Smt.Bool c, refer_mpoly solver mp))
+
+let var_cmpoly v i r = [(LB true, var_mpoly v i r)]
+
+let const_cmpoly e = [(LB true, const_mpoly e)]
+
+let cmps_op =
+	let sub (c1,mp1) (c2,mps) = match c1 &^ c2 with LB false -> None | c -> Some (c, mp1 :: mps) in
+	fun f cmps -> List.map (fun (c,mps) -> (c, f mps)) (list_product_fold_filter sub cmps [(LB true,[])])
+
+let sum_cmpoly = cmps_op sum_mpoly
+
+let prod_cmpoly = cmps_op prod_mpoly
+
+let max_cmpoly = cmps_op max_mpoly
+
+let cond_cmpoly c cmp1 cmp2 =
+	let sub1 (d,mp) = match c &^ d with LB false -> None | d -> Some (d,mp) in
+	let nc = smt_not c in
+	let sub2 (d,mp) = match nc &^ d with LB false -> None | d -> Some (d,mp) in
+	List.filter_map sub1 cmp1 @ List.filter_map sub2 cmp2
+
+let eq_0_cmpoly = smt_for_all (fun (c,mp) -> c =>^ eq_0_mpoly mp) 
+
+let ge_cmpoly cmp1 cmp2 =
+	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ ge_mpoly mp1 mp2) cmp1 cmp2)
+
+let order_cmpoly solver cmp1 cmp2 =
+	let ords = list_prod_filter (fun (c1,mp1) (c2,mp2) ->
 			match c1 &^ c2 with
 			| LB false -> None
 			| c ->
-				let (ge,gt) = order_max solver w1 w2 in Some (c =>^ ge, c =>^ gt)
-		) cws1 cws2
+				let (ge,gt) = order_mpoly solver mp1 mp2 in Some (c =>^ ge, c =>^ gt)
+		) cmp1 cmp2
 	in
 	let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
 	let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
 	(ge,gt)
+
+(* Vectors *)
+let zero_vec dim = Array.make dim (zero_cmpoly)
+
+let refer_vec solver = Array.map (refer_cmpoly solver)
+
+let smult e = Array.map (fun cmp -> prod_cmpoly [const_cmpoly e; cmp])
+
+let add_vec v1 v2 = Array.mapi (fun i w1 -> sum_cmpoly [w1; v2.(i)]) v1
 
 let order_vec param solver =
 	let tmps = param.w_templates in
@@ -426,19 +465,16 @@ let order_vec param solver =
 				let w2 = v2.(i) in
 				match mode with
 				| O_strict ->
-					let (ge,gt) = order_w solver w1 w2 in
+					let (ge,gt) = order_cmpoly solver w1 w2 in
 					(i+1, ge_rest &^ ge, gt_rest &^ gt)
 				| O_weak ->
-					(i+1, ge_rest &^ ge_w w1 w2, gt_rest)
+					(i+1, ge_rest &^ ge_cmpoly w1 w2, gt_rest)
 				| O_strict_or_bottom ->
-					let (ge,gt) = order_w solver w1 w2 in
-					(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_w w2))
+					let (ge,gt) = order_cmpoly solver w1 w2 in
+					(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_cmpoly w2))
 				) (0, LB true, LB true) tmps
 			in Cons(ge,gt)
 		)
-
-let smult e = Array.map (fun w -> prod [Smt e; w])
-let add v1 v2 = Array.mapi (fun i w1 -> sum [w1; v2.(i)]) v1
 
 type pos_info = {
 	const : exp;
@@ -584,22 +620,22 @@ class interpreter p =
 		method private encode_sym : 'f. (#sym as 'f) -> _ =
 			fun f -> (x#find f).encodings
 
-		method interpret : 'f. (#sym as 'f) -> (string * int) t array list -> (string * int) t array =
+		method interpret : 'f. (#sym as 'f) -> cmpoly array list -> cmpoly array =
 			fun f vs ->
 			let subst = Array.of_list vs in
 			let rec sub w =
 				match w with
-				| Smt e -> Smt e
+				| Smt e -> const_cmpoly e
 				| BVar((k,i),s) -> subst.(k).(i)
-				| Max ws -> max (List.map sub ws)
-				| Sum ws -> sum (List.map sub ws)
-				| Prod ws -> prod (List.map sub ws)
-				| Cond(e,w1,w2) -> Cond(e, sub w1, sub w2)
+				| Max ws -> max_cmpoly (List.map sub ws)
+				| Sum ws -> sum_cmpoly (List.map sub ws)
+				| Prod ws -> prod_cmpoly (List.map sub ws)
+				| Cond(e,w1,w2) -> cond_cmpoly e (sub w1) (sub w2)
 			in
-			if f#is_var then Array.init dim (fun i -> BVar((f#name,i), range_of_coord i))
+			if f#is_var then Array.init dim (fun i -> var_cmpoly f#name i (range_of_coord i))
 			else Array.map sub (x#encode_sym f)
 
-		method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, (string * int) t array) wterm =
+		method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, cmpoly array) wterm =
 			fun solver (Node(f,ss)) ->
 			let ts = List.map (x#annotate solver) ss in
 			let vec = x#interpret f (List.map get_weight ts) in

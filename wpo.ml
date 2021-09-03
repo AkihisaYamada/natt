@@ -784,9 +784,9 @@ object (x)
       let folder acc coeff r =
         let w = get_weight (interpreter#annotate solver r) in
         let w = Weight.smult (LI coeff) w in
-        Weight.add acc w
+        Weight.add_vec acc w
       in
-      let rw = prule#fold_rs folder (Array.make dim Weight.zero_w) in
+      let rw = prule#fold_rs folder (Weight.zero_vec dim) in
       let (ge,gt) = split (wo lw rw) solver in
       if p.remove_all then begin
         solver#add_assertion gt;

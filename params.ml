@@ -119,7 +119,7 @@ let i = ref 1 in
 let erro str = err ("unknown option: " ^ str ^ "!") in
 let safe_atoi s arg = (try int_of_string s with _ -> erro arg) in
 let strategy_str = ref "" in
-let strategy_file = ref "default.xml" in
+let strategy_file = ref "" in
 let default_smt = ref Smt.z3_params in
 while !i < argc do
   let arg = argv.(!i) in
