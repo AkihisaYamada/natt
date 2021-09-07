@@ -1,12 +1,11 @@
+BUILD=_build
 TARG=bin/NaTT
 TARG_OPT=bin/NaTT.exe
 PACKS=unix,str,re,ocamlgraph,xml-light
-OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg
-OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg
+OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg -I $(BUILD)
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg -I $(BUILD)
 OCAMLDEP=ocamldep
-OCAMLYACC=ocamlyacc
-OCAMLLEX=ocamllex
-OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool"
+OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool" -I $(BUILD)
 
 # The list of ocaml source files
 OCAML_SRCS=\
@@ -18,12 +17,12 @@ OCAML_SRCS=\
 	proc.ml \
 	smt.ml \
 	strategy.ml \
-	params.ml \
 	preorder.ml \
 	mset.ml \
 	abbrev.ml \
 	sym.ml \
 	term.ml \
+	params.ml \
 	subst.ml \
 	trs.ml \
 	estimator.ml \
@@ -36,11 +35,11 @@ OCAML_SRCS=\
 	nonterm.ml \
 	main.ml
 
-OCAML_MLS=$(patsubst %.mll,%.ml,$(OCAML_SRCS:%.mly=%.ml))
+OCAML_MLS=$(OCAML_SRCS)
 
-OCAML_CMOS=$(OCAML_MLS:%.ml=%.cmo)
+OCAML_CMOS=$(OCAML_MLS:%.ml=$(BUILD)/%.cmo)
 
-OCAML_CMXS=$(OCAML_MLS:%.ml=%.cmx)
+OCAML_CMXS=$(OCAML_MLS:%.ml=$(BUILD)/%.cmx)
 
 ## If you need a statically linked binary
 #OCAMLFLAGS= -cclib '-static'
@@ -61,24 +60,18 @@ $(TARG): $(OCAML_CMOS)
 # Common rules
 .SUFFIXES: .ml .mli .cmo .cmi .cmx .mll .mly
 
-.ml.cmo:
-	$(OCAMLC) $(OCAMLFLAGS) -c $<
+$(BUILD)/%.cmo: %.ml
+	$(OCAMLC) $(OCAMLFLAGS) -o $@ -c $<
 
-.mli.cmi:
-	$(OCAMLC) $(OCAMLFLAGS) -c $<
+$(BUILD)/%.cmi: %.mli
+	$(OCAMLC) $(OCAMLFLAGS) -o $@ -c $<
 
-.ml.cmx:
-	$(OCAMLOPT) $(OCAMLOPTFLAGS) -c $<
-
-.mly.ml:
-	$(OCAMLYACC) $<
-
-.mll.ml:
-	$(OCAMLLEX) $<
+$(BUILD)/%.cmx: %.ml
+	$(OCAMLOPT) $(OCAMLOPTFLAGS) -o $@ -c $<
 
 # Clean up
 clean:
-	rm -f $(TARG) $(TARG_OPT) *.cm[iox] *.o *.mli .depend
+	rm -f $(TARG) $(TARG_OPT) $(BUILD)/*.{cm[iox],o,mli} .depend
 
 # Consistency test
 test: $(TARG_OPT)
