@@ -33,13 +33,6 @@ type mode =
 | MODE_xml
 | MODE_infeasibility of (Sym.sym term * Sym.sym term) list
 
-(* checks monotonicity *)
-let nonmonotone p =
-  p.dp ||
-  p.collapse ||
-  p.status_mode = S_partial ||
-  p.status_mode = S_empty && p.prec_mode <> PREC_none
-
 type params_type = {
   mutable mode : mode;
   mutable file : string;

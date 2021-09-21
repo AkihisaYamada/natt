@@ -2,7 +2,7 @@ open Util
 open Txtr
 open Io
 
-type range = Pos | Bool | Full | Neg
+type range = Pos | Bool | Full | Neg | Arctic
 
 type template =
 | Const of int
@@ -112,6 +112,7 @@ let rec exp_element xmls = (
 	element "sum" (many exp_element >>= fun ss -> return (Sum ss)) <|>
 	element "prod" (many exp_element >>= fun ss -> return (Prod ss)) <|>
 	element "max" (many ~minOccurs:1 exp_element >>= fun ss -> return (Max ss)) <|>
+	element "bot" (return (Max [])) <|>
 	element "min" (many ~minOccurs:1 exp_element >>= fun ss -> return (Min ss)) <|>
 	element "var" (range_attribute >>= fun r -> return (Var r)) <|>
 	element "choice" (many ~minOccurs:1 exp_element >>= fun ss -> return (Choice ss)) <|>
@@ -217,7 +218,15 @@ type order_params = {
 	remove_all : bool;
 	use_scope : bool;
 	use_scope_ratio : int;
+	negcoeff : bool;
 }
+
+(* checks monotonicity *)
+let nonmonotone p =
+  p.dp ||
+  p.collapse ||
+  p.status_mode = S_partial ||
+  p.status_mode = S_empty && p.prec_mode <> PREC_none
 
 let order_params smt dp prec status collapse usable (w_name,w_templates) = {
 	smt_params = smt;
@@ -240,6 +249,30 @@ let order_params smt dp prec status collapse usable (w_name,w_templates) = {
 	remove_all = false;
 	use_scope = true;
 	use_scope_ratio = 0;
+	negcoeff = false;
+}
+let order_HM04_params smt w_template = {
+	smt_params = smt;
+	dp = true;
+	w_name = "HM04";
+	w_templates = Array.make 1 (Pos,O_strict,w_template);
+	prec_mode = PREC_none;
+	status_mode = S_empty;
+	status_nest = 0;
+	status_copy = false;
+	ext_lex = false;
+	ext_mset = false;
+	collapse = false;
+	usable = true;
+	usable_w = false;
+	mincons = false;
+	maxcons = false;
+	ac_w = true;
+	strict_equal = false;
+	remove_all = false;
+	use_scope = true;
+	use_scope_ratio = 0;
+	negcoeff = true;
 }
 
 let put_order p =
@@ -285,6 +318,11 @@ let order_element default_smt mono =
 			weight_element (mono && status = S_empty) (status = S_none || status = S_total)
 		) >>= fun weight ->
 		return (order_params smt (not mono) prec status collapse usable weight)
+	) <|>
+	element "HM04" (
+		default default_smt Smt.params_of_xml >>= fun smt ->
+		exp_seq >>= fun s ->
+		return (order_HM04_params smt s)
 	)
 
 let strategy_element default_smt =

@@ -122,6 +122,7 @@ let ge_1_template =
 		| Prod ws -> smt_for_all sub ws
 		| Sum ws -> sub_sum ws
 		| Max ws -> smt_exists sub ws
+		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
@@ -268,18 +269,28 @@ let eq_0_poly p =
 	let folder vs1 e1 acc = acc &^ (e1 =^ LI 0) in
 	Poly.fold folder p (LB true)
 
-let ge_monom =
-	let rec sub flag vs = 
-		match vs with
-		| [] -> if flag then (>=^) else (<=^)
-		| (v,i,s) :: vs ->
-			match s with
-			| Full -> (=^)
-			| Pos | Bool -> sub flag vs
-			| Neg -> sub (not flag) vs
-	in sub true
+let eq_poly =
+	let merger vs e1opt e2opt = Some(
+		match e1opt, e2opt with
+		| Some e1, Some e2 -> e1 =^ e2
+		| Some e1, None    -> e1 =^ LI 0
+		| None   , Some e2 -> LI 0 =^ e2
+		)
+	in
+	fun p1 p2 -> smt_for_all (fun (vs,e) -> e) Poly.(bindings (merge merger p1 p2))
 
-let ge_poly_merged =
+let ge_poly_coeffs =
+	let ge_monom =
+		let rec sub flag vs = 
+			match vs with
+			| [] -> if flag then (>=^) else (<=^)
+			| (v,i,s) :: vs ->
+				match s with
+				| Full -> (=^)
+				| Pos | Bool -> sub flag vs
+				| Neg -> sub (not flag) vs
+		in sub true
+	in
 	let merger vs e1opt e2opt = Some(
 		match e1opt, e2opt with
 		| Some e1, Some e2 -> ge_monom vs e1 e2
@@ -289,10 +300,10 @@ let ge_poly_merged =
 	in
 	fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
 
-let ge_poly p1 p2 = smt_for_all (fun (vs,e) -> e) (ge_poly_merged p1 p2)
+let ge_poly p1 p2 = smt_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
 
 let order_poly solver p1 p2 =
-	let pre = solver#refer Smt.Bool (smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_merged p1 p2)) in
+	let pre = solver#refer Smt.Bool (smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2)) in
 	let e1 = poly_coeff [] p1 in
 	let e2 = poly_coeff [] p2 in
 	let ge = (e1 >=^ e2) &^ pre in
@@ -321,6 +332,10 @@ let sum_mpoly mps : mpoly = List.map sum_poly (list_product mps)
 let prod_mpoly mps = List.map prod_poly (list_product mps)
 
 let eq_0_mpoly = smt_for_all eq_0_poly
+
+let eq_mpoly mp1 mp2 =
+	smt_for_all (fun p2 -> smt_exists (fun p1 -> eq_poly p1 p2) mp1) mp2 &^
+	smt_for_all (fun p1 -> smt_exists (fun p2 -> eq_poly p1 p2) mp2) mp1
 
 let ge_mpoly mp1 mp2 =
 	smt_for_all (fun p2 -> smt_exists (fun p1 -> ge_poly p1 p2) mp1) mp2
@@ -374,6 +389,9 @@ let cond_cmpoly c cmp1 cmp2 =
 
 let eq_0_cmpoly = smt_for_all (fun (c,mp) -> c =>^ eq_0_mpoly mp) 
 
+let eq_cmpoly cmp1 cmp2 =
+	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ eq_mpoly mp1 mp2) cmp1 cmp2)
+
 let ge_cmpoly cmp1 cmp2 =
 	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ ge_mpoly mp1 mp2) cmp1 cmp2)
 
@@ -398,7 +416,10 @@ let smult e = Array.map (fun cmp -> prod_cmpoly [const_cmpoly e; cmp])
 
 let add_vec v1 v2 = Array.mapi (fun i w1 -> sum_cmpoly [w1; v2.(i)]) v1
 
-let order_vec param solver =
+let eq_vec param v1 v2 =
+	smt_for_all (fun i -> eq_cmpoly v1.(i) v2.(i)) (int_list 0 (Array.length param.w_templates - 1))
+
+let order_vec param =
 	let tmps = param.w_templates in
 	let dim = Array.length tmps in
 	if dim = 0 then fun _ _ -> weakly_ordered
@@ -494,33 +515,34 @@ class interpreter p =
 				let n = f#arity in
 				let to_n = int_list 0 (n-1) in
 				let rec sub k t =
-						match t with
-						| Strategy.Var Bool ->
-							let v = solver#temp_variable Smt.Bool in
-							Smt(smt_if v (LI 1) (LI 0))
-						| Strategy.Var r ->
-							let v = solver#temp_variable_base in
-							if r = Pos then solver#add_assertion (v >=^ LI 0)
-							else if r = Neg then solver#add_assertion (v <=^ LI 0);
-							Smt v
-						| Strategy.Choice [t1;t2] ->
-							let w1 = sub k t1 in
-							let w2 = sub k t2 in
-							let c = solver#temp_variable Smt.Bool in
-							( match w1, w2 with
-								| Smt e1, Smt e2 -> Smt(smt_if c e1 e2)
-								| _ -> Cond(c,w1,w2)
-							)
-						| Strategy.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
-						| Strategy.Const n -> Smt(LI n)
-						| Strategy.Prod ts -> prod_template (List.map (sub k) ts)
-						| Strategy.Sum ts -> sum_template (List.map (sub k) ts)
-						| Strategy.Max ts -> max_template (List.map (sub k) ts)
-						| Strategy.ProdArgs t -> prod_template (List.map (fun l -> sub l t) to_n)
-						| Strategy.SumArgs t -> sum_template (List.map (fun l -> sub l t) to_n)
-						| Strategy.MaxArgs t -> max_template (List.map (fun l -> sub l t) to_n)
-						| Strategy.Heuristic1(t1,t2) -> sub k (if heu#sym_mode f#name then t2 else t1)
-						| Strategy.ArityChoice fn -> sub k (fn n)
+					match t with
+					| Strategy.Var Bool ->
+						let v = solver#temp_variable Smt.Bool in
+						Smt(smt_if v (LI 1) (LI 0))
+					| Strategy.Var r ->
+						let v = solver#temp_variable_base in
+						if r = Pos then solver#add_assertion (v >=^ LI 0)
+						else if r = Neg then solver#add_assertion (v <=^ LI 0);
+						Smt v
+					| Strategy.Choice (t::ts) ->
+						let rec sub2 acc ts = match ts with
+							| [] -> acc
+							| t::ts ->
+								let w = sub k t in
+								let c = solver#temp_variable Smt.Bool in
+								sub2 (Cond(c,w,acc)) ts
+						in
+						sub2 (sub k t) ts
+					| Strategy.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
+					| Strategy.Const n -> Smt(LI n)
+					| Strategy.Prod ts -> prod_template (List.map (sub k) ts)
+					| Strategy.Sum ts -> sum_template (List.map (sub k) ts)
+					| Strategy.Max ts -> max_template (List.map (sub k) ts)
+					| Strategy.ProdArgs t -> prod_template (List.map (fun l -> sub l t) to_n)
+					| Strategy.SumArgs t -> sum_template (List.map (fun l -> sub l t) to_n)
+					| Strategy.MaxArgs t -> max_template (List.map (fun l -> sub l t) to_n)
+					| Strategy.Heuristic1(t1,t2) -> sub k (if heu#sym_mode f#name then t2 else t1)
+					| Strategy.ArityChoice fn -> sub k (fn n)
 				in
 				let vec = Array.map (fun (r,o,t) -> sub 0 t) p.w_templates in
 				Hashtbl.add table f#name {

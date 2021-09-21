@@ -50,7 +50,7 @@ class t =
 
   (* weight order *)
   let interpreter = new Weight.interpreter p in
-  let wo = Weight.order_vec p solver in
+  let wo = Weight.order_vec p in
 
   (*** Precedence ***)
   let pmin = LI 0 in
@@ -823,6 +823,9 @@ object (x)
             else depend_w
           in
           solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
+					if p.negcoeff then
+						solver#add_assertion (usable i =>^ Weight.eq_vec p lw rw)
+					else
           solver#add_assertion (usable i =>^ weakly (frame la ra));
         end else begin
           solver#add_assertion (weakly (frame la ra));

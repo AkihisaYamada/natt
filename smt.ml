@@ -36,8 +36,16 @@ let params_of_xml =
 		) >>= fun (peek,peek_to) ->
 		default true (bool_attribute "tempvars") >>= fun tmpvar ->
 		default true (bool_attribute "linear") >>= fun linear ->
-		element "command" string >>= fun cmd ->
-		many (element "arg" string) >>= fun args ->
+		(	element "command" string >>= fun cmd ->
+			many (element "arg" string) >>= fun args ->
+			return (cmd,args)
+		) <|>
+		element "z3" (
+			return ("z3", ["-smt2";"-in"])
+		) <|>
+		element "cvc4" (
+			return ("cvc4", ["--lang=smt2"; "--incremental"; "--produce-models"])
+		) >>= fun (cmd,args) ->
 		return {
 			cmd = cmd;
 			args = args;
