@@ -670,10 +670,13 @@ let smt_exists2 f = List.fold_left2 (fun ret e1 e2 -> ret |^ f e1 e2) (LB false)
 let smt_mod e1 e2 = Mod(e1,e2)
 let smt_max e1 e2 =
 	match e1, e2 with
-	| LI i1, LI i2	-> LI(if i1 > i2 then i1 else i2)
-	| _, Max es2	-> Max(e1::es2)
+	| LI i1, LI i2 -> LI(if i1 > i2 then i1 else i2)
+	| LR r1, LR r2 -> LR(if r1 > r2 then r1 else r2)
+	| LI i1, LR r2 -> if float_of_int i1 > r2 then LI(i1) else LR(r2)
+	| LR r1, LI i2 -> if r1 > float_of_int i2 then LR(r1) else LI(i2)
+	| _, Max es2 -> Max(e1::es2)
 	| Max es1,_	 -> Max(e2::es1)
-	| _,_		 -> Max[e1;e2]
+	| _,_ -> Max[e1;e2]
 
 let smt_car =
 	function
@@ -742,7 +745,7 @@ class virtual context p =
 				match e with
 					(* Impure formula will not be represented by a variable *)
 				| If(c,t,e,false) -> If(c, x#refer_sub ty t, x#refer_sub ty e, false)
-				| If(c,t,e,true) when very_simple c && very_simple t && very_simple e -> If(c,t,e,true)
+				| If(c,t,e,_) when very_simple t && very_simple e -> If(c,t,e,true)
 				| Cons(e1,e2) ->
 					(match ty with
 					 | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
@@ -876,9 +879,9 @@ class virtual context p =
 			in
 			fun es ->
 				match distribute [] es with
-				| []	-> raise (Invalid_formula ("empty max",Nil))
+				| []  -> raise (Invalid_formula ("empty max",Nil))
 				| [e] -> x#expand e
-				| es	-> (* Max (List.map x#expand es)*)
+				| es  -> (* Max (List.map x#expand es)*)
 					sub (LB false) (x#temp_variable base_ty) es
 
 		method private expand_car =
@@ -903,7 +906,8 @@ class virtual context p =
 			| e1	->
 				match x#expand e2, x#expand e3 with
 				| Cons(e4,e5), Cons(e6,e7) ->
-					let e1 = x#refer_sub Bool e1 in Cons(smt_if e1 e4 e6, smt_if e1 e5 e7)
+					let e1 = x#refer_sub Bool e1 in
+					Cons(smt_if e1 e4 e6, smt_if e1 e5 e7)
 				| e2,e3 -> smt_if e1 e2 e3
 
 		method linearize e = match e with
