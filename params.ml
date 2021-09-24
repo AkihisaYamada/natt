@@ -2,7 +2,7 @@ open Util
 open Term
 open Strategy
 
-let version = "2.1";
+let version = "2.2";
 
 
 type estimator_mode =
