@@ -50,10 +50,18 @@ let prod_template =
 	in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
 let max_template =
+	let rec sub2 e acc ws =
+		match ws with
+		| [] -> if acc = [] then Smt e else Max (Smt e :: acc)
+		| Max ws' :: ws -> sub2 e acc (ws' @ ws)
+		| Smt e2 :: ws -> sub2 (smt_max e e2) acc ws
+		| w :: ws -> sub2 e (w :: acc) ws
+	in
 	let rec sub acc ws =
 		match ws with
 		| [] -> (match acc with [w] -> w | _ -> Max acc)
-		| Max ws' :: ws -> sub (ws' @ acc) ws
+		| Max ws' :: ws -> sub acc (ws' @ ws)
+		| Smt e :: ws -> sub2 e acc ws
 		| w :: ws -> sub (w :: acc) ws
 	in fun ws -> sub [] ws (* don't eta contract, otherwise type inference doesn't work *)
 
@@ -303,7 +311,8 @@ let ge_poly_coeffs =
 let ge_poly p1 p2 = smt_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
 
 let order_poly solver p1 p2 =
-	let pre = solver#refer Smt.Bool (smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2)) in
+	let pre = smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2) in
+	let pre = solver#refer Smt.Bool pre in
 	let e1 = poly_coeff [] p1 in
 	let e2 = poly_coeff [] p2 in
 	let ge = (e1 >=^ e2) &^ pre in
@@ -365,7 +374,10 @@ let bottom_cmpoly = [(LB true, bottom_mpoly)]
 
 let zero_cmpoly = [(LB true, zero_mpoly)]
 
-let refer_cmpoly solver = List.map (fun (c,mp) -> (solver#refer Smt.Bool c, refer_mpoly solver mp))
+let refer_cmpoly solver =
+ 	List.map (fun (c,mp) -> (
+(* not sure why this explodes: solver#refer Smt.Bool *)
+ c, refer_mpoly solver mp))
 
 let var_cmpoly v i r = [(LB true, var_mpoly v i r)]
 
@@ -530,7 +542,9 @@ class interpreter p =
 							| t::ts ->
 								let w = sub k t in
 								let c = solver#temp_variable Smt.Bool in
-								sub2 (Cond(c,w,acc)) ts
+								match acc, w with
+								| Smt e1, Smt e2 -> sub2 (Smt (smt_if c e1 e2)) ts
+								| _ -> sub2 (Cond(c,w,acc)) ts
 						in
 						sub2 (sub k t) ts
 					| Strategy.Arg(i,j) -> BVar(((if i >= 0 then i else k), j), range_of_coord j)
