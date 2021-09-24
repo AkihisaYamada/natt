@@ -365,8 +365,19 @@ let default smt = (
 				| 0 -> Var Pos
 				| 1 -> Max[(Var Bool *? Arg(0,0)) +? (Var Bool *? Arg(0,1)) +? Var Full; Const 0]
 				| _ -> Heuristic1 (
-				Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0],
-				Max[MaxArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1)) +? Var Full); Const 0]
+					Max[
+						SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full;
+						Const 0
+					],
+					Max[
+						MaxArgs(
+							Max[
+								Var Bool *? (Arg(-1,0) +? Var Full);
+								Var Bool *? (Arg(-1,1) +? Var Full)
+							]
+						);
+						Const 0
+					]
 			) ) );
 			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
 		]);
