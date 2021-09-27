@@ -76,7 +76,7 @@ let neg_max_sum_weight maxarity =
 	weight "NegMaxSum" [
 		Pos, O_strict, ArityChoice(function
 			| 0 -> Var Pos
-			| 1 -> Max[Var Bool *? (Arg(0,0) +? Var Full); Const 0]
+			| 1 -> Max[(Var Bool *? Arg(0,0)) +? Var Full; Const 0]
 			| _ -> Heuristic1(
 				Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0],
 				Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
@@ -171,7 +171,7 @@ let weight_element mono simp =
 		return (if neg then neg_max_weight else max_weight mono)
 	) <|>
 	element "maxSum" (
-		if mono then fatal (puts "not allowed in rule removal") else
+		if mono && not simp then fatal (puts "not allowed in rule removal") else
 		default false (bool_attribute "neg") >>= fun neg ->
 		default 4 (int_attribute "maxArity") >>= fun m ->
 		return (if neg then neg_max_sum_weight m else max_sum_weight simp m)) <|>

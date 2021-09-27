@@ -90,6 +90,6 @@ test: $(TARG_OPT)
 
 # Dependencies
 .depend: $(OCAML_MLS)
-	$(OCAMLDEP) *.mli *.ml > .depend
+	$(OCAMLDEP) *.mli *.ml | sed -E 's~(^[ \t]*)([A-Za-z])~\1$(BUILD)/\2~' > .depend
 
 -include .depend
