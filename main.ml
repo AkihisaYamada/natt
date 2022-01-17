@@ -224,19 +224,25 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	and loop_silent n_reals n_dps = function
 		| [] -> YES
 		| scc::sccs ->
-			cpf (MyXML.enter "component");
-			cpf (MyXML.enclose "dps" (MyXML.enclose "rules" (dg#output_scc_xml scc)));
+			cpf (
+				MyXML.enter "component" <<
+				MyXML.enclose "dps" (MyXML.enclose "rules" (dg#output_scc_xml scc))
+			);
 			if dg#triv_scc scc then (
-				cpf (MyXML.enclose_inline "realScc" (puts "false"));
-				cpf (MyXML.leave "component");
+				cpf (
+					MyXML.enclose_inline "realScc" (puts "false") <<
+					MyXML.leave "component"
+				);
 				loop_silent n_reals n_dps sccs
 			) else (
 				comment (puts "	SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
 				cpf (MyXML.enclose_inline "realScc" (puts "true"));
 				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
 					comment (puts "only weak rules." << endl);
-					cpf (MyXML.enclose "acDPTerminationProof" (MyXML.tag "acTrivialProc"));
-					cpf (MyXML.leave "component");
+					cpf (
+						MyXML.enclose "acDPTerminationProof" (MyXML.tag "acTrivialProc") <<
+						MyXML.leave "component"
+					);
 					loop (n_reals - 1) (n_dps - List.length scc) sccs
 				) else (
 					cpf (MyXML.enter "acDPTerminationProof");
@@ -250,15 +256,20 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 						let subsccs = scc_sorter subsccs in
 						let n_subdps = count_dps real_subsccs in
 						let ret = dg_proc (n_reals + List.length real_subsccs) (n_dps + n_subdps) subsccs in
-						cpf (MyXML.leave "acRedPairProc" << MyXML.leave "acDPTerminationProof");
-						cpf (MyXML.leave "component");
+						cpf (
+							MyXML.leave "acRedPairProc" <<
+							MyXML.leave "acDPTerminationProof" <<
+							MyXML.leave "component"
+						);
 						if ret = YES then loop_silent n_reals n_dps sccs else ret
 					) else (
 						comment (puts "failed." << endl);
 						Nonterm.find_loop params.max_loop trs estimator dg scc;
-						cpf (MyXML.enclose "unknownProof" (MyXML.enclose "description" (puts "Failed!")));
-						cpf (MyXML.leave "acDPTerminationProof");
-						cpf (MyXML.leave "component");
+						cpf (
+							MyXML.enclose "unknownProof" (MyXML.enclose "description" (puts "Failed!")) <<
+							MyXML.leave "acDPTerminationProof" <<
+							MyXML.leave "component"
+						);
 						MAYBE
 					)
 				)
