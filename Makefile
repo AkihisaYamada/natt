@@ -18,7 +18,7 @@ OCAML_SRCS=\
 	io.ml \
 	util.ml \
 	txtr.ml \
-	myXML.ml \
+	MyXML.ml \
 	matrix.ml \
 	proc.ml \
 	smt.ml \

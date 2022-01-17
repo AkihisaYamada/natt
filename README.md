@@ -1,13 +1,13 @@
 Nagoya Termination Tool (NaTT)
 =============================================
 
-This is NaTT ver.2.1.
+This is NaTT ver.2.1.1.
 
 ## Compilation ##
 
 Please install OPAM (https://opam.ocaml.org/). Then please install required packages by
 ```
-opam install ocamlfind ocamlgraph xml-light
+opam install ocamlfind re ocamlgraph xml-light
 ```
 Then please just `make`.
 
