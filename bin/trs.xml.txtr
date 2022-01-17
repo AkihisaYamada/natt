@@ -127,6 +127,7 @@
 			<read ref="syms" minOccurs="0" maxOccurs="unbounded"/>
 		</element>
 		<read ref="rules"/>
+<!--
 		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		<group minOccurs="0">
 			<read ref="syms" minOccurs="0" maxOccurs="unbounded" as="csym"/>
@@ -139,6 +140,6 @@
 			</element>
 			<match>\)\s*</match>
 		</group>
-		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+-->		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 	</element>
 </txtruct>

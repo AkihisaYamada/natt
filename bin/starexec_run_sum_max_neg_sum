@@ -1,0 +1,71 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+STR='<strategy>
+  <edg/>
+  <order>
+    <template name="sum_max_neg_sum">
+      <entry range="pos">
+        <case arity="0">
+          <var range="pos"/>
+        </case>
+        <case arity="1">
+          <max>
+            <sum>
+              <prod>
+                <var range="bool"/>
+                <arg coord="0"/>
+              </prod>
+              <var range="full"/>
+            </sum>
+            <prod>
+              <var range="bool"/>
+              <sum>
+                <arg coord="1"/>
+                <var range="full"/>
+              </sum>
+            </prod>
+            <const>0</const>
+          </max>
+        </case>
+        <max>
+          <args mode="sum">
+            <max>
+              <prod>
+                <var range="bool"/>
+                <sum>
+                  <arg coord="0"/>
+                  <var range="full"/>
+                </sum>
+              </prod>
+              <prod>
+                <var range="bool"/>
+                <sum>
+                  <arg coord="1"/>
+                  <var range="full"/>
+                </sum>
+              </prod>
+            </max>
+          </args>
+          <const>0</const>
+        </max>
+      </entry>
+      <entry range="neg">
+        <case arity="0">
+          <var range="neg"/>
+        </case>
+        <sum>
+          <args mode="sum">
+            <prod>
+              <var range="bool"/>
+              <arg coord="1"/>
+            </prod>
+          </args>
+          <var range="neg"/>
+        </sum>
+      </entry>
+    </template>
+  </order>
+</strategy>'
+NaTT.exe -S:"$STR" "$1" 2> "$2/stderr.txt"
+cat $2/stderr.txt

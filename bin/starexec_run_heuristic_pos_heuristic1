@@ -1,0 +1,99 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+STR='<strategy>
+  <edg/>
+  <order>
+    <template name="heuristic_pos_heuristic1">
+      <entry range="pos">
+        <case arity="0">
+          <var range="pos"/>
+        </case>
+        <case arity="1">
+          <sum>
+            <prod>
+              <var range="bool"/>
+              <arg coord="0"/>
+            </prod>
+            <prod>
+              <var range="bool"/>
+              <arg coord="1"/>
+            </prod>
+            <var range="pos"/>
+          </sum>
+        </case>
+        <heuristic mode="maxsum">
+          <sum>
+            <args mode="sum">
+              <sum>
+                <prod>
+                  <var range="bool"/>
+                  <arg coord="0"/>
+                </prod>
+                <prod>
+                  <var range="bool"/>
+                  <arg coord="1"/>
+                </prod>
+              </sum>
+            </args>
+            <var range="pos"/>
+          </sum>
+          <args mode="max">
+            <max>
+              <prod>
+                <var range="bool"/>
+                <sum>
+                  <arg coord="0"/>
+                  <var range="pos"/>
+                </sum>
+              </prod>
+              <prod>
+                <var range="bool"/>
+                <sum>
+                  <arg coord="1"/>
+                  <var range="pos"/>
+                </sum>
+              </prod>
+            </max>
+          </args>
+        </heuristic>
+      </entry>
+      <entry range="pos">
+        <case arity="0">
+          <var range="pos"/>
+        </case>
+        <case arity="1">
+          <sum>
+            <prod>
+              <var range="bool"/>
+              <arg coord="1"/>
+            </prod>
+            <var range="pos"/>
+          </sum>
+        </case>
+        <heuristic mode="maxsum">
+          <sum>
+            <args mode="sum">
+              <prod>
+                <var range="bool"/>
+                <arg coord="1"/>
+              </prod>
+            </args>
+            <var range="pos"/>
+          </sum>
+          <args mode="max">
+            <prod>
+              <var range="bool"/>
+              <sum>
+                <arg coord="1"/>
+                <var range="pos"/>
+              </sum>
+            </prod>
+          </args>
+        </heuristic>
+      </entry>
+    </template>
+  </order>
+</strategy>'
+NaTT.exe -S:"$STR" "$1" 2> "$2/stderr.txt"
+cat $2/stderr.txt

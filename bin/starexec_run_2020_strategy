@@ -1,0 +1,29 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+STR='<strategy>
+  <order>
+    <poly/>
+  </order>
+  <freezing/>
+  <edg/>
+  <order>
+    <sum/>
+  </order>
+  <order>
+    <max/>
+  </order>
+  <order precedence="quasi" status="partial"/>
+  <order>
+    <maxSum neg="true"/>
+  </order>
+  <order precedence="quasi" status="partial">
+    <maxSum/>
+  </order>
+  <order>
+    <matrix dim="2"/>
+  </order>
+  <loop steps="3"/>
+</strategy>'
+NaTT.exe -S:"$STR" "$1" 2> "$2/stderr.txt"
+cat $2/stderr.txt

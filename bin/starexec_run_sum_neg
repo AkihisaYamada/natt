@@ -1,0 +1,29 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+STR='<strategy>
+  <edg/>
+  <order>
+    <template name="sum_neg">
+      <entry>
+        <case arity="0">
+          <var range="pos"/>
+        </case>
+        <max>
+          <sum>
+            <args>
+              <prod>
+                <var range="bool"/>
+                <arg coord="0"/>
+              </prod>
+            </args>
+            <var range="full"/>
+          </sum>
+          <const>0</const>
+        </max>
+      </entry>
+    </template>
+  </order>
+</strategy>'
+NaTT.exe -S:"$STR" "$1" 2> "$2/stderr.txt"
+cat $2/stderr.txt
