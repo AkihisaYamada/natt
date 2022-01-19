@@ -60,7 +60,24 @@ and subterm (s:#sym term) t = term_eq s t || strict_subterm s t
 let rec emb_le (Node((f:#sym),ss) as s) (Node(g,ts) as t) =
   term_eq s t || List.exists (emb_le s) ts || f#equals g && List.for_all2 emb_le ss ts
 
-(* the list of variable occurences in a term *)
+(* the sorted list of variables *)
+let vars : (#sym as 'a) term -> 'a list  =
+  let rec insert (x:'a) = function
+    | [] -> [x]
+    | y::ys ->
+      if x#name < y#name then x::y::ys
+      else if x#equals y then y::ys
+      else y :: insert x ys
+  in
+  let rec sub acc (Node((f:'a),ss)) =
+    sublist (if f#is_var then insert f acc else acc) ss
+  and sublist acc = function
+    | [] -> acc
+    | s::ss -> sublist (sub acc s) ss
+  in
+  sub []
+
+(* the list of variable occurrences in a term *)
 let varlist =
   let rec sub (Node((f:#sym),ss)) =
     if f#is_var then f :: sublist ss else sublist ss
@@ -187,28 +204,29 @@ let rec output_xml_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 (*** rules ***)
 type strength = StrictRule | MediumRule | WeakRule
 
-class rule s (l : sym term) (r : sym term) =
+class rule strength (l : sym term) (r : sym term) =
   object (x)
     inherit Io.output
-    val strength = s
     method l = l
     method r = r
     method strength = strength
+    val lvars = vars l
+    val rvars = vars r
     method size = size l + size r
     method is_strict = strength = StrictRule
     method is_medium = strength = MediumRule
     method is_weak = strength = WeakRule
+    method lvars = lvars
+    method rvars = rvars
     method is_duplicating = duplicating l r
     method is_size_increasing = size l < size r || x#is_duplicating
     method has_extra_variable =
-      let lvars = varlist l in
-      let rvars = varlist r in
       List.exists (fun rvar -> not (List.mem rvar lvars)) rvars
 
     method output : 'b. (#outputter as 'b) -> unit = fun pr ->
       output_term pr l;
       pr#puts (
-        match s with
+        match strength with
         | StrictRule -> " -> "
         | WeakRule -> " ->= "
         | _ -> " ->? ");

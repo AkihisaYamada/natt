@@ -7,6 +7,13 @@ class virtual named = object (x)
     fun y -> x#name = y#name
 end
 
+module SymSet = Set.Make (
+  struct
+    type t = named
+    let compare x y = String.compare x#name y#name
+  end
+)
+
 type symtype = Var | Fun | Th of string
 
 let put_name_pad min name (pr:#Io.outputter) =

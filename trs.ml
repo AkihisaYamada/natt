@@ -341,7 +341,7 @@ class trs =
 			)
 (* counting nests *)
 		val mutable nest_map = Mset.empty
-		method count_nest = 
+		method count_nest =
 			let rec nest_term (Node(f,ss)) =
 				if f#is_var then
 					Mset.empty
