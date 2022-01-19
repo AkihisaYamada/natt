@@ -1147,7 +1147,8 @@ class virtual smt_lib_2_0 p =
 		method init =
 			if not initialized then begin
 				initialized <- true;
-				x#puts "(set-logic QF_";
+				x#puts "(set-logic ";
+				if not p.quantified then x#puts "QF_";
 				x#puts (if p.linear then "L" else "N");
 				x#puts (if base_ty = Int then "I" else "R");
 				x#puts "A)";
