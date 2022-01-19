@@ -33,11 +33,11 @@ let weight name temps = (name,temps)
 let arg mono x = if mono then x else Var Bool *? x
 
 let no_weight = weight "no weight" []
-let sum_weight mono =
+let sum_weight ~mono =
 	weight "Sum" [Pos, O_strict, SumArgs(arg mono (Arg(-1,0))) +? Var Pos]
 let mono_bpoly_weight =
 	weight "poly" [Pos, O_strict, SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
-let max_weight mono =
+let max_weight ~mono =
 	weight "Max" [
 		Pos, O_strict, ArityChoice(function
 			| 0 -> Var Pos
@@ -59,12 +59,12 @@ let neg_max_weight =
 			| _ -> Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
 		)
 	]
-let max_sum_weight weak_simple maxarity =
+let max_sum_weight ?(maxarity=0) ~simp =
 	weight "MaxSum" [
 		Pos, O_strict, ArityChoice(function
 			| 0 -> Var Pos
-			| 1 -> arg weak_simple (Arg(-1,0)) +? Var Pos
-			| _ -> Heuristic1(SumArgs(arg weak_simple (Arg(-1,0))) +? Var Pos, MaxArgs(arg weak_simple (Arg(-1,0) +? Var Pos)))
+			| 1 -> arg simp (Arg(-1,0)) +? Var Pos
+			| _ -> Heuristic1(SumArgs(arg simp (Arg(-1,0))) +? Var Pos, MaxArgs(arg simp (Arg(-1,0) +? Var Pos)))
 (*
 			| i when maxarity <= i -> (* interpretting big-arity symbols as sum leads to huge formula. *)
 				MaxArgs(arg +? Var Pos)
@@ -72,7 +72,7 @@ let max_sum_weight weak_simple maxarity =
 *)
 		)
 	]
-let neg_max_sum_weight maxarity =
+let neg_max_sum_weight ~maxarity =
 	weight "NegMaxSum" [
 		Pos, O_strict, ArityChoice(function
 			| 0 -> Var Pos
@@ -92,7 +92,7 @@ let neg_max_sum_weight maxarity =
 		)
 	]
 
-let bmat_weight mono simp dim =
+let bmat_weight ~mono ~simp ~dim =
 	let entry j =
 		(if simp || (mono && j = 0) then (debug (puts "hoa"); Choice[Const 2; Const 1]) else Var Bool) *? Arg(-1,j)
 	in
@@ -160,7 +160,7 @@ let template_entry_element i =
 		return (r,ord,t)
 	)
 
-let weight_element mono simp =
+let weight_element ~mono ~simp =
 	element "poly" (return (mono_bpoly_weight)) <|>
 	element "sum" (
 		default false (bool_attribute "neg") >>= fun neg ->
@@ -174,7 +174,7 @@ let weight_element mono simp =
 		if mono && not simp then fatal (puts "not allowed in rule removal") else
 		default false (bool_attribute "neg") >>= fun neg ->
 		default 4 (int_attribute "maxArity") >>= fun m ->
-		return (if neg then neg_max_sum_weight m else max_sum_weight simp m)) <|>
+		return (if neg then neg_max_sum_weight ~maxarity:m else max_sum_weight ~maxarity:m ~simp)) <|>
 	element "matrix" (
 		mandatory (int_attribute "dim") >>= fun dim ->
 		return (bmat_weight mono simp dim)
@@ -215,7 +215,6 @@ type order_params = {
 	collapse : bool;
 	mutable usable : bool;
 	usable_w : bool;
-	remove_all : bool;
 	use_scope : bool;
 	use_scope_ratio : int;
 	negcoeff : bool;
@@ -228,7 +227,7 @@ let nonmonotone p =
   p.status_mode = S_partial ||
   p.status_mode = S_empty && p.prec_mode <> PREC_none
 
-let order_params smt dp prec status collapse usable (w_name,w_templates) = {
+let order_params smt ?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty) ?(usable=true) (w_name,w_templates) = {
 	smt_params = smt;
 	dp = dp;
 	w_name = w_name;
@@ -246,7 +245,6 @@ let order_params smt dp prec status collapse usable (w_name,w_templates) = {
 	maxcons = false;
 	ac_w = true;
 	strict_equal = false;
-	remove_all = false;
 	use_scope = true;
 	use_scope_ratio = 0;
 	negcoeff = false;
@@ -269,7 +267,6 @@ let order_HM04_params smt w_template = {
 	maxcons = false;
 	ac_w = true;
 	strict_equal = false;
-	remove_all = false;
 	use_scope = true;
 	use_scope_ratio = 0;
 	negcoeff = true;
@@ -315,9 +312,9 @@ let order_element default_smt mono =
 		) >>= fun usable ->
 		default default_smt Smt.params_of_xml >>= fun smt ->
 		default no_weight (
-			weight_element (mono && status = S_empty) (status = S_none || status = S_total)
+			weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total)
 		) >>= fun weight ->
-		return (order_params smt (not mono) prec status collapse usable weight)
+		return (order_params smt ~dp:(not mono) ~prec:prec ~status:status ~collapse:collapse ~usable:usable weight)
 	) <|>
 	element "HM04" (
 		default default_smt Smt.params_of_xml >>= fun smt ->
@@ -345,22 +342,22 @@ let of_file default_smt =
 	Txtr.parse_file (strategy_element default_smt)
 
 let default smt = (
-	[order_params smt false PREC_none S_empty false false mono_bpoly_weight],
+	[order_params smt ~dp:false ~usable:false mono_bpoly_weight],
 	true, Some ( [
-		order_params smt true PREC_none S_empty false true (sum_weight false);
-		order_params smt true PREC_none S_empty false true (max_weight false);
-		order_params smt true PREC_quasi S_partial true true no_weight;
-		order_params smt true PREC_none S_empty false true (neg_max_sum_weight 0);
-		order_params smt true PREC_quasi S_partial true true (max_sum_weight false 0);
-		order_params smt true PREC_none S_empty false true (bmat_weight false false 2);
-		order_params smt true PREC_none S_empty false true (weight "sum_sum_int,sum_neg" [
+		order_params smt (sum_weight ~mono:false);
+		order_params smt (max_weight ~mono:false);
+		order_params smt ~prec:PREC_quasi ~status:S_partial no_weight;
+		order_params smt (neg_max_sum_weight ~maxarity:0);
+		order_params smt ~prec:PREC_quasi ~status:S_partial (max_sum_weight ~simp:false ~maxarity:0);
+		order_params smt (bmat_weight ~mono:false ~simp:false ~dim:2);
+		order_params smt (weight "sum_sum_int,sum_neg" [
 			(Pos, O_strict, ArityChoice(function
 				| 0 -> Var Pos
 				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
 			) );
 			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
 		]);
-		order_params smt true PREC_none S_empty false true (weight "heuristic_int,sum_neg" [
+		order_params smt (weight "heuristic_int,sum_neg" [
 			(Pos, O_strict, ArityChoice(function
 				| 0 -> Var Pos
 				| 1 -> Max[(Var Bool *? Arg(0,0)) +? (Var Bool *? Arg(0,1)) +? Var Full; Const 0]

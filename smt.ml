@@ -38,6 +38,7 @@ let params_of_xml =
 		) >>= fun (peek,peek_to) ->
 		default true (bool_attribute "tempvars") >>= fun tmpvar ->
 		default true (bool_attribute "linear") >>= fun linear ->
+		default false (bool_attribute "quantified") >>= fun quantified ->
 		(	element "command" string >>= fun cmd ->
 			many (element "arg" string) >>= fun args ->
 			return (cmd,args)
@@ -54,7 +55,7 @@ let params_of_xml =
 			base_ty = Int;
 			tmpvar = tmpvar;
 			linear = linear;
-			quantified = false;
+			quantified = quantified;
 			peek_in = peek;
 			peek_out = peek;
 			peek_to = peek_to;
