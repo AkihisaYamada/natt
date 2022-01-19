@@ -127,10 +127,10 @@ class t =
   let permed finfo = finfo#permed in
   let depend_w finfo i = smt_not (interpreter#constant_at finfo#base i) in
   let rec set_usable filt flag s =
-    smt_for_all flag (estimator#find_matchable s) &^ set_usable_inner filt flag s
+    smt_list_for_all flag (estimator#find_matchable s) &^ set_usable_inner filt flag s
   and set_usable_inner filt flag (Node(f,ss)) =
     if f#is_var then
-      smt_for_all (set_usable_inner filt flag) ss
+      smt_list_for_all (set_usable_inner filt flag) ss
     else
       let finfo = lookup f in
       let rec sub i ss =
@@ -221,7 +221,7 @@ class t =
             for j = 1 to n do
               solver#add_assertion (finfo#perm i j =>^ p_i);
             done;
-            solver#add_assertion (p_i =>^ smt_exists (finfo#perm i) to_n);
+            solver#add_assertion (p_i =>^ smt_list_exists (finfo#perm i) to_n);
           end else begin
             let (zero,one) = solver#expand_pair (ZeroOne (List.map (finfo#perm i) to_n)) in
             solver#add_assertion (p_i =>^ one);
@@ -303,7 +303,7 @@ class t =
           solver#add_variable v Bool;
           finfo#set_collapse (EV v);
           solver#add_assertion (EV v =>^ ES1 (List.map finfo#permed to_n)); 
-          solver#add_assertion (EV v =>^ (smt_for_all (fun i -> finfo#permed i =>^ interpreter#collapses_at f i) to_n));
+          solver#add_assertion (EV v =>^ (smt_list_for_all (fun i -> finfo#permed i =>^ interpreter#collapses_at f i) to_n));
     else
       fun finfo _ _ -> finfo#set_collapse (LB false)
   in
@@ -332,7 +332,7 @@ class t =
     if finfo#status_mode = S_partial && p.mincons then begin
       let v = "qconst_" ^ fname in
       solver#add_definition v Bool
-        (smt_not finfo#collapse &^ smt_for_all (fun i -> smt_not (finfo#permed i)) to_n &^ (fp >=^ pmin));
+        (smt_not finfo#collapse &^ smt_list_for_all (fun i -> smt_not (finfo#permed i)) to_n &^ (fp >=^ pmin));
       finfo#set_is_quasi_const (EV v);
     end;
   in
@@ -932,7 +932,7 @@ object (x)
         (* usable i should be true until i is removed. *)
         List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
         solver#add_assertion
-          (smt_exists (fun i -> EV(gt_r_v i)) current_usables |^
+          (smt_list_exists (fun i -> EV(gt_r_v i)) current_usables |^
            trs#fold_prules (fun i _ ret -> ret |^ EV(gt_p_v i)) (LB false)
           );
       end;

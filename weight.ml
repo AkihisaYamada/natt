@@ -88,9 +88,9 @@ let eq_0_template =
 		match w with
 		| BVar(_,_) -> LB false (* incomplete *)
 		| Smt e -> e =^ LI 0
-		| Prod ws -> smt_exists sub ws
-		| Sum ws -> smt_for_all sub ws (* cancellation is not considered *)
-		| Max ws -> smt_for_all sub ws (* incomplete *)
+		| Prod ws -> smt_list_exists sub ws
+		| Sum ws -> smt_list_for_all sub ws (* cancellation is not considered *)
+		| Max ws -> smt_list_for_all sub ws (* incomplete *)
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	in sub
 
@@ -99,14 +99,14 @@ let eq_1_template =
 		match w with
 		| BVar(_,_) -> LB false (* incomplete *)
 		| Smt e -> e =^ LI 1
-		| Prod ws -> smt_for_all sub ws (* division is not considered *)
+		| Prod ws -> smt_list_for_all sub ws (* division is not considered *)
 		| Sum ws -> sub_sum ws
-		| Max ws -> smt_for_all sub ws (* incomplete *)
+		| Max ws -> smt_list_for_all sub ws (* incomplete *)
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_list_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_sum ws)
 	in sub
 
 let ge_0_template =
@@ -117,8 +117,8 @@ let ge_0_template =
 		| BVar(_,Full) -> LB false (* incomplete *)
 		| Smt e -> e >=^ LI 0
 		| Prod ws -> LB true (* don't support negative in products *)
-		| Sum ws -> smt_for_all sub ws (* cancellation is not considered *)
-		| Max ws -> smt_exists sub ws
+		| Sum ws -> smt_list_for_all sub ws (* cancellation is not considered *)
+		| Max ws -> smt_list_exists sub ws
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	in sub
 
@@ -127,14 +127,14 @@ let ge_1_template =
 		match w with
 		| BVar(_,_) -> LB false (* incomplete *)
 		| Smt e -> e >=^ LI 1
-		| Prod ws -> smt_for_all sub ws
+		| Prod ws -> smt_list_for_all sub ws
 		| Sum ws -> sub_sum ws
-		| Max ws -> smt_exists sub ws
+		| Max ws -> smt_list_exists sub ws
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all ge_0_template ws) |^ (ge_0_template w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_list_for_all ge_0_template ws) |^ (ge_0_template w &^ sub_sum ws)
 	in sub
 
 let const_on_template x =
@@ -142,9 +142,9 @@ let const_on_template x =
 		match w with
 		| BVar(v,_) -> LB (x <> v)
 		| Smt e -> LB true
-		| Prod ws -> smt_for_all sub ws |^ smt_exists eq_0_template ws
-		| Sum ws -> smt_for_all sub ws
-		| Max ws -> smt_for_all sub ws
+		| Prod ws -> smt_list_for_all sub ws |^ smt_list_exists eq_0_template ws
+		| Sum ws -> smt_list_for_all sub ws
+		| Max ws -> smt_list_for_all sub ws
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	in sub
 
@@ -160,15 +160,15 @@ let is_var_template x =
 	and sub_prod ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_1_template ws) |^ (eq_1_template w &^ sub_prod ws)
+		| w::ws -> (sub w &^ smt_list_for_all eq_1_template ws) |^ (eq_1_template w &^ sub_prod ws)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_list_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_sum ws)
 	and sub_max ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_max ws)
+		| w::ws -> (sub w &^ smt_list_for_all eq_0_template ws) |^ (eq_0_template w &^ sub_max ws)
 	in sub
 
 let weak_simple_on_template x =
@@ -178,16 +178,16 @@ let weak_simple_on_template x =
 		| Smt e -> LB false
 		| Prod ws -> sub_prod ws
 		| Sum ws -> sub_sum ws
-		| Max ws -> smt_exists sub ws
+		| Max ws -> smt_list_exists sub ws
 		| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
 	and sub_prod ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all ge_1_template ws) |^ (ge_1_template w &^ sub_prod ws)
+		| w::ws -> (sub w &^ smt_list_for_all ge_1_template ws) |^ (ge_1_template w &^ sub_prod ws)
 	and sub_sum ws =
 		match ws with
 		| [] -> LB false
-		| w::ws -> (sub w &^ smt_for_all ge_0_template ws) |^ (ge_0_template w &^ sub_sum ws)
+		| w::ws -> (sub w &^ smt_list_for_all ge_0_template ws) |^ (ge_0_template w &^ sub_sum ws)
 	in sub
 
 let put_template var : 'a template -> #printer -> unit =
@@ -285,7 +285,7 @@ let eq_poly =
 		| None   , Some e2 -> LI 0 =^ e2
 		)
 	in
-	fun p1 p2 -> smt_for_all (fun (vs,e) -> e) Poly.(bindings (merge merger p1 p2))
+	fun p1 p2 -> smt_list_for_all (fun (vs,e) -> e) Poly.(bindings (merge merger p1 p2))
 
 let ge_poly_coeffs =
 	let ge_monom =
@@ -308,10 +308,10 @@ let ge_poly_coeffs =
 	in
 	fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
 
-let ge_poly p1 p2 = smt_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
+let ge_poly p1 p2 = smt_list_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
 
 let order_poly solver p1 p2 =
-	let pre = smt_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2) in
+	let pre = smt_list_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2) in
 	let pre = solver#refer Smt.Bool pre in
 	let e1 = poly_coeff [] p1 in
 	let e2 = poly_coeff [] p2 in
@@ -340,14 +340,14 @@ let sum_mpoly mps : mpoly = List.map sum_poly (list_product mps)
 
 let prod_mpoly mps = List.map prod_poly (list_product mps)
 
-let eq_0_mpoly = smt_for_all eq_0_poly
+let eq_0_mpoly = smt_list_for_all eq_0_poly
 
 let eq_mpoly mp1 mp2 =
-	smt_for_all (fun p2 -> smt_exists (fun p1 -> eq_poly p1 p2) mp1) mp2 &^
-	smt_for_all (fun p1 -> smt_exists (fun p2 -> eq_poly p1 p2) mp2) mp1
+	smt_list_for_all (fun p2 -> smt_list_exists (fun p1 -> eq_poly p1 p2) mp1) mp2 &^
+	smt_list_for_all (fun p1 -> smt_list_exists (fun p2 -> eq_poly p1 p2) mp2) mp1
 
 let ge_mpoly mp1 mp2 =
-	smt_for_all (fun p2 -> smt_exists (fun p1 -> ge_poly p1 p2) mp1) mp2
+	smt_list_for_all (fun p2 -> smt_list_exists (fun p1 -> ge_poly p1 p2) mp1) mp2
 
 let order_mpoly solver mp1 mp2 =
 	let (ge,gt) =
@@ -399,7 +399,7 @@ let cond_cmpoly c cmp1 cmp2 =
 	let sub2 (d,mp) = match nc &^ d with LB false -> None | d -> Some (d,mp) in
 	List.filter_map sub1 cmp1 @ List.filter_map sub2 cmp2
 
-let eq_0_cmpoly = smt_for_all (fun (c,mp) -> c =>^ eq_0_mpoly mp) 
+let eq_0_cmpoly = smt_list_for_all (fun (c,mp) -> c =>^ eq_0_mpoly mp) 
 
 let eq_cmpoly cmp1 cmp2 =
 	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ eq_mpoly mp1 mp2) cmp1 cmp2)
@@ -429,7 +429,7 @@ let smult e = Array.map (fun cmp -> prod_cmpoly [const_cmpoly e; cmp])
 let add_vec v1 v2 = Array.mapi (fun i w1 -> sum_cmpoly [w1; v2.(i)]) v1
 
 let eq_vec param v1 v2 =
-	smt_for_all (fun i -> eq_cmpoly v1.(i) v2.(i)) (int_list 0 (Array.length param.w_templates - 1))
+	smt_list_for_all (fun i -> eq_cmpoly v1.(i) v2.(i)) (int_list 0 (Array.length param.w_templates - 1))
 
 let order_vec param =
 	let tmps = param.w_templates in
@@ -564,11 +564,11 @@ class interpreter p =
 					pos_info = Array.of_list (
 						List.map (fun k ->
 							{
-								const = smt_for_all (fun i ->
-									smt_for_all (fun j -> const_on_template(k,i) vec.(j)) to_dim
+								const = smt_list_for_all (fun i ->
+									smt_list_for_all (fun j -> const_on_template(k,i) vec.(j)) to_dim
 								) to_dim;
-								just = smt_for_all (fun i -> is_var_template(k,i) vec.(i)) to_dim;
-								weak_simple = smt_for_all (fun i -> weak_simple_on_template(k,i) vec.(i)) to_dim;
+								just = smt_list_for_all (fun i -> is_var_template(k,i) vec.(i)) to_dim;
+								weak_simple = smt_list_for_all (fun i -> weak_simple_on_template(k,i) vec.(i)) to_dim;
 							}
 						) (int_list 0 (f#arity - 1))
 					);
