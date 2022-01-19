@@ -699,7 +699,7 @@ object (x)
   val mutable rule_flag_table = Hashtbl.create 256
   val mutable prule_flag_table = Hashtbl.create 4
 
-  method using_usable = if p.dp then p.usable else p.remove_all
+  method using_usable = if p.dp then p.usable else not p.remove_all
 
   method init current_usables dps =
     initialized <- true;
@@ -891,19 +891,11 @@ object (x)
     try
       x#push current_usables !sccref;
       comment (putc '.' << flush);
-      if p.remove_all then begin
-        let iterer i =
-          solver#add_assertion
-          (EV (if (dg#find_dp i)#is_strict then gt_v i else ge_v i));
-        in
-        List.iter iterer !sccref;
-      end else begin
-        let folder i ret =
-          solver#add_assertion (EV (ge_v i));
-          EV (gt_v i) |^ ret
-        in
-        solver#add_assertion (List.fold_right folder !sccref (LB false));
-      end;
+      let folder i ret =
+        solver#add_assertion (EV (ge_v i));
+        EV (gt_v i) |^ ret
+      in
+      solver#add_assertion (List.fold_right folder !sccref (LB false));
       comment (putc '.' << flush);
       solver#check;
       comment (puts " succeeded." << endl);
