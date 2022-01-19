@@ -221,9 +221,15 @@ let put_range s = puts (
 	match s with Full -> "full" | Pos -> "pos" | Neg -> "neg" | Bool -> "bool"
 )
 
-let put_var (v,i) = putc '<' << puts v << putc '_' << put_int (i+1) << putc '>'
+let string_of_var (v,i) = v ^ "_" ^ string_of_int (i+1)
 
-let put_svar (v,i,s) = putc '<' << puts v << putc '_' << put_int (i+1) << putc ':' << put_range s << putc '>'
+let string_of_svar (v,i,s) = string_of_var (v,i)
+
+let exp_of_svar vis = EV (string_of_svar vis)
+
+let put_var vi = putc '<' << puts (string_of_var vi) << putc '>'
+
+let put_svar (v,i,s) = putc '<' << puts (string_of_svar (v,i,s)) << putc ':' << put_range s << putc '>'
 
 (* A polynomial is represented by a map. *)
 module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
@@ -238,6 +244,8 @@ let poly_coeff vs p =
 let put_monom vs e os = put_exp e os; List.iter (fun v -> puts "*" os; put_svar v os) vs
 
 let put_poly p os = puts "SUM {" os; Poly.iter (fun vs e -> put_monom vs e os; os#puts ", ") p; putc '}' os
+
+let exp_of_poly p = Poly.fold (fun vs e acc -> acc +^ (e *^ smt_prod exp_of_svar vs)) p (LI 0)
 
 let refer_poly solver = Poly.map solver#refer_base
 
@@ -273,52 +281,6 @@ let mul_poly p1 p2 =
 
 let prod_poly = List.fold_left mul_poly (Poly.singleton [] (LI 1))
 
-let eq_0_poly p =
-	let folder vs1 e1 acc = acc &^ (e1 =^ LI 0) in
-	Poly.fold folder p (LB true)
-
-let eq_poly =
-	let merger vs e1opt e2opt = Some(
-		match e1opt, e2opt with
-		| Some e1, Some e2 -> e1 =^ e2
-		| Some e1, None    -> e1 =^ LI 0
-		| None   , Some e2 -> LI 0 =^ e2
-		)
-	in
-	fun p1 p2 -> smt_list_for_all (fun (vs,e) -> e) Poly.(bindings (merge merger p1 p2))
-
-let ge_poly_coeffs =
-	let ge_monom =
-		let rec sub flag vs = 
-			match vs with
-			| [] -> if flag then (>=^) else (<=^)
-			| (v,i,s) :: vs ->
-				match s with
-				| Full -> (=^)
-				| Pos | Bool -> sub flag vs
-				| Neg -> sub (not flag) vs
-		in sub true
-	in
-	let merger vs e1opt e2opt = Some(
-		match e1opt, e2opt with
-		| Some e1, Some e2 -> ge_monom vs e1 e2
-		| Some e1, None    -> ge_monom vs e1 (LI 0)
-		| None   , Some e2 -> ge_monom vs (LI 0) e2
-		)
-	in
-	fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
-
-let ge_poly p1 p2 = smt_list_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
-
-let order_poly solver p1 p2 =
-	let pre = smt_list_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2) in
-	let pre = solver#refer Smt.Bool pre in
-	let e1 = poly_coeff [] p1 in
-	let e2 = poly_coeff [] p2 in
-	let ge = (e1 >=^ e2) &^ pre in
-	let gt = (e1 >^ e2) &^ pre in
-	(ge, gt)
-
 (* Max Polynomials *)
 type mpoly = exp Poly.t list
 
@@ -339,33 +301,6 @@ let max_mpoly = List.concat
 let sum_mpoly mps : mpoly = List.map sum_poly (list_product mps)
 
 let prod_mpoly mps = List.map prod_poly (list_product mps)
-
-let eq_0_mpoly = smt_list_for_all eq_0_poly
-
-let eq_mpoly mp1 mp2 =
-	smt_list_for_all (fun p2 -> smt_list_exists (fun p1 -> eq_poly p1 p2) mp1) mp2 &^
-	smt_list_for_all (fun p1 -> smt_list_exists (fun p2 -> eq_poly p1 p2) mp2) mp1
-
-let ge_mpoly mp1 mp2 =
-	smt_list_for_all (fun p2 -> smt_list_exists (fun p1 -> ge_poly p1 p2) mp1) mp2
-
-let order_mpoly solver mp1 mp2 =
-	let (ge,gt) =
-		List.fold_left (fun (all_ge,all_gt) p2 ->
-			let (ge,gt) =
-				List.fold_left (fun (ex_ge,ex_gt) p1 ->
-					let (ge,gt) = order_poly solver p1 p2 in
-					(ex_ge |^ ge, ex_gt |^ gt)
-				)
-				(LB false, LB false)
-				mp1
-			in
-			(all_ge &^ ge, all_gt &^ gt)
-		)
-		(LB true, LB true)
-		mp2
-	in
-	(ge,gt)
 
 (* Conditioned Max Polynomials *)
 type cmpoly = (exp * mpoly) list
@@ -399,26 +334,6 @@ let cond_cmpoly c cmp1 cmp2 =
 	let sub2 (d,mp) = match nc &^ d with LB false -> None | d -> Some (d,mp) in
 	List.filter_map sub1 cmp1 @ List.filter_map sub2 cmp2
 
-let eq_0_cmpoly = smt_list_for_all (fun (c,mp) -> c =>^ eq_0_mpoly mp) 
-
-let eq_cmpoly cmp1 cmp2 =
-	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ eq_mpoly mp1 mp2) cmp1 cmp2)
-
-let ge_cmpoly cmp1 cmp2 =
-	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ ge_mpoly mp1 mp2) cmp1 cmp2)
-
-let order_cmpoly solver cmp1 cmp2 =
-	let ords = list_prod_filter (fun (c1,mp1) (c2,mp2) ->
-			match c1 &^ c2 with
-			| LB false -> None
-			| c ->
-				let (ge,gt) = order_mpoly solver mp1 mp2 in Some (c =>^ ge, c =>^ gt)
-		) cmp1 cmp2
-	in
-	let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
-	let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
-	(ge,gt)
-
 (* Vectors *)
 let zero_vec dim = Array.make dim (zero_cmpoly)
 
@@ -428,10 +343,116 @@ let smult e = Array.map (fun cmp -> prod_cmpoly [const_cmpoly e; cmp])
 
 let add_vec v1 v2 = Array.mapi (fun i w1 -> sum_cmpoly [w1; v2.(i)]) v1
 
+(** Equality **)
+let eq_0_poly p =
+	let folder vs1 e1 acc = acc &^ (e1 =^ LI 0) in
+	Poly.fold folder p (LB true)
+
+let eq_0_mpoly = smt_list_for_all eq_0_poly
+
+let eq_0_cmpoly = smt_list_for_all (fun (c,mp) -> c =>^ eq_0_mpoly mp) 
+
+let eq_poly =
+	let merger vs e1opt e2opt = Some(
+		match e1opt, e2opt with
+		| Some e1, Some e2 -> e1 =^ e2
+		| Some e1, None    -> e1 =^ LI 0
+		| None   , Some e2 -> LI 0 =^ e2
+		)
+	in
+	fun p1 p2 -> smt_list_for_all (fun (vs,e) -> e) Poly.(bindings (merge merger p1 p2))
+
+let eq_mpoly mp1 mp2 =
+	smt_list_for_all (fun p2 -> smt_list_exists (fun p1 -> eq_poly p1 p2) mp1) mp2 &^
+	smt_list_for_all (fun p1 -> smt_list_exists (fun p2 -> eq_poly p1 p2) mp2) mp1
+
+let eq_cmpoly cmp1 cmp2 =
+	smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ eq_mpoly mp1 mp2) cmp1 cmp2)
+
 let eq_vec param v1 v2 =
 	smt_list_for_all (fun i -> eq_cmpoly v1.(i) v2.(i)) (int_list 0 (Array.length param.w_templates - 1))
 
-let order_vec param =
+(** Ordering **)
+let ge_poly_coeffs =
+	let ge_monom =
+		let rec sub flag vs = 
+			match vs with
+			| [] -> if flag then (>=^) else (<=^)
+			| (v,i,s) :: vs ->
+				match s with
+				| Full -> (=^)
+				| Pos | Bool -> sub flag vs
+				| Neg -> sub (not flag) vs
+		in sub true
+	in
+	let merger vs e1opt e2opt = Some(
+		match e1opt, e2opt with
+		| Some e1, Some e2 -> ge_monom vs e1 e2
+		| Some e1, None    -> ge_monom vs e1 (LI 0)
+		| None   , Some e2 -> ge_monom vs (LI 0) e2
+		)
+	in
+	fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
+
+let ge_poly closed =
+	if closed then fun p1 p2 -> smt_list_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
+	else fun p1 p2 -> exp_of_poly p1 >=^ exp_of_poly p2
+
+let ge_mpoly closed =
+	let inner = ge_poly closed in
+	fun mp1 mp2 -> smt_list_for_all (fun p2 -> smt_list_exists (fun p1 -> inner p1 p2) mp1) mp2
+
+let ge_cmpoly closed =
+	let inner = ge_mpoly closed in
+	fun cmp1 cmp2 -> smt_conjunction (list_prod (fun(c1,mp1) (c2,mp2) -> (c1 &^ c2) =>^ inner mp1 mp2) cmp1 cmp2)
+
+let order_poly closed =
+	if closed then fun solver p1 p2 ->
+		let pre = smt_list_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2) in
+		let pre = solver#refer Smt.Bool pre in
+		let e1 = poly_coeff [] p1 in
+		let e2 = poly_coeff [] p2 in
+		let ge = (e1 >=^ e2) &^ pre in
+		let gt = (e1 >^ e2) &^ pre in
+		(ge, gt)
+	else fun solver p1 p2 ->
+		( exp_of_poly p1 >=^ exp_of_poly p2, exp_of_poly p1 >^ exp_of_poly p2 )
+
+let order_mpoly closed =
+	let inner = order_poly closed in
+	fun solver mp1 mp2 ->
+	let (ge,gt) =
+		List.fold_left (fun (all_ge,all_gt) p2 ->
+			let (ge,gt) =
+				List.fold_left (fun (ex_ge,ex_gt) p1 ->
+					let (ge,gt) = inner solver p1 p2 in
+					(ex_ge |^ ge, ex_gt |^ gt)
+				)
+				(LB false, LB false)
+				mp1
+			in
+			(all_ge &^ ge, all_gt &^ gt)
+		)
+		(LB true, LB true)
+		mp2
+	in
+	(ge,gt)
+
+let order_cmpoly closed =
+	let inner = order_mpoly closed in
+	fun solver cmp1 cmp2 ->
+	let ords = list_prod_filter (fun (c1,mp1) (c2,mp2) ->
+			match c1 &^ c2 with
+			| LB false -> None
+			| c ->
+				let (ge,gt) = inner solver mp1 mp2 in Some (c =>^ ge, c =>^ gt)
+		) cmp1 cmp2
+	in
+	let folder (ge,gt) (all_ge,all_gt) = (ge &^ all_ge, gt &^ all_gt) in
+	let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
+	(ge,gt)
+
+let order_vec param ~closed =
 	let tmps = param.w_templates in
 	let dim = Array.length tmps in
 	if dim = 0 then fun _ _ -> weakly_ordered
@@ -443,12 +464,12 @@ let order_vec param =
 				let w2 = v2.(i) in
 				match mode with
 				| O_strict ->
-					let (ge,gt) = order_cmpoly solver w1 w2 in
+					let (ge,gt) = order_cmpoly closed solver w1 w2 in
 					(i+1, ge_rest &^ ge, gt_rest &^ gt)
 				| O_weak ->
-					(i+1, ge_rest &^ ge_cmpoly w1 w2, gt_rest)
+					(i+1, ge_rest &^ ge_cmpoly closed w1 w2, gt_rest)
 				| O_strict_or_bottom ->
-					let (ge,gt) = order_cmpoly solver w1 w2 in
+					let (ge,gt) = order_cmpoly closed solver w1 w2 in
 					(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_cmpoly w2))
 				) (0, LB true, LB true) tmps
 			in Cons(ge,gt)

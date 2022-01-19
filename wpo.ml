@@ -50,7 +50,7 @@ class t =
 
   (* weight order *)
   let interpreter = new Weight.interpreter p in
-  let wo_closed = Weight.order_vec p in
+  let wo_closed = Weight.order_vec p ~closed:true in
 
   (*** Precedence ***)
   let pmin = LI 0 in

@@ -662,6 +662,15 @@ let smt_xor e1 e2 =
 	| _, LB b -> if b then smt_not e1 else e1
 	| _ -> match e1 =^ e2 with LB b -> LB (not b) | _ -> Xor(e1,e2)
 
+let smt_sum f xs = List.(fold_left (+^) (LI 0) (map f xs))
+
+let smt_prod f =
+	let rec sub acc = function
+	| [] -> acc
+	| x::xs -> let acc' = acc *^ f x in if is_zero acc' then acc' else sub acc' xs
+	in
+	sub (LI 1)
+
 let smt_list_for_all f =
 	let rec sub acc = function
 		| [] -> acc
