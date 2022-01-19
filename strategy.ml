@@ -342,7 +342,7 @@ let of_file default_smt =
 	Txtr.parse_file (strategy_element default_smt)
 
 let default smt = (
-	[order_params smt ~dp:false ~usable:false mono_bpoly_weight],
+	[order_params smt ~dp:false mono_bpoly_weight],
 	true, Some ( [
 		order_params smt (sum_weight ~mono:false);
 		order_params smt (max_weight ~mono:false);
