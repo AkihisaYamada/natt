@@ -108,7 +108,7 @@ let rule_remove (trs : #trs) next =
 			Array.fold_right folder params.orders_removal []
 		in
 		let remove_strict rules =
-			List.exists (fun proc -> proc#direct rules) proc_list
+			List.exists (fun proc -> proc#remove_rules rules) proc_list
 		in
 		let rec loop () =
 			let rules = trs#fold_rules (fun i _ is -> i::is) [] in
@@ -191,7 +191,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 			function
 			| [] -> 0
 			| proc :: procs ->
-				let n = proc#reduce (if proc#using_usable then usables else all_rules) sccref in
+				let n = proc#remove_nodes (if proc#using_usable then usables else all_rules) sccref in
 				if n > 0 then n else sub procs
 		in
 		sub proc_list

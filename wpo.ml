@@ -106,20 +106,21 @@ class t =
   in
 
   (*** Usable rules ***)
+  let using_usable = p.usable && (not p.dp || dg#minimal) in
   let usable =
-    if p.usable && (not p.dp || dg#minimal) then
+    if using_usable then
       fun i -> EV(usable_v i)
     else
       k_comb (LB true)
   in
   let usable_w =
-    if p.dp && p.usable_w then
+    if using_usable && p.usable_w then
       fun i -> EV(usable_w_v i)
     else
       usable
   in
   let usable_p =
-    if p.usable && (not p.dp || dg#minimal) then
+    if using_usable then
       fun i -> EV(usable_p_v i)
     else
       k_comb (LB true)
@@ -141,7 +142,7 @@ class t =
       sub 1 ss
   in
   let add_usable =
-    if p.usable && ( not p.dp || dg#minimal ) then
+    if using_usable then
       fun i ->
       solver#add_variable (usable_v i) Bool;
       if p.usable_w then
@@ -150,7 +151,7 @@ class t =
       fun _ -> ()
   in
   let add_usable_p =
-    if p.usable && ( not p.dp || dg#minimal ) then
+    if using_usable then
       fun i -> solver#add_variable (usable_p_v i) Bool;
     else
       fun _ -> ()
@@ -698,7 +699,7 @@ object (x)
   val mutable rule_flag_table = Hashtbl.create 256
   val mutable prule_flag_table = Hashtbl.create 4
 
-  method using_usable = p.usable && dg#minimal
+  method using_usable = using_usable
 
   method init current_usables dps =
     initialized <- true;
@@ -782,7 +783,7 @@ object (x)
       in
       let rw = prule#fold_rs folder (Weight.zero_vec dim) in
       let (ge,gt) = solver#expand_pair (wo_closed lw rw) in
-      if p.usable then begin
+      if using_usable then begin
         solver#add_assertion (usable_p i =>^ ge);
         solver#add_definition (gt_p_v i) Bool gt;
       end else begin
@@ -802,7 +803,7 @@ object (x)
       let WT(_,_,rw) as ra = interpreter#annotate solver rule#r in
       debug2 (puts "." << flush);
       if p.dp then begin
-        if p.usable && dg#minimal then begin (* usable rules technique is applicable *)
+        if using_usable then begin (* usable rules technique is applicable *)
           if p.usable_w then begin
             solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
             solver#add_assertion (usable i =>^ set_usable permed usable rule#r);
@@ -831,12 +832,11 @@ object (x)
         end else begin (* usable rules cannot be applied *)
           solver#add_assertion (weakly (wpo0 wo_closed la ra));
         end;
-      end else if p.usable then begin
-        (* incremental rule removal *)
+      end else if p.usable then begin (* incremental rule removal *)
         let (ge,gt) = solver#expand_pair (wpo0 wo_closed la ra) in
         solver#add_assertion (usable i =>^ ge);
         solver#add_definition (gt_r_v i) Bool gt;
-      end else begin
+      end else begin (* direct reduction order proof *)
         solver#add_assertion (strictly (wpo0 wo_closed la ra));
       end;
       debug2 (puts "  ... initialized rule " << put_int i << endl);
@@ -852,7 +852,7 @@ object (x)
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
-      if p.usable then begin
+      if using_usable then begin
         solver#add_assertion (set_usable depend_w (if p.usable_w then usable_w else usable) dp#r);
         solver#add_assertion (set_usable permed usable dp#r);
       end;
@@ -887,7 +887,7 @@ object (x)
     else
       x#reset;
 
-  method reduce current_usables sccref =
+  method remove_nodes current_usables sccref =
     comment (put_order p << putc '.' << flush);
     try
       x#push current_usables !sccref;
@@ -921,7 +921,7 @@ object (x)
       x#pop;
       0
 
-  method direct current_usables =
+  method remove_rules current_usables =
     try
       comment (puts "Direct " << put_order p << puts " ." << flush);
       x#push current_usables [];
@@ -929,7 +929,7 @@ object (x)
 
       comment (putc '.' << flush);
 
-      if p.usable then begin
+      if using_usable then begin
         (* usable i should be true until i is removed. *)
         List.iter (fun i -> solver#add_assertion (usable i)) current_usables;
         solver#add_assertion
@@ -943,7 +943,7 @@ object (x)
       cpf (MyXML.enter "acRuleRemoval"); (* CAUTION: enter but won't leave *)
       cpf x#output_cpf;
       cpf (MyXML.enter "trs" << MyXML.enter "rules");
-      if p.usable then begin
+      if using_usable then begin
         comment (puts " removes:");
         List.iter
         (fun i ->
