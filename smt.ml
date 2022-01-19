@@ -106,6 +106,8 @@ type exp =
 	| Lt of exp * exp
 	| ForAll of dec list * exp
 	| Exists of dec list * exp
+	| ContextForAll of ( (exp,dec) base -> exp )
+	| ContextExists of ( (exp,dec) base -> exp )
 	| Delay of ( (exp,dec) base -> exp )
 	| ZeroOne of exp list
 	| ES1 of exp list
@@ -285,6 +287,8 @@ class virtual sexp_printer =
 			| OD(es)		-> pr "(od"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
 			| App(es)	 -> pr "("; withpunc pr_e " " es; pr ")";
 			| Delay f	 -> pr "(delay...)";
+			| ContextForAll f -> pr "(forall...)";
+			| ContextExists f -> pr "(exists...)";
 	end;;
 
 class sexp_printer_wrap (base : #printer) = object
@@ -768,9 +772,6 @@ class virtual context p =
 
 		method force f = f (x:>(exp,dec) base)
 
-		method private expand_delay f =
-			x#expand (f (x:>(exp,dec) base))
-
 		method private expand_and e1 e2 =
 			match x#expand e1 with
 			| LB false	-> LB false
@@ -950,10 +951,18 @@ class virtual context p =
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
 				branch#close_for_all e
+			| ContextForAll f ->
+				let branch = x#branch in
+				let e = f ( branch :> (exp,dec) base ) in
+				branch#close_for_all e
 			| Exists(ds,e)	->
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
 				branch#close_exists e
+			| ContextExists f ->
+				let branch = x#branch in
+				let e = f ( branch :> (exp,dec) base ) in
+				branch#close_for_all e
 			| ZeroOne es -> x#expand_zero_one es
 			| ES1 es     -> x#expand_es1 es
 			| AtMost1 es -> x#expand_atmost1 es
@@ -964,7 +973,7 @@ class virtual context p =
 			| Dup(ty,e)  -> let e = x#refer ty e in Cons(e,e)
 			| If(c,t,e,p) -> x#expand_if c t e
 			| App es  -> App(List.map x#expand es)
-			| Delay f -> x#expand_delay f
+			| Delay f -> x#expand (f (x :> (exp,dec) base))
 			| e	      -> raise (Invalid_formula ("expand",e))
 		method expand_pair e =
 			match x#expand e with Cons(e1,e2) -> (e1,e2) | _ -> raise (Invalid_formula ("smt_split", e))
