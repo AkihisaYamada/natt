@@ -50,7 +50,7 @@ class t =
 
   (* weight order *)
   let interpreter = new Weight.interpreter p in
-  let wo = Weight.order_vec p in
+  let wo_closed = Weight.order_vec p in
 
   (*** Precedence ***)
   let pmin = LI 0 in
@@ -617,7 +617,7 @@ class t =
       sub 1 (LB true) (LB true)
   in
 
-(*** WPO frame ***)
+(*** WPO ***)
   let is_mincons =
     if p.mincons then
       fun finfo -> finfo#is_quasi_const &^ (finfo#prec =^ pmin)
@@ -636,24 +636,24 @@ class t =
       in
       is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
   in
-  let rec wpo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
+  let rec wpo1 wo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
     if ac_eq s t then
       weakly_ordered
     else
-      compose (wo sw tw) (wpo2 s t)
-  and wpo2 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+      compose (wo sw tw) (wpo2 wo s t)
+  and wpo2 wo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     if f#is_var then
       Cons(var_eq f#name t, LB false)
     else if f#equals g then
       match ss,ts with
       | [s1], [t1] ->
         let fltp = (lookup f)#permed 1 in
-        smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
-      | _ -> wpo3 s t
-    else wpo3 s t
-  and wpo3 (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+        smt_split (wpo2 wo s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
+      | _ -> wpo3 wo s t
+    else wpo3 wo s t
+  and wpo3 wo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     let finfo = lookup f in
-    smt_split (order_by_some_arg wpo finfo ss t) (fun some_ge some_gt ->
+    smt_split (order_by_some_arg (wpo1 wo) finfo ss t) (fun some_ge some_gt ->
       smt_let Bool some_ge
       (fun some_ge ->
         let col_f = finfo#collapse in
@@ -664,12 +664,12 @@ class t =
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
-          smt_split (order_all_args wpo s ginfo ts) (fun all_ge all_gt ->
+          smt_split (order_all_args (wpo1 wo) s ginfo ts) (fun all_ge all_gt ->
             let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
-              smt_split (compose (po s t) (compargs f#name g#name finfo ginfo wpo ss ts)) (fun rest_ge rest_gt ->
+              smt_split (compose (po s t) (compargs f#name g#name finfo ginfo (wpo1 wo) ss ts)) (fun rest_ge rest_gt ->
                 smt_let Bool all_gt
                 (fun all_gt ->
                   let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
@@ -682,10 +682,10 @@ class t =
       )
     )
   in
-  let frame =
+  let wpo0 wo =
     if p.prec_mode = PREC_none && p.status_mode = S_empty then
       fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
-    else wpo
+		else wpo1 wo
   in
 
 object (x)
@@ -782,7 +782,7 @@ object (x)
         Weight.add_vec acc w
       in
       let rw = prule#fold_rs folder (Weight.zero_vec dim) in
-      let (ge,gt) = solver#expand_pair (wo lw rw) in
+      let (ge,gt) = solver#expand_pair (wo_closed lw rw) in
       if p.remove_all then begin
         solver#add_assertion gt;
       end else begin
@@ -798,22 +798,22 @@ object (x)
       Hashtbl.add rule_flag_table i ();
       let rule = trs#find_rule i in
       debug2 (puts "  Initializing rule " << put_int i << endl);
-      let (WT(_,_,lw) as la) = interpreter#annotate solver rule#l in
+      let WT(_,_,lw) as la = interpreter#annotate solver rule#l in
       debug2 (puts "." << flush);
-      let (WT(_,_,rw) as ra) = interpreter#annotate solver rule#r in
+      let WT(_,_,rw) as ra = interpreter#annotate solver rule#r in
       debug2 (puts "." << flush);
       if p.dp then begin
         if p.usable_w then begin
           solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
           solver#add_assertion (usable i =>^ set_usable permed usable rule#r);
-          let wge, wgt = solver#expand_pair (wo lw rw) in
+          let wge, wgt = solver#expand_pair (wo_closed lw rw) in
           let wge = solver#refer Bool wge in
           solver#add_assertion (usable_w i =>^ wge);
           if wge = LB false then begin
             solver#add_definition (ge_r_v i) Bool (LB false);
             solver#add_definition (gt_r_v i) Bool (LB false);
           end else begin
-            let (rge,rgt) = solver#expand_pair (wpo2 la ra) in
+            let (rge,rgt) = solver#expand_pair (wpo2 wo_closed la ra) in
             solver#add_definition (ge_r_v i) Bool (wge &^ rge);
             solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
           end;
@@ -826,15 +826,15 @@ object (x)
 					if p.negcoeff then
 						solver#add_assertion (usable i =>^ Weight.eq_vec p lw rw)
 					else
-          solver#add_assertion (usable i =>^ weakly (frame la ra));
+          solver#add_assertion (usable i =>^ weakly (wpo0 wo_closed la ra));
         end else begin
-          solver#add_assertion (weakly (frame la ra));
+          solver#add_assertion (weakly (wpo0 wo_closed la ra));
         end;
       end else if p.remove_all then begin
-        solver#add_assertion (strictly (frame la ra));
+        solver#add_assertion (strictly (wpo0 wo_closed la ra));
       end else begin
         (* rule removal mode *)
-        let (ge,gt) = solver#expand_pair (frame la ra) in
+        let (ge,gt) = solver#expand_pair (wpo0 wo_closed la ra) in
         solver#add_assertion (usable i =>^ ge);
         solver#add_definition (gt_r_v i) Bool gt;
       end;
@@ -847,7 +847,7 @@ object (x)
       Hashtbl.add dp_flag_table i ();
       debug2 (puts "    initializing DP #" << put_int i << endl);
       let dp = dg#find_dp i in
-      let (ge,gt) = solver#expand_pair (frame (interpreter#annotate solver dp#l) (interpreter#annotate solver dp#r)) in
+      let (ge,gt) = solver#expand_pair (wpo0 wo_closed (interpreter#annotate solver dp#l) (interpreter#annotate solver dp#r)) in
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
