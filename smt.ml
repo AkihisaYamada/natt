@@ -12,6 +12,7 @@ type params = {
 	base_ty : ty;
 	tmpvar : bool;
 	linear : bool;
+	mutable quantified : bool;
 	peek_in : bool;
 	peek_out : bool;
 	peek_to : out_channel;
@@ -23,6 +24,7 @@ let default_params cmd args = {
 	base_ty = Int;
 	tmpvar = true;
 	linear = true;
+	quantified = false;
 	peek_in = false;
 	peek_out = false;
 	peek_to = stderr;
@@ -52,6 +54,7 @@ let params_of_xml =
 			base_ty = Int;
 			tmpvar = tmpvar;
 			linear = linear;
+			quantified = false;
 			peek_in = peek;
 			peek_out = peek;
 			peek_to = peek_to;
@@ -1144,7 +1147,10 @@ class virtual smt_lib_2_0 p =
 		method init =
 			if not initialized then begin
 				initialized <- true;
-				x#puts ("(set-logic QF_" ^ (if p.linear then "L" else "N") ^ (if base_ty = Int then "I" else "R") ^ "A)");
+				x#puts "(set-logic QF_";
+				x#puts (if p.linear then "L" else "N");
+				x#puts (if base_ty = Int then "I" else "R");
+				x#puts "A)";
 				x#endl;
 			end;
 
