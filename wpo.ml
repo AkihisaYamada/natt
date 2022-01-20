@@ -27,7 +27,6 @@ let delete_common =
 class t =
   (* SMT variables *)
   let usable_v i = "u" ^ string_of_int i in
-  let usable_w_v i = "uw" ^ string_of_int i in
   let usable_p_v i = "uP" ^ string_of_int i in
   let gt_v i = "gt#" ^ string_of_int i in
   let ge_v i = "ge#" ^ string_of_int i in
@@ -50,7 +49,6 @@ class t =
 
   (* weight order *)
   let interpreter = new Weight.interpreter p in
-  let wo_closed = Weight.order_vec p ~closed:true in
 
   (*** Precedence ***)
   let pmin = LI 0 in
@@ -113,12 +111,6 @@ class t =
     else
       k_comb (LB true)
   in
-  let usable_w =
-    if using_usable && p.usable_w then
-      fun i -> EV(usable_w_v i)
-    else
-      usable
-  in
   let usable_p =
     if using_usable then
       fun i -> EV(usable_p_v i)
@@ -143,10 +135,7 @@ class t =
   in
   let add_usable =
     if using_usable then
-      fun i ->
-      solver#add_variable (usable_v i) Bool;
-      if p.usable_w then
-        solver#add_variable (usable_w_v i) Bool;
+      fun i -> solver#add_variable (usable_v i) Bool
     else
       fun _ -> ()
   in
@@ -687,6 +676,8 @@ class t =
       fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
 		else wpo1 wo
   in
+  let wo_closed = interpreter#order ~closed:true in
+	let wo_open = interpreter#order ~closed:false in
 
 object (x)
 
@@ -804,31 +795,15 @@ object (x)
       debug2 (puts "." << flush);
       if p.dp then begin
         if using_usable then begin (* usable rules technique is applicable *)
-          if p.usable_w then begin
-            solver#add_assertion (usable_w i =>^ set_usable depend_w usable_w rule#r);
-            solver#add_assertion (usable i =>^ set_usable permed usable rule#r);
-            let wge, wgt = solver#expand_pair (wo_closed lw rw) in
-            let wge = solver#refer Bool wge in
-            solver#add_assertion (usable_w i =>^ wge);
-            if wge = LB false then begin
-              solver#add_definition (ge_r_v i) Bool (LB false);
-              solver#add_definition (gt_r_v i) Bool (LB false);
-            end else begin
-              let (rge,rgt) = solver#expand_pair (wpo2 wo_closed la ra) in
-              solver#add_definition (ge_r_v i) Bool (wge &^ rge);
-              solver#add_definition (gt_r_v i) Bool (wgt |^ (wge &^ rgt));
-            end;
-          end else begin
-            let filt =
-              if dim = 0 then permed (* trivial weight *)
-              else depend_w
-            in
-            solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
-            if p.negcoeff then
-              solver#add_assertion (usable i =>^ Weight.eq_vec p lw rw)
-            else
+          let filt =
+            if dim = 0 then permed (* trivial weight *)
+            else depend_w
+          in
+          solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
+          if p.negcoeff then
+            solver#add_assertion (usable i =>^ Weight.eq_vec p lw rw)
+          else
             solver#add_assertion (usable i =>^ weakly (wpo0 wo_closed la ra));
-          end
         end else begin (* usable rules cannot be applied *)
           solver#add_assertion (weakly (wpo0 wo_closed la ra));
         end;
@@ -853,7 +828,7 @@ object (x)
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
       if using_usable then begin
-        solver#add_assertion (set_usable depend_w (if p.usable_w then usable_w else usable) dp#r);
+        solver#add_assertion (set_usable depend_w usable dp#r);
         solver#add_assertion (set_usable permed usable dp#r);
       end;
     end;

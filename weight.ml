@@ -452,29 +452,6 @@ let order_cmpoly closed =
 	let (ge,gt) = List.fold_left folder (LB true, LB true) ords in
 	(ge,gt)
 
-let order_vec param ~closed =
-	let tmps = param.w_templates in
-	let dim = Array.length tmps in
-	if dim = 0 then fun _ _ -> weakly_ordered
-	else fun v1 v2 ->
-		Delay (fun solver ->
-			let (_,ge,gt) =
-				Array.fold_left (fun (i,ge_rest,gt_rest) (_,mode,_) ->
-				let w1 = v1.(i) in
-				let w2 = v2.(i) in
-				match mode with
-				| O_strict ->
-					let (ge,gt) = order_cmpoly closed solver w1 w2 in
-					(i+1, ge_rest &^ ge, gt_rest &^ gt)
-				| O_weak ->
-					(i+1, ge_rest &^ ge_cmpoly closed w1 w2, gt_rest)
-				| O_strict_or_bottom ->
-					let (ge,gt) = order_cmpoly closed solver w1 w2 in
-					(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_cmpoly w2))
-				) (0, LB true, LB true) tmps
-			in Cons(ge,gt)
-		)
-
 type pos_info = {
 	const : exp;
 	just : exp;
@@ -484,6 +461,14 @@ type sym_info = {
 	encodings : (int * int) template array;
 	pos_info : pos_info array;
 }
+
+let add_svar context (v,i,s) =
+	let ev = context#new_variable (string_of_var (v,i)) Int in
+	match s with
+	| Pos -> context#add_assertion (ev >=^ LI 0)
+	| Neg -> context#add_assertion (ev <=^ LI 0)
+	| _ -> ()
+
 
 exception Continue
 
@@ -648,6 +633,37 @@ class interpreter p =
 
 		method output_sym_template : 'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
 			fun f -> f#output << puts ": " << put_template_vec put_arg (x#encode_sym f)
+
+		method order ~closed =
+			if dim = 0 then fun _ _ -> weakly_ordered
+			else fun v1 v2 ->
+				Delay (fun solver ->
+					let (_,ge,gt) =
+						Array.fold_left (fun (i,ge_rest,gt_rest) (_,mode,_) ->
+						let w1 = v1.(i) in
+						let w2 = v2.(i) in
+						match mode with
+						| O_strict ->
+							let (ge,gt) = order_cmpoly closed solver w1 w2 in
+							(i+1, ge_rest &^ ge, gt_rest &^ gt)
+						| O_weak ->
+							(i+1, ge_rest &^ ge_cmpoly closed w1 w2, gt_rest)
+						| O_strict_or_bottom ->
+							let (ge,gt) = order_cmpoly closed solver w1 w2 in
+							(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_cmpoly w2))
+						) (0, LB true, LB true) p.w_templates
+					in Cons(ge,gt)
+				)
+
+		method quantify vs e =
+			ContextForAll (fun context ->
+				List.iter (fun v ->
+					for i = 0 to dim do
+						add_svar context (v, i, range_of_coord i)
+					done
+				) vs;
+				e
+			)
 	end
 
 

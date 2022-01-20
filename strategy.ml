@@ -201,6 +201,7 @@ type order_params = {
 	smt_params : Smt.params;
 	dp : bool;
 	w_name : string;
+	w_quantify : bool;
 	w_templates : (range * order_mode * template) array;
 	ext_mset : bool;
 	ext_lex : bool;
@@ -227,10 +228,14 @@ let nonmonotone p =
   p.status_mode = S_partial ||
   p.status_mode = S_empty && p.prec_mode <> PREC_none
 
-let order_params smt ?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty) ?(usable=true) (w_name,w_templates) = {
-	smt_params = smt;
+let order_params
+	?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty)
+	?(usable=true) ?(quantify=false) ?(negcoeff=false)
+	smt (w_name,w_templates) = {
+	smt_params = if quantify then { smt with quantified = true; linear = false; } else smt;
 	dp = dp;
 	w_name = w_name;
+	w_quantify = quantify;
 	w_templates = Array.of_list w_templates;
 	prec_mode = prec;
 	status_mode = status;
@@ -247,29 +252,7 @@ let order_params smt ?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=s
 	strict_equal = false;
 	use_scope = true;
 	use_scope_ratio = 0;
-	negcoeff = false;
-}
-let order_HM04_params smt w_template = {
-	smt_params = smt;
-	dp = true;
-	w_name = "HM04";
-	w_templates = Array.make 1 (Pos,O_strict,w_template);
-	prec_mode = PREC_none;
-	status_mode = S_empty;
-	status_nest = 0;
-	status_copy = false;
-	ext_lex = false;
-	ext_mset = false;
-	collapse = false;
-	usable = true;
-	usable_w = false;
-	mincons = false;
-	maxcons = false;
-	ac_w = true;
-	strict_equal = false;
-	use_scope = true;
-	use_scope_ratio = 0;
-	negcoeff = true;
+	negcoeff = negcoeff;
 }
 
 let put_order p =
@@ -315,11 +298,6 @@ let order_element default_smt mono =
 			weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total)
 		) >>= fun weight ->
 		return (order_params smt ~dp:(not mono) ~prec:prec ~status:status ~collapse:collapse ~usable:usable weight)
-	) <|>
-	element "HM04" (
-		default default_smt Smt.params_of_xml >>= fun smt ->
-		exp_seq >>= fun s ->
-		return (order_HM04_params smt s)
 	)
 
 let strategy_element default_smt =

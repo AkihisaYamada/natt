@@ -12,7 +12,7 @@ type params = {
 	base_ty : ty;
 	tmpvar : bool;
 	linear : bool;
-	mutable quantified : bool;
+	quantified : bool;
 	peek_in : bool;
 	peek_out : bool;
 	peek_to : out_channel;
