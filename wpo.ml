@@ -687,6 +687,7 @@ object (x)
   val mutable use_scope = p.use_scope
   val mutable use_scope_last_size = 0
   val mutable dp_flag_table = Hashtbl.create 256
+  val mutable edge_flag_table = Hashtbl.create 256
   val mutable rule_flag_table = Hashtbl.create 256
   val mutable prule_flag_table = Hashtbl.create 4
 
@@ -833,6 +834,12 @@ object (x)
         solver#add_assertion (set_usable depend_w usable dp#r);
         solver#add_assertion (set_usable permed usable dp#r);
       end;
+    end;
+
+  method private add_edge i j =
+    if not (Hashtbl.mem edge_flag_table (i,j)) then begin
+      Hashtbl.add edge_flag_table (i,j) ();
+      debug2 (puts "    initializing edge #" << put_int i << puts " --> #" << put_int j << endl);
     end;
 
   method reset =

@@ -134,7 +134,7 @@ let rule_remove (trs : #trs) next =
 let remove_unusable (trs : #trs) (estimator : #Estimator.t) (dg : #dg) sccs =
 	let dps = List.concat sccs in
 	let curr_len = List.length dps in
-	if curr_len < dg#get_size then begin
+	if curr_len < dg#count_dps then begin
 (* The following assumes non-Ce compatible method is not applied *)
 		log (puts "Removing unusable rules: {");
 		let (_,unusables) = static_usable_rules trs estimator dg dps in
@@ -198,13 +198,10 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	in
 
 	let sccs = dg#get_sccs in
+	let sccs = dg#trim_sccs sccs in
 	let sccs = scc_sorter sccs in
 
-	let real_filter = List.filter (fun scc -> not (dg#triv_scc scc)) in
-
-	let real_sccs = real_filter sccs in
-
-	if dg#minimal then remove_unusable trs estimator dg real_sccs;
+	if dg#minimal then remove_unusable trs estimator dg sccs;
 
 	let count_dps =
 		let rec sub ret = function
@@ -213,28 +210,29 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 		in sub 0
 	in
 
-	let rec dg_proc n_reals n_dps sccs =
+	let rec dg_proc n_sccs sccs =
 		cpf (MyXML.enter "acDPTerminationProof" << MyXML.enter "acDepGraphProc");
-		let ret = loop n_reals n_dps sccs in
+		let ret = loop n_sccs sccs in
 		cpf (MyXML.leave "acDepGraphProc" << MyXML.leave "acDPTerminationProof");
 		ret
-	and loop n_reals n_dps sccs =
-		comment (puts "Number of SCCs: " << put_int n_reals << puts ", DPs: " << put_int n_dps << endl);
-		loop_silent n_reals n_dps sccs
-	and loop_silent n_reals n_dps = function
+	and loop n_sccs sccs =
+		comment (puts "Number of SCCs: " << put_int n_sccs << puts ", DPs: " << put_int dg#count_dps << endl);
+		loop_silent n_sccs sccs
+	and loop_silent n_sccs = function
 		| [] -> YES
 		| scc::sccs ->
 			cpf (
 				MyXML.enter "component" <<
 				MyXML.enclose "dps" (MyXML.enclose "rules" (dg#output_scc_xml scc))
 			);
+(* Please improve CeTA!
 			if dg#triv_scc scc then (
 				cpf (
 					MyXML.enclose_inline "realScc" (puts "false") <<
 					MyXML.leave "component"
 				);
-				loop_silent n_reals n_dps sccs
-			) else (
+				loop_silent n_sccs sccs
+			) else *) (
 				comment (puts "	SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
 				cpf (MyXML.enclose_inline "realScc" (puts "true"));
 				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
@@ -243,25 +241,22 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 						MyXML.enclose "acDPTerminationProof" (MyXML.tag "acTrivialProc") <<
 						MyXML.leave "component"
 					);
-					loop (n_reals - 1) (n_dps - List.length scc) sccs
+					loop (n_sccs - 1) sccs
 				) else (
 					cpf (MyXML.enter "acDPTerminationProof");
 					let sccref = ref scc in
-					let n_dps = n_dps - List.length scc in
-					let n_reals = n_reals - 1 in
-					let n_rem = remove_strict sccref in
-					if n_rem > 0 then (
+					if remove_strict sccref > 0 then (
 						let subsccs = dg#get_subsccs !sccref in
-						let real_subsccs = real_filter subsccs in
+						let subsccs = dg#trim_sccs subsccs in
 						let subsccs = scc_sorter subsccs in
-						let n_subdps = count_dps real_subsccs in
-						let ret = dg_proc (n_reals + List.length real_subsccs) (n_dps + n_subdps) subsccs in
+						let n_sccs = n_sccs - 1 + List.length subsccs in
+						let ret = dg_proc n_sccs subsccs in
 						cpf (
 							MyXML.leave "acRedPairProc" <<
 							MyXML.leave "acDPTerminationProof" <<
 							MyXML.leave "component"
 						);
-						if ret = YES then loop_silent n_reals n_dps sccs else ret
+						if ret = YES then loop_silent n_sccs sccs else ret
 					) else (
 						comment (puts "failed." << endl);
 						Nonterm.find_loop params.max_loop trs estimator dg scc;
@@ -275,13 +270,13 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 				)
 			)
 	in
-	let ret = dg_proc (List.length real_sccs) (count_dps real_sccs) sccs in
+	let ret = dg_proc (List.length sccs) sccs in
 	if ret = YES && dg#next then (
 		problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
 		let sccs = dg#get_sccs in
-		let real_sccs = real_filter sccs in
-		remove_unusable trs estimator dg real_sccs;
-		dg_proc (List.length real_sccs) (count_dps real_sccs) sccs
+		let sccs = dg#trim_sccs sccs in
+		remove_unusable trs estimator dg sccs;
+		dg_proc (List.length sccs) sccs
 	) else ret;;
 
 

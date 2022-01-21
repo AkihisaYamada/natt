@@ -151,13 +151,12 @@ class dg (trs : trs) (estimator : Estimator.t) =
 				estimator#may_connect src#r tgt#l && (edge_real <- edge_real + 1; true)
 			in
 			Hashtbl.iter (fun i _ -> DG.add_vertex dg i) dp_table;
-			Hashtbl.iter
-			(fun i1 dp1 ->
+			Hashtbl.iter (
+				fun i1 dp1 ->
 				Hashtbl.iter
-				(fun i2 dp2 -> if edged dp1 dp2 then DG.add_edge dg i1 i2)
-				dp_table
-			)
-			dp_table;
+					(fun i2 dp2 -> if edged dp1 dp2 then DG.add_edge dg i1 i2)
+					dp_table
+			) dp_table;
 
 		method private make_ac_ext =
 			x#iter_dps (fun i _ -> x#remove_dp i);
@@ -185,10 +184,20 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		(* reverse SCCs, for CeTA *)
 		method get_sccs = List.rev (Components.scc_list dg)
 		method get_subsccs dps = List.rev (SubComponents.scc_list (dg, IntSet.of_list dps))
-		method triv_scc = function
-			| [v] -> not (DG.mem_edge dg v v)
-			| _ -> false
-		method get_size = Hashtbl.length dp_table
+		method trim_sccs =
+			List.filter (function
+			| [v] when not (DG.mem_edge dg v v) ->
+				x#remove_dp v; (* remove trivial SCC *)
+				false
+			| scc ->
+				List.iter (fun v ->
+					DG.iter_succ (fun s ->
+						if not (List.mem s scc) then DG.remove_edge dg v s;
+					) dg v
+				) scc;
+				true
+			)
+		method count_dps = Hashtbl.length dp_table
 		method find_dp = Hashtbl.find dp_table
 		method get_dp_size i = let dp = x#find_dp i in dp#size
 		method iter_dps f = Hashtbl.iter f dp_table
