@@ -823,7 +823,9 @@ object (x)
       Hashtbl.add dp_flag_table i ();
       debug2 (puts "    initializing DP #" << put_int i << endl);
       let dp = dg#find_dp i in
-      let (ge,gt) = solver#expand_pair (wpo0 wo_closed (interpreter#annotate solver dp#l) (interpreter#annotate solver dp#r)) in
+      let la = interpreter#annotate solver dp#l in
+      let ra = interpreter#annotate solver dp#r in
+      let (ge,gt) = solver#expand_pair (wpo0 wo_closed la ra) in
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)

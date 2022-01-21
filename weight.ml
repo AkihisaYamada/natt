@@ -655,15 +655,20 @@ class interpreter p =
 					in Cons(ge,gt)
 				)
 
-		method quantify vs e =
-			ContextForAll (fun context ->
-				List.iter (fun v ->
-					for i = 0 to dim do
-						add_svar context (v, i, range_of_coord i)
-					done
-				) vs;
-				e
-			)
+		method quantify : 'f. (#Sym.named as 'f) list -> exp -> exp =
+			if dim = 0 then
+				fun vs e -> e
+			else
+				fun vs e ->
+				if vs = [] then e
+				else ContextForAll (fun context ->
+					List.iter (fun v ->
+						for i = 0 to dim-1 do
+							add_svar context (v#name, i, range_of_coord i)
+						done
+					) vs;
+					e
+				)
 	end
 
 
