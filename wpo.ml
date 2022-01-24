@@ -32,6 +32,7 @@ class t =
   let ge_v i = "ge#" ^ string_of_int i in
   let gt_r_v i = "gt" ^ string_of_int i in
   let ge_r_v i = "ge" ^ string_of_int i in
+	let gt_e_v i j = "ge#" ^ string_of_int i ^"#" ^ string_of_int j in
   let gt_p_v i = "gtP" ^ string_of_int i in (* probabilistic rules *)
   let ge_p_v i = "geP" ^ string_of_int i in
   let supply_index v i = v ^ "_" ^ string_of_int i in
@@ -789,11 +790,9 @@ object (x)
     try
       Hashtbl.add rule_flag_table i ();
       let rule = trs#find_rule i in
-      debug2 (puts "  Initializing rule " << put_int i << endl);
+      debug (puts " " << put_int i);
       let WT(_,_,lw) as la = interpreter#annotate solver rule#l in
-      debug2 (puts "." << flush);
       let WT(_,_,rw) as ra = interpreter#annotate solver rule#r in
-      debug2 (puts "." << flush);
       if p.dp then begin
         if using_usable then begin (* usable rules technique is applicable *)
           let filt =
@@ -815,14 +814,13 @@ object (x)
       end else begin (* direct reduction order proof *)
         solver#add_assertion (strictly (wpo0 wo_closed la ra));
       end;
-      debug2 (puts "  ... initialized rule " << put_int i << endl);
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);
 
   method private add_dp i =
     if not (Hashtbl.mem dp_flag_table i) then begin
       Hashtbl.add dp_flag_table i ();
-      debug2 (puts "    initializing DP #" << put_int i << endl);
+      debug (puts " #" << put_int i << flush);
       let dp = dg#find_dp i in
       let la = interpreter#annotate solver dp#l in
       let ra = interpreter#annotate solver dp#r in
@@ -839,7 +837,13 @@ object (x)
   method private add_edge i j =
     if not (Hashtbl.mem edge_flag_table (i,j)) then begin
       Hashtbl.add edge_flag_table (i,j) ();
-      debug2 (puts "    initializing edge #" << put_int i << puts " --> #" << put_int j << endl);
+      debug (puts " #" << put_int i << puts "-->#" << put_int j << flush);
+      let s = rename_vars (fun v -> "pre_" ^ v) (dg#find_dp i)#r in
+      let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
+      let sa = interpreter#annotate solver s in
+      let ta = interpreter#annotate solver t in
+      debug2 (endl << puts "	" << put_term s << puts " > " << put_term t << endl);
+      solver#add_definition (gt_e_v i j) Bool (strictly (wpo0 wo_closed sa ta));
     end;
 
   method reset =
@@ -848,7 +852,7 @@ object (x)
     Hashtbl.clear rule_flag_table;
     initialized <- false;
 
-  method push current_usables dps =
+  method push ?(edge=false) current_usables dps =
     if initialized then begin
       if p.use_scope_ratio > 0 then
         let curr_size = trs#get_size in
@@ -860,8 +864,16 @@ object (x)
     end else begin
       x#init current_usables dps;
     end;
+    debug (endl << puts "	Initializing rules:");
     List.iter x#add_rule current_usables;
+    debug (endl << puts "	Initializing DPs:");
     List.iter x#add_dp dps;
+    debug endl;
+    if edge then begin
+      debug (puts "	Initializing edges:");
+      List.iter (fun i -> dg#iter_succ (fun j -> x#add_edge i j) i) dps;
+      debug endl;
+    end;
     if use_scope then
       solver#push;
 
@@ -871,39 +883,38 @@ object (x)
     else
       x#reset;
 
-  method remove_nodes current_usables sccref =
+  method remove_nodes current_usables scc =
     comment (put_order p << putc '.' << flush);
     try
-      x#push current_usables !sccref;
+      x#push current_usables scc;
       comment (putc '.' << flush);
       let folder i ret =
         solver#add_assertion (EV (ge_v i));
         EV (gt_v i) |^ ret
       in
-      solver#add_assertion (List.fold_right folder !sccref (LB false));
+      solver#add_assertion (List.fold_right folder scc (LB false));
       comment (putc '.' << flush);
       solver#check;
       comment (puts " succeeded." << endl);
       proof (x#output_proof << x#output_usables usable !usables);
       cpf (MyXML.enter "acRedPairProc"); (* CAUTION: manually leave later *)
       cpf (x#output_cpf << MyXML.enter "dps" << MyXML.enter "rules");
-      let folder i (cnt,rem_dps) =
+      let folder i (rest,removed) =
         if solver#get_bool (EV(gt_v i)) then (
           cpf ((dg#find_dp i)#output_xml);
           dg#remove_dp i;
-          sccref := list_remove ((=) i) !sccref;
-          (cnt + 1, i :: rem_dps)
-        ) else (cnt,rem_dps)
+          (rest, i :: removed)
+        ) else (i::rest,removed)
       in
-      let (cnt,rem_dps) = List.fold_right folder !sccref (0,[]) in
-      proof (puts "    Removed DPs:" << Abbrev.put_ints " #" rem_dps << endl);
+      let (rest,removed) = List.fold_right folder scc ([],[]) in
+      proof (puts "    Removed DPs:" << Abbrev.put_ints " #" removed << endl);
       cpf (MyXML.leave "rules" << MyXML.leave "dps" << x#put_usables_cpf usable !usables);
       x#pop;
-      cnt
+      Some rest
     with Inconsistent ->
       comment (puts " ");
       x#pop;
-      0
+      None
 
   method remove_rules current_usables =
     try
@@ -955,4 +966,40 @@ object (x)
       x#pop;
       true
     with Inconsistent -> x#pop; false
+
+  method remove_edges scc =
+    comment (put_order p << putc '.' << flush);
+    try
+      x#push ~edge:true [] scc;
+      comment (putc '.' << flush);
+      List.iter (fun i -> solver#add_assertion (EV (ge_v i))) scc;
+      solver#add_assertion (
+        smt_list_exists (fun i ->
+          smt_list_exists (fun j ->
+            EV (gt_e_v i j)
+          ) (dg#succ i)
+        ) scc
+      );
+      comment (putc '.' << flush);
+      solver#check;
+      comment (puts " succeeded." << endl);
+      proof (x#output_proof << x#output_usables usable !usables);
+      proof (puts "    Removed edges:");
+      List.iter (fun i ->
+        dg#iter_succ (fun j ->
+          if solver#get_bool (EV(gt_e_v i j)) then begin
+            dg#remove_edge i j;
+            proof (puts " #" << put_int i << puts "-->#" << put_int j);
+          end;
+        ) i
+      ) scc;
+			proof endl;
+      x#pop;
+      true
+    with Inconsistent ->
+      comment (puts " ");
+      x#pop;
+      false
+
+
 end;;

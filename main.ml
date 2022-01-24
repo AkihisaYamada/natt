@@ -154,13 +154,8 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 		let scc_size scc =
 			List.fold_right (fun i r -> dg#get_dp_size i + r) scc 0
 		in
-		match params.sort_scc with
-		| SORT_asc ->
-			List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
-		| SORT_desc ->
-			List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
-		| SORT_none ->
-			fun sccs -> sccs
+		if params.cpf then fun sccs -> List.rev sccs (* CeTA wants this *)
+		else List.sort (fun scc1 scc2 -> compare (scc_size scc1) (scc_size scc2))
 	in
 	let use_all_rules = ref false in
 	let use_usable_rules = ref false in
@@ -181,34 +176,32 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 			trs#fold_rules (fun i _ is -> i::is) []
 		else []
 	in
-	let remove_strict sccref =
+	let remove_strict scc =
 		let usables =
 			if !use_usable_rules then
-				fst (static_usable_rules trs estimator dg !sccref)
+				fst (static_usable_rules trs estimator dg scc)
 			else []
 		in
-		let rec sub =
-			function
-			| [] -> 0
-			| proc :: procs ->
-				let n = proc#remove_nodes (if proc#using_usable then usables else all_rules) sccref in
-				if n > 0 then n else sub procs
+		let rec sub = function
+		| [] -> None
+		| proc :: procs ->
+			match proc#remove_nodes (if proc#using_usable then usables else all_rules) scc with
+			| Some scc -> Some scc
+			| None -> sub procs
 		in
 		sub proc_list
 	in
-
+	let remove_edges scc =
+		let rec sub = function
+		| [] -> false
+		| proc :: procs -> proc#remove_edges scc || sub procs
+		in
+		sub proc_list
+	in
 	let sccs = dg#get_sccs in
-	let sccs = dg#trim_sccs sccs in
 	let sccs = scc_sorter sccs in
 
 	if dg#minimal then remove_unusable trs estimator dg sccs;
-
-	let count_dps =
-		let rec sub ret = function
-			| [] -> ret
-			| scc::sccs -> sub (List.length scc + ret) sccs
-		in sub 0
-	in
 
 	let rec dg_proc n_sccs sccs =
 		cpf (MyXML.enter "acDPTerminationProof" << MyXML.enter "acDepGraphProc");
@@ -216,7 +209,9 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 		cpf (MyXML.leave "acDepGraphProc" << MyXML.leave "acDPTerminationProof");
 		ret
 	and loop n_sccs sccs =
-		comment (puts "Number of SCCs: " << put_int n_sccs << puts ", DPs: " << put_int dg#count_dps << endl);
+		comment (puts "Number of SCCs: " << put_int n_sccs << puts ", DPs: " <<
+			put_int dg#count_dps << puts ", edges: " << put_int dg#count_edges << endl
+		);
 		loop_silent n_sccs sccs
 	and loop_silent n_sccs = function
 		| [] -> YES
@@ -233,7 +228,9 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 				);
 				loop_silent n_sccs sccs
 			) else *) (
-				comment (puts "	SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl);
+				comment (puts "	SCC {" << Abbrev.put_ints " #" scc << puts " }" << endl <<
+					puts "Removing DPs: " << flush
+				);
 				cpf (MyXML.enclose_inline "realScc" (puts "true"));
 				if List.for_all (fun i -> (dg#find_dp i)#is_weak) scc then (
 					comment (puts "only weak rules." << endl);
@@ -244,10 +241,9 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 					loop (n_sccs - 1) sccs
 				) else (
 					cpf (MyXML.enter "acDPTerminationProof");
-					let sccref = ref scc in
-					if remove_strict sccref > 0 then (
-						let subsccs = dg#get_subsccs !sccref in
-						let subsccs = dg#trim_sccs subsccs in
+					match remove_strict scc with
+					| Some rest ->
+						let subsccs = dg#get_subsccs rest in
 						let subsccs = scc_sorter subsccs in
 						let n_sccs = n_sccs - 1 + List.length subsccs in
 						let ret = dg_proc n_sccs subsccs in
@@ -257,24 +253,39 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 							MyXML.leave "component"
 						);
 						if ret = YES then loop_silent n_sccs sccs else ret
-					) else (
+					| None ->
 						comment (puts "failed." << endl);
-						Nonterm.find_loop params.max_loop trs estimator dg scc;
-						cpf (
-							MyXML.enclose "unknownProof" (MyXML.enclose "description" (puts "Failed!")) <<
-							MyXML.leave "acDPTerminationProof" <<
-							MyXML.leave "component"
-						);
-						MAYBE
-					)
+						loop_edges n_sccs (scc::sccs)
 				)
+			)
+	and loop_edges n_sccs = function
+		| [] -> YES
+		| scc::sccs ->
+			comment (puts "Removing edges: " << flush);
+			if remove_edges scc then
+				let subsccs = dg#get_subsccs scc in
+				if (match subsccs with [scc'] -> List.(length scc' = length scc) | _ -> false) then
+					loop_edges n_sccs (scc::sccs)
+				else
+					let subsccs = scc_sorter subsccs in
+					let n_sccs = n_sccs - 1 + List.length subsccs in
+					let ret = dg_proc n_sccs subsccs in
+					if ret = YES then loop_silent n_sccs sccs else ret
+			else (
+				comment (puts "failed." << endl);
+				Nonterm.find_loop params.max_loop trs estimator dg scc;
+				cpf (
+					MyXML.enclose "unknownProof" (MyXML.enclose "description" (puts "Failed!")) <<
+					MyXML.leave "acDPTerminationProof" <<
+					MyXML.leave "component"
+				);
+				MAYBE
 			)
 	in
 	let ret = dg_proc (List.length sccs) sccs in
 	if ret = YES && dg#next then (
 		problem (puts "Next Dependency Pairs:" << endl << dg#output_dps);
 		let sccs = dg#get_sccs in
-		let sccs = dg#trim_sccs sccs in
 		remove_unusable trs estimator dg sccs;
 		dg_proc (List.length sccs) sccs
 	) else ret;;

@@ -581,7 +581,7 @@ class interpreter p =
 				}
 			in
 			trs#iter_funs iterer;
-			debug (fun os ->
+			debug2 (fun os ->
 				os#endl; os#puts "Weight template:"; os#endl;
 				trs#iter_funs (fun f ->
 					x#output_sym_template f os;

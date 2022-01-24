@@ -7,13 +7,6 @@ class virtual named = object (x)
     fun y -> x#name = y#name
 end
 
-module SymSet = Set.Make (
-  struct
-    type t = named
-    let compare x y = String.compare x#name y#name
-  end
-)
-
 type symtype = Var | Fun | Th of string
 
 let put_name_pad min name (pr:#Io.outputter) =
@@ -55,6 +48,8 @@ class sym_unmarked ty0 name = object (x:'x)
     if x#is_var then MyXML.enclose_inline "var" x#output
     else MyXML.enclose_inline "name" x#output
 end
+
+let var_sym name = new sym_unmarked Var name
 
 let mark_name name = " #" ^ name
 let marked_name name = String.sub name 0 2 = " #"

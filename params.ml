@@ -8,10 +8,6 @@ let version = "2.2";
 type estimator_mode =
 | E_tcap
 | E_sym_trans
-type sort_mode =
-| SORT_asc
-| SORT_desc
-| SORT_none
 type acdp_mode =
 | ACDP_new
 | ACDP_union
@@ -39,7 +35,6 @@ type params_type = {
   mutable dp : bool;
   mutable edge_mode : estimator_mode;
   mutable edge_length : int;
-  mutable sort_scc : sort_mode;
   mutable freezing : bool;
   mutable max_loop : int;
   mutable max_narrowing : int;
@@ -61,7 +56,6 @@ let params = {
   dp = false;
   edge_mode = E_sym_trans;
   edge_length = 8;
-  sort_scc = SORT_asc;
   freezing = false;
   max_loop = 0;
   max_narrowing = 8;
@@ -131,22 +125,15 @@ while !i < argc do
     | "-smt", Some str -> default_smt := Txtr.parse_string Smt.params_of_xml str;
     | "-z3", None -> default_smt := Smt.z3_params;
     | "-cvc4", None -> default_smt := Smt.cvc4_params;
-    | "-Sort", None -> params.sort_scc <- SORT_none;
-    | "-sort", _ -> (
-      match optarg with
-      | None -> params.sort_scc <- SORT_asc;
-      | Some "desc" -> params.sort_scc <- SORT_desc;
-      | _ -> erro arg;
-    )
     | "-naive-C", None -> params.naive_C <- true;
     | "-ac", Some s -> (
-        match s with
-        | "new" -> params.acdp_mode <- ACDP_new;
-        | "union" -> params.acdp_mode <- ACDP_union;
-        | "u" -> params.ac_mark_mode <- AC_unmark;
-        | "m" -> params.ac_mark_mode <- AC_mark;
-        | "g" -> params.ac_mark_mode <- AC_guard;
-        | _ -> erro arg;
+      match s with
+      | "new" -> params.acdp_mode <- ACDP_new;
+      | "union" -> params.acdp_mode <- ACDP_union;
+      | "u" -> params.ac_mark_mode <- AC_unmark;
+      | "m" -> params.ac_mark_mode <- AC_mark;
+      | "g" -> params.ac_mark_mode <- AC_guard;
+      | _ -> erro arg;
     )
     | "-rdp", Some s -> (
       match s with
@@ -176,12 +163,10 @@ while !i < argc do
       params.result <- false;
       params.cpf <- true;
       params.naive_C <- true;
-      params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
     | "x", Some file ->
       params.cpf <- true;
       params.cpf_to <- open_out file;
       params.naive_C <- true;
-      params.sort_scc <- SORT_none; (* for CeTA, the order is crusial *)
     | "-dup", None -> params.mode <- MODE_dup;
     | "-tcap", None -> params.edge_mode <- E_tcap;
     | "-edge", Some s -> params.edge_length <- safe_atoi s arg;

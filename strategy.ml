@@ -230,7 +230,7 @@ let nonmonotone p =
 
 let order_params
 	?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty)
-	?(usable=true) ?(quantify=true) ?(negcoeff=false)
+	?(usable=true) ?(quantify=false) ?(negcoeff=false)
 	smt (w_name,w_templates) = {
 	smt_params = if quantify then { smt with quantified = true; linear = false; } else smt;
 	dp = dp;

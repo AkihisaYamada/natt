@@ -22,7 +22,9 @@ let size : 'a term -> int =
 let var vname = Node((new sym_unmarked Var vname :> sym), [])
 let app f args = Node((f:>sym), args)
 
-let rename r (Node(f,ss)) = Node(r f, ss)
+let rec rename r (Node(f,ss)) : sym term = Node(r f, List.map (rename r) ss)
+
+let rename_vars r = rename (fun f -> if f#is_var then var_sym (r f#name) else f)
 
 let subst a (Node(f,ss)) =
   let Node(g,ts) = a f in

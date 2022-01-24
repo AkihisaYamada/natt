@@ -181,22 +181,29 @@ class dg (trs : trs) (estimator : Estimator.t) =
 			)
 		method minimal = minimal
 		method get_subdg scc = (dg, IntSet.of_list scc)
-		(* reverse SCCs, for CeTA *)
-		method get_sccs = List.rev (Components.scc_list dg)
-		method get_subsccs dps = List.rev (SubComponents.scc_list (dg, IntSet.of_list dps))
-		method trim_sccs =
+		method private trim_sccs f =
 			List.filter (function
-			| [v] when not (DG.mem_edge dg v v) ->
-				x#remove_dp v; (* remove trivial SCC *)
+			| [i] when not (x#edged i i) ->
+				x#remove_dp i; (* remove trivial SCC *)
 				false
 			| scc ->
-				List.iter (fun v ->
-					DG.iter_succ (fun s ->
-						if not (List.mem s scc) then DG.remove_edge dg v s;
-					) dg v
+				List.iter (fun i ->
+					let fi = f i in
+					DG.iter_succ (fun j ->
+						if fi <> f j then x#remove_edge i j
+					) dg i
 				) scc;
 				true
 			)
+		method get_sccs =
+			let (n,f) = Components.scc dg in
+			let sccs = Components.scc_list dg in
+			x#trim_sccs f sccs
+		method get_subsccs dps =
+			let subdg = (dg, IntSet.of_list dps) in
+			let (n,f) = SubComponents.scc subdg in
+			let sccs = SubComponents.scc_list subdg in
+			x#trim_sccs f sccs
 		method count_dps = Hashtbl.length dp_table
 		method find_dp = Hashtbl.find dp_table
 		method get_dp_size i = let dp = x#find_dp i in dp#size
@@ -205,6 +212,11 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
 		method replace_dp i dp = Hashtbl.replace dp_table i dp;
 		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
+		method count_edges = DG.nb_edges dg
+		method edged = DG.mem_edge dg
+		method remove_edge = DG.remove_edge dg
+		method succ = DG.succ dg
+		method iter_succ f = DG.iter_succ f dg
 		method output_dp : 'a. int -> (#Io.printer as 'a) -> unit = fun i pr ->
 			print_tbl_index pr "   #" (i, x#find_dp i)
 		method output_dp_xml : 'a. int -> (#Io.printer as 'a) -> unit = fun i ->
