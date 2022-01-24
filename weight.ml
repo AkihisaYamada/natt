@@ -648,26 +648,23 @@ class interpreter p =
 							(i+1, ge_rest &^ ge, gt_rest &^ gt)
 						| O_weak ->
 							(i+1, ge_rest &^ ge_cmpoly closed w1 w2, gt_rest)
-						| O_strict_or_bottom ->
-							let (ge,gt) = order_cmpoly closed solver w1 w2 in
-							(i+1, ge_rest &^ ge, gt_rest &^ (gt |^ eq_0_cmpoly w2))
 						) (0, LB true, LB true) p.w_templates
 					in Cons(ge,gt)
 				)
 
-		method quantify : 'f. (#Sym.named as 'f) list -> exp -> exp =
+		method quantify : 'f. (#Sym.named as 'f) list -> (#context -> exp) -> exp =
 			if dim = 0 then
-				fun vs e -> e
+				fun vs f -> Delay f
 			else
-				fun vs e ->
-				if vs = [] then e
-				else ContextForAll (fun context ->
+				fun vs f ->
+				if vs = [] then Delay f
+				else smt_context_for_all (fun context ->
 					List.iter (fun v ->
 						for i = 0 to dim-1 do
 							add_svar context (v#name, i, range_of_coord i)
 						done
 					) vs;
-					e
+					f context
 				)
 	end
 

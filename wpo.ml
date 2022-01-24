@@ -12,6 +12,8 @@ open Wpo_info
 
 exception Continue
 
+type edge_mode = EdgeNone | EdgeDirect | EdgePost
+
 (* delete common elements from ss and ts *)
 let delete_common =
   let rec sub ss1 ss ts =
@@ -32,7 +34,8 @@ class t =
   let ge_v i = "ge#" ^ string_of_int i in
   let gt_r_v i = "gt" ^ string_of_int i in
   let ge_r_v i = "ge" ^ string_of_int i in
-	let gt_e_v i j = "ge#" ^ string_of_int i ^"#" ^ string_of_int j in
+	let gt_e_v i j = "gt#" ^ string_of_int i ^ "#" ^ string_of_int j in
+	let gt_post_e_v i j = "gtp#" ^ string_of_int i ^ "#" ^ string_of_int j in
   let gt_p_v i = "gtP" ^ string_of_int i in (* probabilistic rules *)
   let ge_p_v i = "geP" ^ string_of_int i in
   let supply_index v i = v ^ "_" ^ string_of_int i in
@@ -689,6 +692,7 @@ object (x)
   val mutable use_scope_last_size = 0
   val mutable dp_flag_table = Hashtbl.create 256
   val mutable edge_flag_table = Hashtbl.create 256
+  val mutable post_edge_flag_table = Hashtbl.create 256
   val mutable rule_flag_table = Hashtbl.create 256
   val mutable prule_flag_table = Hashtbl.create 4
 
@@ -842,17 +846,37 @@ object (x)
       let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
       let sa = interpreter#annotate solver s in
       let ta = interpreter#annotate solver t in
-      debug2 (endl << puts "	" << put_term s << puts " > " << put_term t << endl);
       solver#add_definition (gt_e_v i j) Bool (strictly (wpo0 wo_closed sa ta));
+    end;
+
+  method private add_post_edge i j =
+    if not (Hashtbl.mem post_edge_flag_table (i,j)) then begin
+      Hashtbl.add post_edge_flag_table (i,j) ();
+      debug (puts " #" << put_int i << puts "-->#" << put_int j << flush);
+      let dp = dg#find_dp i in
+      let l = dp#l in
+      let r = dp#r in
+      let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
+      let v = solver#new_variable (gt_post_e_v i j) Bool in
+      solver#add_assertion (v =^
+        interpreter#quantify (vars l @ vars t) (fun context ->
+          let la = interpreter#annotate context l in
+          let ra = interpreter#annotate context r in
+          let ta = interpreter#annotate context t in
+          weakly (wpo0 wo_open ra ta) =>^ strictly (wpo0 wo_open la ra)
+        )
+      );
     end;
 
   method reset =
     solver#reset;
     Hashtbl.clear dp_flag_table;
     Hashtbl.clear rule_flag_table;
+    Hashtbl.clear edge_flag_table;
+    Hashtbl.clear post_edge_flag_table;
     initialized <- false;
 
-  method push ?(edge=false) current_usables dps =
+  method push ?(edge=EdgeNone) current_usables dps =
     if initialized then begin
       if p.use_scope_ratio > 0 then
         let curr_size = trs#get_size in
@@ -869,11 +893,17 @@ object (x)
     debug (endl << puts "	Initializing DPs:");
     List.iter x#add_dp dps;
     debug endl;
-    if edge then begin
-      debug (puts "	Initializing edges:");
-      List.iter (fun i -> dg#iter_succ (fun j -> x#add_edge i j) i) dps;
-      debug endl;
-    end;
+    ( match edge with
+      | EdgeDirect ->
+        debug (puts "	Initializing edges:");
+        List.iter (fun i -> dg#iter_succ (fun j -> x#add_edge i j) i) dps;
+        debug endl;
+      | EdgePost ->
+        debug (puts "	Initializing post edges:");
+        List.iter (fun i -> dg#iter_succ (fun j -> x#add_post_edge i j) i) dps;
+        debug endl;
+      | EdgeNone -> ()
+    );
     if use_scope then
       solver#push;
 
@@ -970,7 +1000,41 @@ object (x)
   method remove_edges current_usables scc =
     comment (put_order p << putc '.' << flush);
     try
-      x#push ~edge:true current_usables scc;
+      x#push ~edge:EdgePost current_usables scc;
+      comment (putc '.' << flush);
+      List.iter (fun i -> solver#add_assertion (EV (ge_v i))) scc;
+      solver#add_assertion (
+        smt_list_exists (fun i ->
+          smt_list_exists (fun j ->
+            EV (gt_post_e_v i j)
+          ) (dg#succ i)
+        ) scc
+      );
+      comment (putc '.' << flush);
+      solver#check;
+      comment (puts " succeeded." << endl);
+      proof (x#output_proof << x#output_usables usable !usables);
+      proof (puts "    Removed edges:");
+      List.iter (fun i ->
+        dg#iter_succ (fun j ->
+          if solver#get_bool (EV(gt_post_e_v i j)) then begin
+            dg#remove_edge i j;
+            proof (puts " #" << put_int i << puts "-->#" << put_int j);
+          end;
+        ) i
+      ) scc;
+			proof endl;
+      x#pop;
+      true
+    with Inconsistent ->
+      comment (puts " ");
+      x#pop;
+      false
+
+  method remove_post_edges current_usables scc =
+    comment (put_order p << putc '.' << flush);
+    try
+      x#push ~edge:EdgePost current_usables scc;
       comment (putc '.' << flush);
       List.iter (fun i -> solver#add_assertion (EV (ge_v i))) scc;
       solver#add_assertion (
@@ -1000,6 +1064,5 @@ object (x)
       comment (puts " ");
       x#pop;
       false
-
 
 end;;

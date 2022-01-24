@@ -79,6 +79,7 @@ class virtual ['e,'d] base p =
 		method new_variable_base v = x#new_variable v base_ty
 		method temp_variable_base = x#temp_variable base_ty
 		method refer_base e = x#refer base_ty e
+		method virtual force : (('e,'d) base -> 'e) -> 'e
 		method virtual expand : 'e -> 'e
 		method virtual expand_pair : 'e -> 'e * 'e
 	end;;
@@ -680,6 +681,7 @@ let smt_list_for_all f =
 		| [] -> acc
 		| x::xs -> let acc' = acc &^ f x in if acc' = LB false then acc' else sub acc' xs
 	in sub (LB true)
+
 let smt_list_exists f =
 	let rec sub acc = function
 		| [] -> acc
@@ -717,16 +719,16 @@ let smt_cdr =
 
 ;;
 
-class virtual context p =
+class virtual context ?(consistent=true) ?(temp_names=0) p =
 	object (x:'t)
 		inherit [exp,dec] base p
+		val mutable consistent = consistent
+		val mutable temp_names = temp_names
 
 		method virtual private add_assertion_body : exp -> unit
 		method virtual private add_declaration_body : dec -> unit
 
-		method private branch = new subcontext p
-
-		val mutable consistent = true
+		method private branch = new subcontext consistent temp_names p
 
 		method add_assertion =
 			let rec sub =
@@ -755,7 +757,6 @@ class virtual context p =
 
 		method new_variable v ty = x#add_variable v ty; EV v
 
-		val mutable temp_names = 0
 		method private temp_name =
 			let v = "_" ^ string_of_int temp_names in
 			temp_names <- temp_names + 1;
@@ -932,7 +933,7 @@ class virtual context p =
 					Cons(smt_if e1 e4 e6, smt_if e1 e5 e7)
 				| e2,e3 -> smt_if e1 e2 e3
 
-		method linearize e = match e with
+		method private linearize e = match e with
 			| Add(e1,e2) -> x#linearize_add e1 e2
 			| Mul(e1,e2) -> x#linearize_mul e1 e2
 			| If(c,t,e,f) -> x#linearize_if c t e
@@ -991,9 +992,9 @@ class virtual context p =
 		method expand_pair e =
 			match x#expand e with Cons(e1,e2) -> (e1,e2) | _ -> raise (Invalid_formula ("smt_split", e))
 	end
-and subcontext p =
+and subcontext consistent temp_names p =
 	object (x)
-		inherit context p
+		inherit context ~consistent ~temp_names p
 		val mutable assertion = LB true
 		val mutable declarations = []
 		method private add_assertion_body e = assertion <- e &^ assertion
@@ -1011,6 +1012,9 @@ and subcontext p =
 			let e = x#expand e in
 			ForAll(declarations,assertion =>^ e)
 	end
+
+let smt_context_for_all f = ContextForAll (f : #context->exp :> (exp,dec)#base -> exp) 
+
 
 class virtual solver p =
 	object

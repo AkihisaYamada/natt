@@ -25,8 +25,7 @@ let (+?) s t = Sum[s;t]
 type order_mode =
 | O_strict
 | O_weak
-| O_eq
-| O_strict_or_bottom (* a < b || a = b = bot *)
+| O_equal
 
 let weight name temps = (name,temps)
 
@@ -149,11 +148,11 @@ let template_entry_element i =
 	element "entry" (
 		range_attribute >>= fun r ->
 		default (if i = 0 then O_strict else O_weak) (
-			validated_attribute "order" "strict(-or-bottom)?|weak" >>= fun str ->
+			validated_attribute "order" "strict|weak|equal" >>= fun str ->
 			return (match str with
 				| "strict" -> O_strict
 				| "weak" -> O_weak
-				| _ -> O_strict_or_bottom
+				| _ -> O_equal
 			)
 		) >>= fun ord ->
 		exp_seq >>= fun t ->
@@ -230,7 +229,7 @@ let nonmonotone p =
 
 let order_params
 	?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty)
-	?(usable=true) ?(quantify=false) ?(negcoeff=false)
+	?(usable=true) ?(quantify=true) ?(negcoeff=false)
 	smt (w_name,w_templates) = {
 	smt_params = if quantify then { smt with quantified = true; linear = false; } else smt;
 	dp = dp;
