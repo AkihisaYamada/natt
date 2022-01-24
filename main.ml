@@ -176,16 +176,19 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 			trs#fold_rules (fun i _ is -> i::is) []
 		else []
 	in
+	let usables =
+		if !use_usable_rules then
+			fun scc ->
+			let ret = fst (static_usable_rules trs estimator dg scc) in
+			fun proc ->
+			if proc#using_usable then ret else all_rules
+		else fun _ _ -> []
+	in
 	let remove_strict scc =
-		let usables =
-			if !use_usable_rules then
-				fst (static_usable_rules trs estimator dg scc)
-			else []
-		in
 		let rec sub = function
 		| [] -> None
 		| proc :: procs ->
-			match proc#remove_nodes (if proc#using_usable then usables else all_rules) scc with
+			match proc#remove_nodes (usables scc proc) scc with
 			| Some scc -> Some scc
 			| None -> sub procs
 		in
@@ -194,7 +197,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	let remove_edges scc =
 		let rec sub = function
 		| [] -> false
-		| proc :: procs -> proc#remove_edges scc || sub procs
+		| proc :: procs -> proc#remove_edges (usables scc proc) scc || sub procs
 		in
 		sub proc_list
 	in

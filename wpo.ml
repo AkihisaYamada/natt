@@ -967,10 +967,10 @@ object (x)
       true
     with Inconsistent -> x#pop; false
 
-  method remove_edges scc =
+  method remove_edges current_usables scc =
     comment (put_order p << putc '.' << flush);
     try
-      x#push ~edge:true [] scc;
+      x#push ~edge:true current_usables scc;
       comment (putc '.' << flush);
       List.iter (fun i -> solver#add_assertion (EV (ge_v i))) scc;
       solver#add_assertion (
