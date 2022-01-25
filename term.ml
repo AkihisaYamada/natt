@@ -8,7 +8,7 @@ type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
 
 let root (Node(f,_)) = f
 let get_weight (WT(_,_,ws)) = ws
-let rec erase (WT(f,ss,_)) = Node(f,List.map erase ss)
+let rec erase_w (WT(f,ss,_)) = Node(f,List.map erase_w ss)
 
 let size : 'a term -> int =
   let rec sub1 ret (Node(_,ss)) = sub2 (ret+1) ss
@@ -179,11 +179,10 @@ let rec output_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
     | t::ts -> pr#putc '('; output_term pr t; sub ts
 
 let put_term s pr = output_term pr s
+let put_wterm wt = put_term (erase_w wt)
 
-let prerr_term t = output_term Io.cerr t
-let prerr_terms ts = List.iter (fun t -> prerr_term t; prerr_string "  ") ts
-let prerr_wterm wt = prerr_term (erase wt)
-let prerr_wterms wts = List.iter (fun wt -> prerr_wterm wt; prerr_string " ") wts
+let put_terms ts pr = List.iter (fun t -> put_term t pr; puts "  " pr) ts
+let put_wterms wts pr = List.iter (fun wt -> put_wterm wt pr; puts " " pr) wts
 
 (* xml printers *)
 let rec output_xml_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =

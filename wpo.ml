@@ -82,17 +82,17 @@ class t =
     | PREC_none -> fun _ _ -> weakly_ordered
     | PREC_quasi ->
       fun finfo ginfo ->
-        let pf = finfo#prec in
-        let pg = ginfo#prec in
-        Cons(pf =^ pg, pf >^ pg)
+      let pf = finfo#prec in
+      let pg = ginfo#prec in
+      Cons(pf =^ pg, pf >^ pg)
     | _ ->
       fun finfo ginfo ->
-        let pf = finfo#prec in
-        let pg = ginfo#prec in
-        if pf = pg then weakly_ordered else Cons(LB false, pf >^ pg)
+      if finfo = ginfo then weakly_ordered else Cons(LB false, finfo#prec >^ ginfo#prec)
   in
+  (* Co-Precedence *)
+  let co_spo ginfo finfo = spo finfo ginfo in
   (* Precedence of root symbols *)
-  let po =
+  let po spo =
     let sub =
       if p.mincons then
         fun g ts -> Cons((if ts = [] then pmin =^ (lookup g)#prec else LB false), LB false)
@@ -629,26 +629,23 @@ class t =
       in
       is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
   in
-  let rec wpo1 wo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
+  let rec wpo1 wo spo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
     if ac_eq s t then
       weakly_ordered
     else
-      compose (wo sw tw) (wpo2 wo s t)
-  and wpo2 wo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+      compose (wo sw tw) (wpo2 wo spo s t)
+  and wpo2 wo spo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+debug (put_wterm s << puts " >? " << put_wterm t << endl);
     if f#is_var then
       Cons(var_eq f#name t, LB false)
-    else if f#equals g then
-      match ss,ts with
-      | [s1], [t1] ->
-        let fltp = (lookup f)#permed 1 in
-        smt_split (wpo2 wo s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
-      | _ -> wpo3 wo s t
-    else wpo3 wo s t
-  and wpo3 wo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+    else match ss,ts with
+    | [s1], [t1] when f#equals g ->
+      let fltp = (lookup f)#permed 1 in
+      smt_split (wpo2 wo spo s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
+    | _ -> 
     let finfo = lookup f in
-    smt_split (order_by_some_arg (wpo1 wo) finfo ss t) (fun some_ge some_gt ->
-      smt_let Bool some_ge
-      (fun some_ge ->
+    smt_split (order_by_some_arg (wpo1 wo spo) finfo ss t) (fun some_ge some_gt ->
+      smt_let Bool some_ge (fun some_ge ->
         let col_f = finfo#collapse in
         let some_gt = smt_if col_f some_gt some_ge in
         if some_gt = LB true then
@@ -657,14 +654,13 @@ class t =
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
-          smt_split (order_all_args (wpo1 wo) s ginfo ts) (fun all_ge all_gt ->
+          smt_split (order_all_args (wpo1 wo spo) s ginfo ts) (fun all_ge all_gt ->
             let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
-              smt_split (compose (po s t) (compargs f#name g#name finfo ginfo (wpo1 wo) ss ts)) (fun rest_ge rest_gt ->
-                smt_let Bool all_gt
-                (fun all_gt ->
+              smt_split (compose (po spo s t) (compargs f#name g#name finfo ginfo (wpo1 wo spo) ss ts)) (fun rest_ge rest_gt ->
+                smt_let Bool all_gt (fun all_gt ->
                   let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
                   let ge = some_ge |^ (col_g &^ all_ge) |^ (cond &^ rest_ge) in
                   let gt = some_gt |^ (col_g &^ all_gt) |^ (cond &^ rest_gt) in
@@ -675,14 +671,18 @@ class t =
       )
     )
   in
-  let wpo0 wo =
+  let wo = interpreter#order ~closed:true in
+  let wpo0 ?(wo=wo) ?(spo=spo) =
     if p.prec_mode = PREC_none && p.status_mode = S_empty then
       fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
-		else wpo1 wo
+    else wpo1 wo spo
   in
-  let wo_closed = interpreter#order ~closed:true in
-	let wo_open = interpreter#order ~closed:false in
-
+  let wo_open = interpreter#order ~closed:false in
+  let co_wo t s =
+    smt_split (interpreter#order ~closed:false s t) (fun ge gt ->
+      Cons(smt_not gt, smt_not ge)
+    )
+  in
 object (x)
 
   inherit Wpo_printer.t p solver sigma interpreter
@@ -779,7 +779,7 @@ object (x)
         Weight.add_vec acc w
       in
       let rw = prule#fold_rs folder (Weight.zero_vec dim) in
-      let (ge,gt) = solver#expand_pair (wo_closed lw rw) in
+      let (ge,gt) = solver#expand_pair (wo lw rw) in
       if using_usable then begin
         solver#add_assertion (usable_p i =>^ ge);
         solver#add_definition (gt_p_v i) Bool gt;
@@ -807,16 +807,16 @@ object (x)
           if p.negcoeff then
             solver#add_assertion (usable i =>^ Weight.eq_vec p lw rw)
           else
-            solver#add_assertion (usable i =>^ weakly (wpo0 wo_closed la ra));
+            solver#add_assertion (usable i =>^ weakly (wpo0 la ra));
         end else begin (* usable rules cannot be applied *)
-          solver#add_assertion (weakly (wpo0 wo_closed la ra));
+          solver#add_assertion (weakly (wpo0 la ra));
         end;
       end else if p.usable then begin (* incremental rule removal *)
-        let (ge,gt) = solver#expand_pair (wpo0 wo_closed la ra) in
+        let (ge,gt) = solver#expand_pair (wpo0 la ra) in
         solver#add_assertion (usable i =>^ ge);
         solver#add_definition (gt_r_v i) Bool gt;
       end else begin (* direct reduction order proof *)
-        solver#add_assertion (strictly (wpo0 wo_closed la ra));
+        solver#add_assertion (strictly (wpo0 la ra));
       end;
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);
@@ -828,7 +828,7 @@ object (x)
       let dp = dg#find_dp i in
       let la = interpreter#annotate solver dp#l in
       let ra = interpreter#annotate solver dp#r in
-      let (ge,gt) = solver#expand_pair (wpo0 wo_closed la ra) in
+      let (ge,gt) = solver#expand_pair (wpo0 la ra) in
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
@@ -846,7 +846,7 @@ object (x)
       let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
       let sa = interpreter#annotate solver s in
       let ta = interpreter#annotate solver t in
-      solver#add_definition (gt_e_v i j) Bool (strictly (wpo0 wo_closed sa ta));
+      solver#add_definition (gt_e_v i j) Bool (strictly (wpo0 sa ta));
     end;
 
   method private add_post_edge i j =
@@ -863,7 +863,7 @@ object (x)
           let la = interpreter#annotate context l in
           let ra = interpreter#annotate context r in
           let ta = interpreter#annotate context t in
-          weakly (wpo0 wo_open ra ta) =>^ strictly (wpo0 wo_open la ra)
+          strictly (wpo0 ~wo:co_wo ~spo:co_spo ta ra) |^ strictly (wpo0 ~wo:wo_open la ra)
         )
       );
     end;
@@ -975,14 +975,14 @@ object (x)
           if solver#get_bool (EV(gt_r_v i)) then begin
             cpf ((trs#find_rule i)#output_xml);
             trs#remove_rule i;
-            comment(fun _ -> prerr_string " "; prerr_int i;);
+            comment (puts " " << put_int i);
           end;
         ) current_usables;
         trs#iter_prules
         (fun i _ ->
           if solver#get_bool (EV(gt_p_v i)) then begin
             trs#remove_prule i;
-            comment(fun _ -> prerr_string " p"; prerr_int i;);
+            comment (puts " p" << put_int i);
           end;
         );
         comment endl;
