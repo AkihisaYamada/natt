@@ -229,12 +229,12 @@ let nonmonotone p =
 
 let order_params
 	?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty)
-	?(usable=true) ?(quantify=true) ?(negcoeff=false)
+	?(usable=true) ?(quantified=true) ?(negcoeff=false)
 	smt (w_name,w_templates) = {
-	smt_params = if quantify then { smt with quantified = true; linear = false; } else smt;
+	smt_params = if quantified then { smt with quantified = true; linear = false; } else smt;
 	dp = dp;
 	w_name = w_name;
-	w_quantify = quantify;
+	w_quantify = quantified;
 	w_templates = Array.of_list w_templates;
 	prec_mode = prec;
 	status_mode = status;
@@ -276,7 +276,7 @@ let put_order p =
 			| _ -> "???"
 		) << puts status << puts (if weighted then p.w_name else "")
 
-let order_element default_smt mono =
+let order_element default_smt ~mono =
 	element "order" (
 		default PREC_none (
 			validated_attribute "precedence" "none|quasi|strict" >>= fun str ->
@@ -291,24 +291,34 @@ let order_element default_smt mono =
 		) >>= fun collapse -> (
 			if mono then return false
 			else default true (bool_attribute "usable")
-		) >>= fun usable ->
+		) >>= fun usable -> (
+			default false (bool_attribute "quantified")
+		) >>= fun quantified ->
 		default default_smt Smt.params_of_xml >>= fun smt ->
 		default no_weight (
 			weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total)
 		) >>= fun weight ->
-		return (order_params smt ~dp:(not mono) ~prec:prec ~status:status ~collapse:collapse ~usable:usable weight)
+		return (order_params smt ~dp:(not mono) ~prec:prec ~status:status ~collapse:collapse ~usable:usable ~quantified:quantified weight)
 	)
 
 let strategy_element default_smt =
 	element "strategy" (
 		default default_smt Smt.params_of_xml >>= fun default_smt ->
-		many (order_element default_smt true) >>= fun pre ->
+		many (order_element default_smt ~mono:true) >>= fun pre ->
 		default false (element "freezing" (return true)) >>= fun freezing ->
 		optional (
-			element "edg" (return ()) >>= fun _ ->
-			many (order_element default_smt false) >>= fun post ->
-			default 0 (element "loop" (int_attribute "steps" >>= return)) >>= fun loop ->
-			return (post,loop)
+			element "dp" (
+				many (order_element default_smt ~mono:false) >>= fun orders_dp ->
+				default [] (
+					element "edge" (
+						many (order_element default_smt ~mono:false)
+					)
+				) >>= fun orders_egde ->
+				default 0 (
+					element "loop" (int_attribute "steps" >>= return)
+				) >>= fun loop ->
+				return (orders_dp,orders_egde,loop)
+			)
 		) >>= fun rest ->
 		return (pre,freezing,rest)
 	)
@@ -353,6 +363,14 @@ let default smt = (
 						Const 0
 					]
 			) ) );
+			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
+		]);
+	], [
+		order_params smt (weight "sum_sum_int,sum_neg" [
+			(Pos, O_strict, ArityChoice(function
+				| 0 -> Var Pos
+				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
+			) );
 			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
 		]);
 	], 3)

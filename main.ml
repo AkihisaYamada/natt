@@ -159,7 +159,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 	in
 	let use_all_rules = ref false in
 	let use_usable_rules = ref false in
-	let proc_list =
+	let (orders_dp, orders_edge) =
 		let folder p procs =
 			if not dg#minimal then p.usable <- false;
 			if p.usable then begin
@@ -169,7 +169,8 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 			end;
 			new Wpo.t p trs estimator dg :: procs
 		in
-		Array.fold_right folder params.orders_dp []
+		Array.fold_right folder params.orders_dp [],
+		Array.fold_right folder params.orders_edge []
 	in
 	let all_rules =
 		if !use_all_rules then
@@ -192,14 +193,14 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 			| Some scc -> Some scc
 			| None -> sub procs
 		in
-		sub proc_list
+		sub orders_dp
 	in
 	let remove_edges scc =
 		let rec sub = function
 		| [] -> false
-		| proc :: procs -> proc#remove_edges (usables scc proc) scc || sub procs
+		| proc :: procs -> proc#remove_post_edges (usables scc proc) scc || sub procs
 		in
-		sub proc_list
+		sub orders_edge
 	in
 	let sccs = dg#get_sccs in
 	let sccs = scc_sorter sccs in

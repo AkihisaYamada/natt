@@ -265,17 +265,17 @@ class virtual sexp_printer =
 				pr ")";
 			| ForAll(ds,e)	->
 				pr "(forall (";
-				x#enter 7;
+				x#enter 8;
 				x#pr_ds ds; pr ")"; x#endl;
 				pr_e e;
 				pr ")";
-				x#leave 7;
+				x#leave 8;
 				x#endl;
 			| Exists(ds,e)	->
 				pr "(exists (";
-				x#enter 7;
+				x#enter 8;
 				x#pr_ds ds; pr ") ";
-				x#leave 7;
+				x#leave 8;
 				pr_e e; pr ")";
 				x#endl;
 			| Cons(e1,e2) -> pr "(cons "; pr_e e1; pr " "; pr_e e2; pr ")";

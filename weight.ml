@@ -639,15 +639,16 @@ class interpreter p =
 			else fun v1 v2 ->
 				Delay (fun solver ->
 					let (_,ge,gt) =
-						Array.fold_left (fun (i,ge_rest,gt_rest) (_,mode,_) ->
-						let w1 = v1.(i) in
-						let w2 = v2.(i) in
-						match mode with
-						| O_strict ->
-							let (ge,gt) = order_cmpoly closed solver w1 w2 in
-							(i+1, ge_rest &^ ge, gt_rest &^ gt)
-						| O_weak ->
-							(i+1, ge_rest &^ ge_cmpoly closed w1 w2, gt_rest)
+						Array.fold_left (
+							fun (i,ge_rest,gt_rest) (_,mode,_) ->
+							let w1 = v1.(i) in
+							let w2 = v2.(i) in
+							match mode with
+							| O_strict ->
+								let (ge,gt) = order_cmpoly closed solver w1 w2 in
+								(i+1, ge_rest &^ ge, gt_rest &^ gt)
+							| O_weak ->
+								(i+1, ge_rest &^ ge_cmpoly closed w1 w2, gt_rest)
 						) (0, LB true, LB true) p.w_templates
 					in Cons(ge,gt)
 				)

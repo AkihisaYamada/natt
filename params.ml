@@ -43,6 +43,7 @@ type params_type = {
   mutable ac_mark_mode : ac_mark_mode;
   mutable orders_removal : order_params array;
   mutable orders_dp : order_params array;
+  mutable orders_edge : order_params array;
   mutable result : bool;
   mutable cpf : bool;
   mutable cpf_to : out_channel;
@@ -64,6 +65,7 @@ let params = {
   ac_mark_mode = AC_mark;
   orders_removal = [||];
   orders_dp = [||];
+  orders_edge = [||];
   result = true;
   cpf = false;
   cpf_to = stdout;
@@ -75,9 +77,10 @@ let set_strategy (pre,freezing,rest) =
   params.orders_removal <- Array.of_list pre;
   params.freezing <- freezing;
   ( match rest with
-    | Some(post,loop) ->
+    | Some(orders_dp,orders_edge,loop) ->
       params.dp <- true;
-      params.orders_dp <- Array.of_list post;
+      params.orders_dp <- Array.of_list orders_dp;
+      params.orders_edge <- Array.of_list orders_edge;
       params.max_loop <- loop;
     | None -> ()
   )

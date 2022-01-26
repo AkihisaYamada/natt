@@ -671,14 +671,16 @@ debug (put_wterm s << puts " >? " << put_wterm t << endl);
       )
     )
   in
-  let wo = interpreter#order ~closed:true in
-  let wpo0 ?(wo=wo) ?(spo=spo) =
+  let wo_closed = interpreter#order ~closed:true in
+  let wo_open = interpreter#order ~closed:false in
+  let wpo0 ?(wo = wo_closed) ?(spo=spo) =
     if p.prec_mode = PREC_none && p.status_mode = S_empty then
       fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
     else wpo1 wo spo
   in
-  let wo_open = interpreter#order ~closed:false in
-  let co_wo t s =
+  let co_wo_closed t s = interpreter#order ~closed:true t s
+  in
+  let co_wo_open t s =
     smt_split (interpreter#order ~closed:false s t) (fun ge gt ->
       Cons(smt_not gt, smt_not ge)
     )
@@ -779,7 +781,7 @@ object (x)
         Weight.add_vec acc w
       in
       let rw = prule#fold_rs folder (Weight.zero_vec dim) in
-      let (ge,gt) = solver#expand_pair (wo lw rw) in
+      let (ge,gt) = solver#expand_pair (wo_closed lw rw) in
       if using_usable then begin
         solver#add_assertion (usable_p i =>^ ge);
         solver#add_definition (gt_p_v i) Bool gt;
@@ -857,15 +859,23 @@ object (x)
       let l = dp#l in
       let r = dp#r in
       let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
-      let v = solver#new_variable (gt_post_e_v i j) Bool in
-      solver#add_assertion (v =^
-        interpreter#quantify (vars l @ vars t) (fun context ->
-          let la = interpreter#annotate context l in
-          let ra = interpreter#annotate context r in
-          let ta = interpreter#annotate context t in
-          strictly (wpo0 ~wo:co_wo ~spo:co_spo ta ra) |^ strictly (wpo0 ~wo:wo_open la ra)
+      if p.w_quantify then
+        let v = solver#new_variable (gt_post_e_v i j) Bool in
+        solver#add_assertion (v =^
+          interpreter#quantify (vars l @ vars t) (fun context ->
+            let la = interpreter#annotate context l in
+            let ra = interpreter#annotate context r in
+            let ta = interpreter#annotate context t in
+            strictly (wpo0 ~wo:co_wo_open ~spo:co_spo ta ra) |^ strictly (wpo0 ~wo:wo_open la ra)
+          )
         )
-      );
+      else
+        let la = interpreter#annotate solver l in
+        let ra = interpreter#annotate solver r in
+        let ta = interpreter#annotate solver t in
+        solver#add_definition (gt_post_e_v i j) Bool (
+          strictly (wpo0 ~wo:co_wo_closed ~spo:co_spo ta ra) |^ strictly (wpo0 la ra)
+        );
     end;
 
   method reset =
@@ -1040,7 +1050,7 @@ object (x)
       solver#add_assertion (
         smt_list_exists (fun i ->
           smt_list_exists (fun j ->
-            EV (gt_e_v i j)
+            EV (gt_post_e_v i j)
           ) (dg#succ i)
         ) scc
       );
@@ -1051,7 +1061,7 @@ object (x)
       proof (puts "    Removed edges:");
       List.iter (fun i ->
         dg#iter_succ (fun j ->
-          if solver#get_bool (EV(gt_e_v i j)) then begin
+          if solver#get_bool (EV(gt_post_e_v i j)) then begin
             dg#remove_edge i j;
             proof (puts " #" << put_int i << puts "-->#" << put_int j);
           end;
