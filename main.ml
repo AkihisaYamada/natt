@@ -98,14 +98,14 @@ let dummy_estimator = Estimator.tcap (new trs)
 let dummy_dg = new dg (new trs) dummy_estimator
 
 let rule_remove (trs : #trs) next =
-	if Array.length params.orders_removal = 0 then
+	if Array.length params.orders_rule = 0 then
 		next trs
 	else
 		let proc_list =
 			let folder p procs =
 				new Wpo.t p trs dummy_estimator dummy_dg :: procs
 			in
-			Array.fold_right folder params.orders_removal []
+			Array.fold_right folder params.orders_rule []
 		in
 		let remove_strict rules =
 			List.exists (fun proc -> proc#remove_rules rules) proc_list
@@ -414,7 +414,7 @@ object (x)
 	method run =
 		let prob = Txtr.parse_in (Trs.problem_xml trs) (if params.file = "" then stdin else Stdlib.open_in params.file) in
 		begin match prob with
-		| Some eqs -> params.mode <- MODE_infeasibility eqs
+		| Some mode -> params.mode <- mode
 		| None -> ()
 		end;
 		cpf (
@@ -430,7 +430,7 @@ object (x)
 				trs#output cout;
 								| MODE_xml -> trs#output_xml cout;
 		| MODE_flat ->
-			trs#iter_rules (fun i rule -> trs#modify_rule i (flat rule#l) (flat rule#r));
+			trs#iter_rules (fun i rule -> trs#replace_rule i (map_rule flat rule));
 			trs#output cout;
 		| MODE_freezing ->
 			ignore (Freezing.auto_freeze trs (new dg (new trs) (Estimator.tcap (new trs))));
@@ -449,16 +449,21 @@ object (x)
 			let estimator = Estimator.sym_trans trs in
 			debug (estimator#output);
 			let (ss,ts) = List.split eqs in
-			let c = new Sym.sym_unmarked Fun " c" in
+			let c = new Sym.sym_unmarked Fun " #" in
+			(trs#get_sym c)#set_arity (List.length ss);
 			let s = Node(c,ss) in
 			let t = Node(c,ts) in
-			print_endline (if estimator#may_reach s t then "MAYBE" else "YES")
+			let tester p =
+				(new Wpo.t p trs dummy_estimator dummy_dg)#co_order t s
+			in
+			let ret = not (estimator#may_reach s t) || Array.exists tester params.orders_dp in
+			print_endline (if ret then "YES" else "MAYBE")
 		| _ ->
 			Array.iter
 				(fun p ->
 					if nonmonotone p then
 						err "Rule removal processor must be monotone";
-				) params.orders_removal;
+				) params.orders_rule;
 			let ans = prove_termination trs in
 				cpf (MyXML.leave "certificationProblem" << endl);
 			if params.result then

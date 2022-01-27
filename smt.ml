@@ -111,8 +111,8 @@ type exp =
 	| Lt of exp * exp
 	| ForAll of dec list * exp
 	| Exists of dec list * exp
-	| ContextForAll of ( (exp,dec) base -> exp )
-	| ContextExists of ( (exp,dec) base -> exp )
+	| ContextForAll of exp
+	| ContextExists of exp
 	| Delay of ( (exp,dec) base -> exp )
 	| ZeroOne of exp list
 	| ES1 of exp list
@@ -965,18 +965,12 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
 				branch#close_for_all e
-			| ContextForAll f ->
-				let branch = x#branch in
-				let e = f ( branch :> (exp,dec) base ) in
-				branch#close_for_all e
 			| Exists(ds,e)	->
 				let branch = x#branch in
 				List.iter branch#add_declaration ds;
 				branch#close_exists e
-			| ContextExists f ->
-				let branch = x#branch in
-				let e = f ( branch :> (exp,dec) base ) in
-				branch#close_for_all e
+			| ContextForAll e -> x#branch#close_for_all e
+			| ContextExists e -> x#branch#close_for_all e
 			| ZeroOne es -> x#expand_zero_one es
 			| ES1 es     -> x#expand_es1 es
 			| AtMost1 es -> x#expand_atmost1 es
@@ -1013,7 +1007,7 @@ and subcontext consistent temp_names p =
 			ForAll(declarations,assertion =>^ e)
 	end
 
-let smt_context_for_all f = ContextForAll (f : #context->exp :> (exp,dec)#base -> exp) 
+let smt_context_for_all f = ContextForAll (Delay f)
 
 
 class virtual solver p =

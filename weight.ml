@@ -622,6 +622,9 @@ class interpreter p =
 			if f#is_var then Array.init dim (fun i -> var_cmpoly f#name i (range_of_coord i))
 			else Array.map sub (x#encode_sym f)
 
+		method eval : 'f. (#sym as 'f) term -> cmpoly array =
+			fun (Node(f,ss)) -> x#interpret f (List.map x#eval ss)
+
 		method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, cmpoly array) wterm =
 			fun solver (Node(f,ss)) ->
 			let ts = List.map (x#annotate solver) ss in
@@ -653,19 +656,20 @@ class interpreter p =
 					in Cons(ge,gt)
 				)
 
-		method quantify : 'f. (#Sym.named as 'f) list -> (#context -> exp) -> exp =
+		method quantify : 'f. (#Sym.named as 'f) list -> exp -> exp =
 			if dim = 0 then
-				fun vs f -> Delay f
+				fun vs e -> e
 			else
-				fun vs f ->
-				if vs = [] then Delay f
-				else smt_context_for_all (fun context ->
+				fun vs e ->
+				if vs = [] then e
+				else smt_context_for_all (
+					fun context ->
 					List.iter (fun v ->
 						for i = 0 to dim-1 do
 							add_svar context (v#name, i, range_of_coord i)
 						done
 					) vs;
-					f context
+					e
 				)
 	end
 

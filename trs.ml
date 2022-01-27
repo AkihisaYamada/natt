@@ -4,6 +4,7 @@ open Term
 open Subst
 open Io
 open Txtr
+open Params
 
 type arity = Unknown | Arity of int
 
@@ -175,8 +176,6 @@ class trs =
 		method replace_rule i rule =
 			x#remove_rule i;
 			x#add_rule_i i rule;
-		method modify_rule i l r =
-			x#replace_rule i (new rule (x#find_rule i)#strength l r)
 
 (* theory to rules *)
 		method th_to_rules =
@@ -268,36 +267,35 @@ class trs =
 					)
 				)
 			)
-		method input_rules =
-			element "rules" (
-				many (
-					element "rule" (
-						optional (
-							element "condition" (many any)
-						) >>= fun _ ->
-						x#term_element >>= fun l -> (
-							x#term_element >>= fun r ->
-							x#add_rule (rule l r);
-							return ()
-						) <|> (
-							many (
-								element "distrib" (
-									default 1 (int_attribute "w") >>= fun w ->
-									x#term_element >>= fun r ->
-									return (w,r)
-								)
-							) >>= fun wrs ->
-							x#add_prule (new prule l wrs);
-							return ()
+		method input_rule =
+			element "rule" (
+				x#term_element >>= fun l -> (
+					x#term_element >>= fun r ->
+					many (
+						element "cond" (
+							x#term_element >>= fun s ->
+							x#term_element >>= fun t ->
+							return (s,t)
 						)
-					) <|>
-					element "relative" (
-						x#term_element >>= fun l ->
-						x#term_element >>= fun r ->
-						x#add_rule (weak_rule l r);
-						return ()
-					)
-				) >>= fun _ ->
+					) >>= fun conds ->
+					x#add_rule (crule l r conds);
+					return ()
+				) <|> (
+					many (
+						element "distrib" (
+							default 1 (int_attribute "w") >>= fun w ->
+							x#term_element >>= fun r ->
+							return (w,r)
+						)
+					) >>= fun wrs ->
+					x#add_prule (new prule l wrs);
+					return ()
+				)
+			) <|>
+			element "relative" (
+				x#term_element >>= fun l ->
+				x#term_element >>= fun r ->
+				x#add_rule (weak_rule l r);
 				return ()
 			)
 
@@ -489,11 +487,17 @@ let cu_append (c1,u1) (c2,u2) = (c1 + c2, u1#compose u2)
 
 let problem_xml trs =
 	element "trs" (
-		optional (attribute "condition-type") >>= fun ct ->
-		if ct <> None && ct <> Some "ORIENTED" then raise (No_support "conditional");
+		optional (attribute "condition-type") >>= fun cto ->
+		(	match cto with
+			| None | Some "ORIENTED" -> return ()
+			| Some ct -> raise (No_support ("condition-type: " ^ ct))
+		) >>= fun _ ->
+		optional (attribute "problem") >>= fun pto ->
 		optional trs#input_syms >>= fun _ ->
-		trs#input_rules >>= fun _ ->
-		optional (
+		many trs#input_rule >>= fun _ ->
+		match pto with
+		| None -> return None
+		| Some "INFEASIBILITY" -> debug (puts "input infeasibility problem" << endl);
 			element "infeasibility" (
 				optional trs#input_syms >>= fun _ ->
 				many (
@@ -502,9 +506,10 @@ let problem_xml trs =
 						trs#term_element >>= fun r ->
 						return (l,r)
 					)
-				)
+				) >>= fun eqs ->
+				return (Some (MODE_infeasibility eqs))
 			)
-		)
+		| Some pt -> raise (No_support ("problem-type: " ^ pt))
 	) <|>
 	element "problem" ((* XTC format *)
 		element "trs" (

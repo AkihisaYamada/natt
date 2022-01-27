@@ -63,21 +63,23 @@ let rec emb_le (Node((f:#sym),ss) as s) (Node(g,ts) as t) =
   term_eq s t || List.exists (emb_le s) ts || f#equals g && List.for_all2 emb_le ss ts
 
 (* the sorted list of variables *)
-let vars : (#sym as 'a) term -> 'a list  =
-  let rec insert (x:'a) = function
-    | [] -> [x]
-    | y::ys ->
-      if x#name < y#name then x::y::ys
-      else if x#equals y then y::ys
-      else y :: insert x ys
-  in
-  let rec sub acc (Node((f:'a),ss)) =
-    sublist (if f#is_var then insert f acc else acc) ss
-  and sublist acc = function
+let union_vars : (#sym as 'a) list -> 'a term -> 'a list =
+  let rec insert_sym (x:'a) = function
+  | [] -> [x]
+  | y::ys ->
+    if x#name < y#name then x::y::ys
+    else if x#name = y#name then y::ys
+    else y :: insert_sym x ys
+	in
+  let rec sub (acc:'a list) (Node(f,ss)) =
+    sublist (if f#is_var then insert_sym f acc else acc) ss
+  and sublist (acc:'a list) = function
     | [] -> acc
     | s::ss -> sublist (sub acc s) ss
   in
-  sub []
+  sub
+
+let vars = union_vars []
 
 (* the list of variable occurrences in a term *)
 let varlist =
@@ -205,20 +207,21 @@ let rec output_xml_term (pr : #Io.outputter) : (#sym as 'a) term -> unit =
 (*** rules ***)
 type strength = StrictRule | MediumRule | WeakRule
 
-class rule strength (l : sym term) (r : sym term) =
+class rule strength (l : sym term) (r : sym term) (conds : (sym term * sym term) list) =
+	let lvars = vars l in
+  let rvars = vars r in
+  let vars = List.fold_left (fun acc (s,t) -> union_vars acc t) lvars conds in
   object (x)
     inherit Io.output
     method l = l
     method r = r
+    method conds = conds
     method strength = strength
-    val lvars = vars l
-    val rvars = vars r
+    method vars = vars
     method size = size l + size r
     method is_strict = strength = StrictRule
     method is_medium = strength = MediumRule
     method is_weak = strength = WeakRule
-    method lvars = lvars
-    method rvars = rvars
     method is_duplicating = duplicating l r
     method is_size_increasing = size l < size r || x#is_duplicating
     method has_extra_variable =
@@ -231,7 +234,7 @@ class rule strength (l : sym term) (r : sym term) =
         | StrictRule -> " -> "
         | WeakRule -> " ->= "
         | _ -> " ->? ");
-      output_term pr r
+      output_term pr r;
     method output_xml : 'b. (#printer as 'b) -> unit =
       MyXML.enclose "rule" (
         MyXML.enclose "lhs" (fun pr -> output_xml_term pr l) <<
@@ -239,12 +242,13 @@ class rule strength (l : sym term) (r : sym term) =
       )
   end
 
-let rule l r = new rule StrictRule l r
-let weak_rule l r = new rule WeakRule l r
-let medium_rule l r = new rule MediumRule l r
+let rule l r = new rule StrictRule l r []
+let crule = new rule StrictRule
+let weak_rule l r = new rule WeakRule l r []
+let medium_rule l r = new rule MediumRule l r []
 
 let map_rule : ((#sym as 'a) term -> 'a term) -> rule -> rule =
-  fun f rule -> new rule rule#strength (f rule#l) (f rule#r)
+  fun f rule -> new rule rule#strength (f rule#l) (f rule#r) (List.map (fun (s,t) -> (f s, f t)) rule#conds)
 
 let extended_rules =
   let x = Node((new sym_fresh Var 1 :> sym), []) in
@@ -252,13 +256,14 @@ let extended_rules =
   fun (rule:rule) ->
     let l = rule#l in
     let r = rule#r in
+    let conds = rule#conds in
     let f = root l in
     match f#ty with
-    | Th "AC" -> [ new rule rule#strength (app f [l; x]) (app f [r; x]) ]
+    | Th "AC" -> [ new rule rule#strength (app f [l; x]) (app f [r; x]) conds]
     | Th "A" -> [
-      new rule rule#strength (app f [l; x]) (app f [r; x]);
-      new rule rule#strength (app f [x; l]) (app f [x; r]);
-      new rule rule#strength (app f [app f [x; l]; y]) (app f [app f [x; r]; y])
+      new rule rule#strength (app f [l; x]) (app f [r; x]) conds;
+      new rule rule#strength (app f [x; l]) (app f [x; r]) conds;
+      new rule rule#strength (app f [app f [x; l]; y]) (app f [app f [x; r]; y]) conds
     ]
     | Th "C" -> []
     | Th s -> raise (No_support ("extension for theory: " ^ s))

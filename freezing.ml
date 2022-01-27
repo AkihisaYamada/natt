@@ -60,8 +60,8 @@ let freeze (a : #sym_detailed) nargs (trs : #trs) (dg : #dg) =
     else
       (f, List.map freeze_term ss, 0, aarity f#name)
   in
-  trs#iter_rules (fun i rule -> trs#modify_rule i (freeze_term rule#l) (freeze_term rule#r););
-  dg#iter_dps (fun i dp -> dg#modify_dp i (freeze_term dp#l) (freeze_term dp#r););
+  trs#iter_rules (fun i rule -> trs#replace_rule i (map_rule freeze_term rule));
+  dg#iter_dps (fun i dp -> dg#replace_dp i (map_rule freeze_term dp));
 
   let varlist name start count =
     let last = start + count - 1 in

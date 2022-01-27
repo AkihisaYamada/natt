@@ -41,7 +41,7 @@ type params_type = {
   mutable acdp_mode : acdp_mode;
   mutable rdp_mode : rdp_mode;
   mutable ac_mark_mode : ac_mark_mode;
-  mutable orders_removal : order_params array;
+  mutable orders_rule : order_params array;
   mutable orders_dp : order_params array;
   mutable orders_edge : order_params array;
   mutable result : bool;
@@ -63,7 +63,7 @@ let params = {
   acdp_mode = ACDP_new;
   rdp_mode = RDP_move;
   ac_mark_mode = AC_mark;
-  orders_removal = [||];
+  orders_rule = [||];
   orders_dp = [||];
   orders_edge = [||];
   result = true;
@@ -74,7 +74,7 @@ let params = {
 };;
 
 let set_strategy (pre,freezing,rest) =
-  params.orders_removal <- Array.of_list pre;
+  params.orders_rule <- Array.of_list pre;
   params.freezing <- freezing;
   ( match rest with
     | Some(orders_dp,orders_edge,loop) ->

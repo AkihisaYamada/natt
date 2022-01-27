@@ -87,20 +87,20 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		val mutable need_extended_rules =
 			trs#is_theoried && params.acdp_mode = ACDP_new
 
-		method add_dp lr =
+		method add_dp dp =
 			dp_cnt <- dp_cnt + 1;
-			Hashtbl.add dp_table dp_cnt lr;
+			Hashtbl.add dp_table dp_cnt dp;
 
 		(* Generate dependency pairs *)
 		method generate_dp =
-			let rec generate_dp_sub strength s (Node(g,ts) as t) =
+			let rec generate_dp_sub strength s conds (Node(g,ts) as t) =
 				if (trs#strictly_defines g || g#is_theoried) && not (strict_subterm t s) then begin
-					x#add_dp (new rule strength s (mark_term t));
+					x#add_dp (new rule strength s (mark_term t) conds);
 				end;
-				List.iter (generate_dp_sub strength s) ts;
+				List.iter (generate_dp_sub strength s conds) ts;
 			in
 			let generate_dp_default rule =
-				generate_dp_sub rule#strength (mark_term rule#l) rule#r
+				generate_dp_sub rule#strength (mark_term rule#l) rule#conds rule#r
 			in
 			match params.acdp_mode with
 			| ACDP_union -> fun rule ->
@@ -108,8 +108,7 @@ class dg (trs : trs) (estimator : Estimator.t) =
 				if (root rule#l)#is_theoried &&
 					rule#is_strict (* the weak rule itself don't have to be extended *)
 				then begin
-					let iterer xrule = x#add_dp (map_rule mark_term xrule) in
-					List.iter iterer (extended_rules rule);
+					List.iter (fun xrule -> x#add_dp (map_rule mark_term xrule)) (extended_rules rule);
 				end;
 			| _ -> generate_dp_default
 
@@ -211,7 +210,6 @@ class dg (trs : trs) (estimator : Estimator.t) =
 		method get_dps = Hashtbl.fold (fun i dp dps -> (i,dp)::dps) dp_table []
 		method remove_dp i = DG.remove_vertex dg i; Hashtbl.remove dp_table i;
 		method replace_dp i dp = Hashtbl.replace dp_table i dp;
-		method modify_dp i l r = x#replace_dp i (new rule (x#find_dp i)#strength l r)
 		method count_edges = DG.nb_edges dg
 		method edged = DG.mem_edge dg
 		method remove_edge = DG.remove_edge dg

@@ -635,7 +635,6 @@ class t =
     else
       compose (wo sw tw) (wpo2 wo spo s t)
   and wpo2 wo spo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
-debug (put_wterm s << puts " >? " << put_wterm t << endl);
     if f#is_var then
       Cons(var_eq f#name t, LB false)
     else match ss,ts with
@@ -671,18 +670,51 @@ debug (put_wterm s << puts " >? " << put_wterm t << endl);
       )
     )
   in
-  let wo_closed = interpreter#order ~closed:true in
-  let wo_open = interpreter#order ~closed:false in
-  let wpo0 ?(wo = wo_closed) ?(spo=spo) =
+  let (order,co_order,order_open,co_order_open) =
+    let wo = interpreter#order ~closed:true in
+    let co_wo tw sw = interpreter#order ~closed:true tw sw in
+    let wo_open = interpreter#order ~closed:false in
+    let co_wo_open tw sw =
+      smt_split (interpreter#order ~closed:false sw tw) (fun ge gt ->
+        Cons(smt_not gt, smt_not ge)
+      )
+    in
     if p.prec_mode = PREC_none && p.status_mode = S_empty then
-      fun (WT(_,_,sw)) (WT(_,_,tw)) -> wo sw tw
-    else wpo1 wo spo
+      let eval = interpreter#eval in (
+        (fun s t -> wo (eval s) (eval t)),
+        (fun t s -> co_wo (eval t) (eval s)),
+        (fun s t -> wo_open (eval s) (eval t)),
+        (fun t s -> co_wo_open (eval t) (eval s))
+      )
+    else
+      let a = interpreter#annotate in (
+        ( fun s t -> Delay (fun c -> wpo1 wo spo (a c s) (a c t))),
+        ( fun t s -> Delay (fun c -> wpo1 co_wo co_spo (a c t) (a c s))),
+        ( fun s t -> Cons (
+            Delay (fun c -> weakly (wpo1 wo_open spo (a c s) (a c t))),
+            Delay (fun c -> strictly (wpo1 wo_open spo (a c s) (a c t)))
+        ) ),
+        ( fun t s -> Cons (
+            Delay (fun c -> weakly (wpo1 co_wo_open co_spo (a c t) (a c s))),
+            Delay (fun c -> strictly (wpo1 co_wo_open co_spo (a c t) (a c s)))
+        ) )
+      )
   in
-  let co_wo_closed t s = interpreter#order ~closed:true t s
+  let order_rule rule =
+    smt_let Bool (smt_list_exists (fun (s,t) -> strictly (co_order t s)) rule#conds) (
+      fun co_cond ->
+      smt_split (order rule#l rule#r) (
+        fun ge gt ->
+        Cons(co_cond |^ ge, co_cond |^ gt)
+      )
+    )
   in
-  let co_wo_open t s =
-    smt_split (interpreter#order ~closed:false s t) (fun ge gt ->
-      Cons(smt_not gt, smt_not ge)
+  let order_rule_quantified rule =
+    let co_cond = smt_list_exists (fun (s,t) -> strictly (co_order_open t s)) rule#conds in
+    let orient = order_open rule#l rule#r in
+    Cons(
+      interpreter#quantify (rule#vars) (co_cond |^ weakly orient),
+      interpreter#quantify (rule#vars) (co_cond |^ strictly orient)
     )
   in
 object (x)
@@ -700,27 +732,15 @@ object (x)
 
   method using_usable = using_usable
 
-  method init current_usables dps =
+  method init =
     initialized <- true;
     debug (puts " Initializing.");
     solver#init;
 
     interpreter#init solver trs dg;
 
-    if p.use_scope_ratio > 0 then begin
-      let rules_size = List.length current_usables in
-      use_scope_last_size <- trs#get_size;
-      use_scope <-
-        (use_scope_last_size - rules_size) * p.use_scope_ratio < rules_size;
-    end;
-    if use_scope then begin
-      debug(puts " `Scope' mode.");
-      dplist := dg#get_dps;
-      usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
-    end else begin
-      dplist := List.fold_right (fun i acc -> (i, dg#find_dp i) :: acc) dps [];
-      usables := List.map (fun i -> (i, trs#find_rule i)) current_usables;
-    end;
+    dplist := dg#get_dps;
+    usables := trs#fold_rules (fun i rule rest -> (i,rule)::rest) [];
 
     (* generating the signature *)
     Hashtbl.clear sigma;
@@ -764,8 +784,6 @@ object (x)
       in
       Hashtbl.iter iterer sigma;
     end;
-    List.iter (fun (i,_) -> add_usable i) !usables;
-    trs#iter_prules (fun i _ -> add_usable_p i);
 
   method private add_prule i =
     if not (Hashtbl.mem prule_flag_table i) then
@@ -781,7 +799,7 @@ object (x)
         Weight.add_vec acc w
       in
       let rw = prule#fold_rs folder (Weight.zero_vec dim) in
-      let (ge,gt) = solver#expand_pair (wo_closed lw rw) in
+      let (ge,gt) = solver#expand_pair (interpreter#order ~closed:false lw rw) in
       if using_usable then begin
         solver#add_assertion (usable_p i =>^ ge);
         solver#add_definition (gt_p_v i) Bool gt;
@@ -790,6 +808,9 @@ object (x)
       end;
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);
+  method private add_prules =
+    trs#iter_prules (fun i _ -> add_usable_p i);
+    trs#iter_prules (fun i _ -> x#add_prule i);
 
   method private add_rule i =
     if not (Hashtbl.mem rule_flag_table i) then
@@ -797,8 +818,6 @@ object (x)
       Hashtbl.add rule_flag_table i ();
       let rule = trs#find_rule i in
       debug (puts " " << put_int i);
-      let WT(_,_,lw) as la = interpreter#annotate solver rule#l in
-      let WT(_,_,rw) as ra = interpreter#annotate solver rule#r in
       if p.dp then begin
         if using_usable then begin (* usable rules technique is applicable *)
           let filt =
@@ -806,31 +825,30 @@ object (x)
             else depend_w
           in
           solver#add_assertion (usable i =>^ set_usable filt usable rule#r);
-          if p.negcoeff then
-            solver#add_assertion (usable i =>^ Weight.eq_vec p lw rw)
-          else
-            solver#add_assertion (usable i =>^ weakly (wpo0 la ra));
+          solver#add_assertion (usable i =>^ weakly (order_rule rule));
         end else begin (* usable rules cannot be applied *)
-          solver#add_assertion (weakly (wpo0 la ra));
+          solver#add_assertion (weakly (order_rule rule));
         end;
       end else if p.usable then begin (* incremental rule removal *)
-        let (ge,gt) = solver#expand_pair (wpo0 la ra) in
+        let (ge,gt) = solver#expand_pair (order_rule rule) in
         solver#add_assertion (usable i =>^ ge);
         solver#add_definition (gt_r_v i) Bool gt;
       end else begin (* direct reduction order proof *)
-        solver#add_assertion (strictly (wpo0 la ra));
+        solver#add_assertion (strictly (order_rule rule));
       end;
     with Inconsistent ->
       debug (puts " inconsistency detected." << endl);
+  method private add_rules current_usables =
+    debug (endl << puts "	Initializing rules:");
+    List.iter add_usable current_usables;
+    List.iter x#add_rule current_usables;
 
   method private add_dp i =
     if not (Hashtbl.mem dp_flag_table i) then begin
       Hashtbl.add dp_flag_table i ();
       debug (puts " #" << put_int i << flush);
       let dp = dg#find_dp i in
-      let la = interpreter#annotate solver dp#l in
-      let ra = interpreter#annotate solver dp#r in
-      let (ge,gt) = solver#expand_pair (wpo0 la ra) in
+      let (ge,gt) = solver#expand_pair (order_rule dp) in
       solver#add_definition (ge_v i) Bool ge;
       solver#add_definition (gt_v i) Bool gt;
       (* flag usable rules *)
@@ -839,6 +857,9 @@ object (x)
         solver#add_assertion (set_usable permed usable dp#r);
       end;
     end;
+  method private add_dps dps =
+    debug (endl << puts "	Initializing DPs:");
+    List.iter x#add_dp dps
 
   method private add_edge i j =
     if not (Hashtbl.mem edge_flag_table (i,j)) then begin
@@ -846,9 +867,7 @@ object (x)
       debug (puts " #" << put_int i << puts "-->#" << put_int j << flush);
       let s = rename_vars (fun v -> "pre_" ^ v) (dg#find_dp i)#r in
       let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
-      let sa = interpreter#annotate solver s in
-      let ta = interpreter#annotate solver t in
-      solver#add_definition (gt_e_v i j) Bool (strictly (wpo0 sa ta));
+      solver#add_definition (gt_e_v i j) Bool (strictly (order_rule (rule s t)));
     end;
 
   method private add_post_edge i j =
@@ -859,23 +878,8 @@ object (x)
       let l = dp#l in
       let r = dp#r in
       let t = rename_vars (fun v -> "post_" ^ v) (dg#find_dp j)#l in
-      if p.w_quantify then
-        let v = solver#new_variable (gt_post_e_v i j) Bool in
-        solver#add_assertion (v =^
-          interpreter#quantify (vars l @ vars t) (fun context ->
-            let la = interpreter#annotate context l in
-            let ra = interpreter#annotate context r in
-            let ta = interpreter#annotate context t in
-            strictly (wpo0 ~wo:co_wo_open ~spo:co_spo ta ra) |^ strictly (wpo0 ~wo:wo_open la ra)
-          )
-        )
-      else
-        let la = interpreter#annotate solver l in
-        let ra = interpreter#annotate solver r in
-        let ta = interpreter#annotate solver t in
-        solver#add_definition (gt_post_e_v i j) Bool (
-          strictly (wpo0 ~wo:co_wo_closed ~spo:co_spo ta ra) |^ strictly (wpo0 la ra)
-        );
+      let v = solver#new_variable (gt_post_e_v i j) Bool in
+      solver#add_assertion (v =^ strictly (order_rule_quantified (crule l r [(r,t)])));
     end;
 
   method reset =
@@ -893,15 +897,14 @@ object (x)
         if (use_scope_last_size - curr_size) * p.use_scope_ratio > curr_size then
         begin
           x#reset;
-          x#init current_usables dps;
+          x#init;
         end;
     end else begin
-      x#init current_usables dps;
+      x#init;
     end;
-    debug (endl << puts "	Initializing rules:");
-    List.iter x#add_rule current_usables;
-    debug (endl << puts "	Initializing DPs:");
-    List.iter x#add_dp dps;
+    x#add_rules current_usables;
+    x#add_prules;
+    x#add_dps dps;
     debug endl;
     ( match edge with
       | EdgeDirect ->
@@ -1075,4 +1078,18 @@ object (x)
       x#pop;
       false
 
+  method co_order t s =
+    try
+      comment (puts "Co-" << put_order p << puts " ." << flush);
+      x#init;
+      comment (putc '.' << flush);
+      trs#iter_rules (fun i rule -> solver#add_assertion (weakly (order_rule rule)));
+      comment (putc '.' << flush);
+      solver#add_assertion (strictly (co_order t s));
+      solver#check;
+      comment (puts " succeeded." << endl);
+      cpf x#output_cpf;
+      proof x#output_proof;
+      true
+    with Inconsistent -> false
 end;;
