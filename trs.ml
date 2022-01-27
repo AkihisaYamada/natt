@@ -501,13 +501,13 @@ let problem_xml trs =
 			element "infeasibility" (
 				optional trs#input_syms >>= fun _ ->
 				many (
-					element "eq" (
+					element "cond" (
 						trs#term_element >>= fun l ->
 						trs#term_element >>= fun r ->
 						return (l,r)
 					)
-				) >>= fun eqs ->
-				return (Some (MODE_infeasibility eqs))
+				) >>= fun conds ->
+				return (Some (MODE_infeasibility conds))
 			)
 		| Some pt -> raise (No_support ("problem-type: " ^ pt))
 	) <|>
