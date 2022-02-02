@@ -11,7 +11,7 @@ bak=~/NaTT.backup
 tar="tar"
 
 doc="README.md"
-bin="NaTT.exe NaTT.sh"
+bin="NaTT.exe NaTT.sh z3 txtr-0.jar trs.xml.txtr"
 
 if [ -e "$bak" ]
 then
@@ -27,7 +27,7 @@ then
 	cp $doc $bak
 	cp -r strategies $bak
 
-	(cd bin; eval cp $bin starexec_* z3 \"$bak/bin/\")
+	(cd bin; eval cp $bin starexec_* \"$bak/bin/\")
 
 	(cd $bak; $tar -czf $1.tar.gz bin $doc strategies)
 	

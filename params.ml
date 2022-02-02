@@ -44,6 +44,7 @@ type params_type = {
   mutable orders_rule : order_params array;
   mutable orders_dp : order_params array;
   mutable orders_edge : order_params array;
+  mutable orders_nonreach : order_params array;
   mutable result : bool;
   mutable cpf : bool;
   mutable cpf_to : out_channel;
@@ -66,6 +67,7 @@ let params = {
   orders_rule = [||];
   orders_dp = [||];
   orders_edge = [||];
+  orders_nonreach = [||];
   result = true;
   cpf = false;
   cpf_to = stdout;
@@ -73,7 +75,7 @@ let params = {
   naive_C = false;
 };;
 
-let set_strategy (pre,freezing,rest) =
+let set_strategy (pre,freezing,rest,reach) =
   params.orders_rule <- Array.of_list pre;
   params.freezing <- freezing;
   ( match rest with
@@ -83,7 +85,8 @@ let set_strategy (pre,freezing,rest) =
       params.orders_edge <- Array.of_list orders_edge;
       params.max_loop <- loop;
     | None -> ()
-  )
+  );
+  params.orders_nonreach <- Array.of_list reach;
 in
 let err msg =
   prerr_endline msg;

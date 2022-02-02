@@ -24,61 +24,60 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
       let pr_exp e = put_exp e pr in
       let pr_perm finfo =
         if status_is_used then begin
-        let n = finfo#base#arity in
-        if n > 0 then (
-        let punct = ref "" in
-        let rbr =
-          if solver#get_bool finfo#collapse then ""
-          else if solver#get_bool finfo#mset_status then
-            (pr#puts "{"; "}")
-          else (pr#puts "["; "]")
-        in
-        for j = 1 to n do
-          for i = 1 to n do
-            if solver#get_bool (finfo#perm i j) then begin
-              pr#puts !punct;
-              pr#putc 'x';
-              pr#put_int i;
-              punct := ",";
-            end;
+          pr#puts "\tstatus: ";
+          let n = finfo#base#arity in
+          let punct = ref "" in
+          let rbr =
+            if solver#get_bool finfo#collapse then ""
+            else if solver#get_bool finfo#mset_status then
+              (pr#puts "{"; "}")
+            else (pr#puts "["; "]")
+          in
+          for j = 1 to n do
+            for i = 1 to n do
+              if solver#get_bool (finfo#perm i j) then begin
+                pr#puts !punct;
+                pr#putc 'x';
+                pr#put_int i;
+                punct := ",";
+              end;
+            done;
           done;
-        done;
-        pr#puts rbr
-        );
+          pr#puts rbr;
         end;
       in
       let pr_interpret finfo =
         if weight_is_used then begin
-          pr#puts "\tw: ";
+          pr#puts "\tweight: ";
           interpreter#output_sym solver finfo#base pr;
         end
       in
       let pr_prec finfo =
         if prec_is_used then begin
+          pr#puts "\tprecedence: ";
           pr_exp (solver#get_value finfo#prec);
         end;
       in
       let pr_symbol fname (finfo:wpo_sym) =
-        pr#puts "  ";
-        finfo#base#output (pr:>Io.outputter);
+        finfo#base#output_pad 5 (pr:>Io.outputter);
         pr#putc '(';
         (put_list (fun i -> putc 'x' << put_int i) (putc ',') nop (int_list 1 finfo#base#arity)) pr;
-        pr#puts ")\t";
+        pr#putc ')';
+        pr_interpret finfo;
+        pr_perm finfo;
         if not (solver#get_bool finfo#collapse) then begin
           pr_prec finfo;
         end;
-        pr_perm finfo;
-        pr_interpret finfo;
         pr#endl;
       in
       Hashtbl.iter pr_symbol sigma;
-    method output_usables : 'pr 'a. (int -> exp) -> (int * 'a) list -> (#printer as 'pr) -> unit =
+    method output_usables : 'pr 'a. (int -> exp) -> int list -> (#printer as 'pr) -> unit =
       fun usable usables ->
       if usable_is_used || verbosity.(6) then
-        let folder is (i,_) =
+        let folder is i =
           if solver#get_bool (usable i) then i::is else is
         in
-        puts "    USABLE RULES: {" <<
+        puts "    Usable rules: {" <<
         Abbrev.put_ints " " (List.fold_left folder [] usables) <<
         puts " }" <<
         endl
@@ -230,12 +229,12 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
         end;
         MyXML.leave "redPair" pr;
         MyXML.leave "orderingConstraintProof" pr;
-    method put_usables_cpf : 'pr. (int -> exp) -> (int * rule) list -> (#printer as 'pr) -> unit =
-      fun usable usables pr ->
+    method put_usables_cpf : 'pr. (int -> exp) -> Trs.trs -> int list -> (#printer as 'pr) -> unit =
+      fun usable trs usables pr ->
         MyXML.enclose "usableRules" (
           MyXML.enclose "rules" (fun (pr:#printer) ->
-            let iterer (i, (rule:rule)) =
-              if solver#get_bool (usable i) then rule#output_xml pr;
+            let iterer i =
+              if solver#get_bool (usable i) then (trs#find_rule i)#output_xml pr;
             in
             List.iter iterer usables;
           )

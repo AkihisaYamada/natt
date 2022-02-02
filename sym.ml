@@ -9,22 +9,24 @@ end
 
 type symtype = Var | Fun | Th of string
 
-let put_name_pad min name (pr:#Io.outputter) =
-  let n = String.length name in
-  let rec sub i min =
+let (put_name,put_name_pad) =
+  let rec sub name n i pr =
     if i < n then begin
       match name.[i] with
-      | '\\'  -> pr#puts "\\\\"; sub (i+1) (min-2);
-      | '#' -> pr#puts "\\#"; sub (i+1) (min-2);
-      | '^' -> pr#puts "\\^"; sub (i+1) (min-2);
-      | ' ' -> pr#putc name.[i+1]; sub (i+2) min;
-      | c   -> pr#putc c; sub (i+1) (min-1);
-    end else begin
-      for i = 1 to min do pr#putc ' ' done;
+      | '\\'  -> pr#puts "\\\\"; sub name n (i+1) pr;
+      | '#' -> pr#puts "\\#"; sub name n (i+1) pr;
+      | '^' -> pr#puts "\\^"; sub name n (i+1) pr;
+      | ' ' -> pr#putc name.[i+1]; sub name n (i+2) pr;
+      | c   -> pr#putc c; sub name n (i+1) pr;
     end;
   in
-  sub 0 min
-let put_name name (pr:#Io.outputter) = put_name_pad 0 name pr
+  ( ( fun name -> sub name (String.length name) 0),
+    ( fun min name pr ->
+      let n = String.length name in
+      for i = n to min do pr#putc ' ' done;
+      sub name n 0 pr
+    )
+  )
 
 class virtual sym ty0 = object (x:'x)
   inherit named

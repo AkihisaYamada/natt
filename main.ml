@@ -456,8 +456,15 @@ object (x)
 			let tester p =
 				(new Wpo.t p trs dummy_estimator dummy_dg)#co_order t s
 			in
-			let ret = not (estimator#may_reach s t) || Array.exists tester params.orders_dp in
-			print_endline (if ret then "YES" else "MAYBE")
+			if not (estimator#may_reach s t) then begin
+				proof (estimator#output);
+				print_endline "YES";
+			end else if Array.exists tester params.orders_nonreach then begin
+				print_endline "YES";
+			end else begin
+				comment (puts "failed." << endl);
+				print_endline "MAYBE";
+			end;
 		| _ ->
 			Array.iter
 				(fun p ->

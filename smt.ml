@@ -737,7 +737,11 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 				| LB true	 -> ();
 				| e ->
 					x#add_assertion_body e;
-					if e = LB false then (consistent <- false; raise Inconsistent);
+					if e = LB false then begin
+						debug (endl << puts "False assertion is made." << endl);
+						consistent <- false;
+						raise Inconsistent;
+					end;
 			in
 			fun e -> if consistent then sub (x#expand e);
 
@@ -1191,13 +1195,10 @@ class virtual smt_lib_2_0 p =
 		method check =
 			x#puts "(check-sat)";
 			x#endl;
-			let e = x#get_exp in
-			if e = EV "sat" then ()
-			else if e = EV "unsat" then begin
-				raise Inconsistent
-			end else begin
-				raise (Response("check-sat",e));
-			end;
+			match x#get_exp with
+			| EV "sat" -> ()
+			| EV "unsat" | EV "unknown" -> raise Inconsistent
+			| e -> raise (Response("check-sat",e))
 		method get_bool e =
 			match x#get_value e with
 			| LB b -> b

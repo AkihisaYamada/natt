@@ -4,6 +4,14 @@ open Io
 
 type range = Pos | Bool | Full | Neg | Arctic
 
+let put_range = function
+| Pos -> puts "Nat"
+| Bool -> puts "Bool"
+| Full -> puts "Int"
+| Neg -> puts "Neg"
+| Arctic -> puts "Arctic"
+
+
 type template =
 | Const of int
 | Prod of template list
@@ -27,40 +35,39 @@ type order_mode =
 | O_weak
 | O_equal
 
-let weight name temps = (name,temps)
+let put_order_mode = function
+| O_strict -> puts ">"
+| O_weak -> puts "≥"
+| O_equal -> puts "="
+
 
 let arg mono x = if mono then x else Var Bool *? x
 
-let no_weight = weight "no weight" []
 let sum_weight ~mono =
-	weight "Sum" [Pos, O_strict, SumArgs(arg mono (Arg(-1,0))) +? Var Pos]
+	[Pos, O_strict, "Sum", SumArgs(arg mono (Arg(-1,0))) +? Var Pos]
 let mono_bpoly_weight =
-	weight "poly" [Pos, O_strict, SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
+	[Pos, O_strict, "Poly", SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
 let max_weight ~mono =
-	weight "Max" [
-		Pos, O_strict, ArityChoice(function
+	[Pos, O_strict, "Max", ArityChoice(function
 			| 0 -> Var Pos
 			| 1 -> arg mono (Arg (0,0)) +? Var Pos
 			| _ -> MaxArgs(arg mono (Arg(-1,0) +? Var Pos))
 		)
 	]
 let neg_sum_weight =
-	weight "NegSum" [
-		Pos, O_strict, ArityChoice(function
+	[	Pos, O_strict, "Sum", ArityChoice(function
 			| 0 -> Var Pos
 			| _ -> Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0]
 		)
 	]
 let neg_max_weight =
-	weight "NegMax" [
-		Pos, O_strict, ArityChoice(function
+	[	Pos, O_strict, "Max", ArityChoice(function
 			| 0 -> Var Pos
 			| _ -> Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
 		)
 	]
 let max_sum_weight ?(maxarity=0) ~simp =
-	weight "MaxSum" [
-		Pos, O_strict, ArityChoice(function
+	[	Pos, O_strict, "MaxSum", ArityChoice(function
 			| 0 -> Var Pos
 			| 1 -> arg simp (Arg(-1,0)) +? Var Pos
 			| _ -> Heuristic1(SumArgs(arg simp (Arg(-1,0))) +? Var Pos, MaxArgs(arg simp (Arg(-1,0) +? Var Pos)))
@@ -72,8 +79,7 @@ let max_sum_weight ?(maxarity=0) ~simp =
 		)
 	]
 let neg_max_sum_weight ~maxarity =
-	weight "NegMaxSum" [
-		Pos, O_strict, ArityChoice(function
+	[	Pos, O_strict, "MaxSum", ArityChoice(function
 			| 0 -> Var Pos
 			| 1 -> Max[(Var Bool *? Arg(0,0)) +? Var Full; Const 0]
 			| _ -> Heuristic1(
@@ -93,12 +99,10 @@ let neg_max_sum_weight ~maxarity =
 
 let bmat_weight ~mono ~simp ~dim =
 	let entry j =
-		(if simp || (mono && j = 0) then (debug (puts "hoa"); Choice[Const 2; Const 1]) else Var Bool) *? Arg(-1,j)
+		(if simp || (mono && j = 0) then (Choice[Const 2; Const 1]) else Var Bool) *? Arg(-1,j)
 	in
-	weight (string_of_int dim ^ "D-Mat") (
-		List.init dim (fun j ->
-			(Pos, (if j = 0 then O_strict else O_weak), SumArgs(Sum(List.init dim entry)) +? Var Pos)
-		)
+	List.init dim (fun j ->
+		(Pos, (if j = 0 then O_strict else O_weak), "Sum-Sum", SumArgs(Sum(List.init dim entry)) +? Var Pos)
 	)
 
 let range_attribute =
@@ -146,6 +150,7 @@ let exp_seq =
 
 let template_entry_element i =
 	element "entry" (
+		attribute "name" >>= fun name ->
 		range_attribute >>= fun r ->
 		default (if i = 0 then O_strict else O_weak) (
 			validated_attribute "order" "strict|weak|equal" >>= fun str ->
@@ -156,7 +161,7 @@ let template_entry_element i =
 			)
 		) >>= fun ord ->
 		exp_seq >>= fun t ->
-		return (r,ord,t)
+		return (r,ord,name,t)
 	)
 
 let weight_element ~mono ~simp =
@@ -178,18 +183,19 @@ let weight_element ~mono ~simp =
 		mandatory (int_attribute "dim") >>= fun dim ->
 		return (bmat_weight mono simp dim)
 	) <|>
-	element "template" (
-		mandatory (attribute "name") >>= fun name ->
-		( many_i ~minOccurs:1 template_entry_element <|> (exp_seq >>= fun s -> return [Pos,O_strict,s])
-		) >>= fun ss ->
-		return (weight name ss)
+	element "tuple" (
+		many_i ~minOccurs:1 template_entry_element >>= fun ents ->
+		return ents
+	) <|> (
+		template_entry_element 0 >>= fun ent -> return [ent]
 	)
 
 type prec_mode =
 | PREC_none
-| PREC_strict
+| PREC_linear
 | PREC_quasi
 | PREC_partial
+| PREC_equiv
 type status_mode =
 | S_none
 | S_empty
@@ -199,9 +205,8 @@ type status_mode =
 type order_params = {
 	smt_params : Smt.params;
 	dp : bool;
-	w_name : string;
 	w_quantify : bool;
-	w_templates : (range * order_mode * template) array;
+	w_templates : (range * order_mode * string * template) array;
 	ext_mset : bool;
 	ext_lex : bool;
 	status_mode : status_mode;
@@ -229,11 +234,10 @@ let nonmonotone p =
 
 let order_params
 	?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty)
-	?(usable=true) ?(quantified=true) ?(negcoeff=false)
-	smt (w_name,w_templates) = {
+	?(usable=true) ?(quantified=false) ?(negcoeff=false)
+	smt w_templates = {
 	smt_params = if quantified then { smt with quantified = true; linear = false; } else smt;
 	dp = dp;
-	w_name = w_name;
 	w_quantify = quantified;
 	w_templates = Array.of_list w_templates;
 	prec_mode = prec;
@@ -254,33 +258,54 @@ let order_params
 	negcoeff = negcoeff;
 }
 
+let put_templates_name templates pr =
+	Array.fold_left (fun p (range,order,name,template) ->
+		pr#puts p;
+		put_range range pr;
+		pr#putc ',';
+		put_order_mode order pr;
+		pr#putc ',';
+		pr#puts name;
+		"; "
+	) "(" templates;
+	pr#puts ")"
+
 let put_order p =
-	let status =
-		match p.status_mode with
-		| S_partial -> "pS"
-		| S_total -> "S"
-		| S_empty -> "eS"
-		| _ -> ""
-	in
-	let prec = if p.prec_mode = PREC_quasi then "Q" else "" in
 	let weighted = Array.length p.w_templates > 0 in
 	if p.status_mode = S_empty && p.prec_mode = PREC_none then
-		puts p.w_name
-	else
-		puts prec <<
-		puts (
-			match p.ext_lex, p.ext_mset with
-			| true, true -> if weighted then "WRPO" else "RPO"
-			| true, false -> if weighted then "WPO" else "LPO"
-			| false, true -> if weighted then "WMPO" else "MPO"
-			| _ -> "???"
-		) << puts status << puts (if weighted then p.w_name else "")
+		puts "Order" << put_templates_name p.w_templates
+	else fun pr ->
+		(	match p.prec_mode with
+			| PREC_quasi -> pr#puts "Q"
+			| PREC_equiv -> pr#puts "Equi"
+			| _ -> ()
+		);
+		(	match p.ext_lex, p.ext_mset with
+			| true, true -> if weighted then pr#putc 'W'; pr#puts "RPO"
+			| true, false -> pr#puts (if weighted then "WPO" else "LPO")
+			| false, true -> if weighted then pr#putc 'W'; pr#puts "MPO"
+			| _ -> pr#puts "SimpleOrder"
+		);
+		( match p.status_mode with
+			| S_partial -> pr#puts "pS"
+			| S_total -> pr#puts "S"
+			| S_empty -> pr#puts "eS"
+			| _ -> ()
+		);
+		if weighted then put_templates_name p.w_templates pr;;
 
 let order_element default_smt ~mono =
 	element "order" (
 		default PREC_none (
-			validated_attribute "precedence" "none|quasi|strict" >>= fun str ->
-			return (match str with "quasi" -> PREC_quasi | "strict" -> PREC_strict | _ -> PREC_none)
+			validated_attribute "precedence" "none|quasi|partial|linear|equiv" >>= fun str ->
+			return (
+				match str with
+				| "quasi" -> PREC_quasi
+				| "linear" -> PREC_linear
+				| "partial" -> PREC_partial
+				| "equiv" -> PREC_equiv
+				| _ -> PREC_none
+			)
 		) >>= fun prec ->
 		default S_empty (
 			validated_attribute "status" "none|partial|total|empty" >>= fun str ->
@@ -295,7 +320,7 @@ let order_element default_smt ~mono =
 			default false (bool_attribute "quantified")
 		) >>= fun quantified ->
 		default default_smt Smt.params_of_xml >>= fun smt ->
-		default no_weight (
+		default [] (
 			weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total)
 		) >>= fun weight ->
 		return (order_params smt ~dp:(not mono) ~prec:prec ~status:status ~collapse:collapse ~usable:usable ~quantified:quantified weight)
@@ -307,20 +332,22 @@ let strategy_element default_smt =
 		many (order_element default_smt ~mono:true) >>= fun pre ->
 		default false (element "freezing" (return true)) >>= fun freezing ->
 		optional (
-			element "dp" (
-				many (order_element default_smt ~mono:false) >>= fun orders_dp ->
-				default [] (
-					element "edge" (
-						many (order_element default_smt ~mono:false)
-					)
-				) >>= fun orders_egde ->
-				default 0 (
-					element "loop" (int_attribute "steps" >>= return)
-				) >>= fun loop ->
-				return (orders_dp,orders_egde,loop)
-			)
+			element "dp" (return ()) >>= fun _ ->
+			many (order_element default_smt ~mono:false) >>= fun orders_dp ->
+			default [] (
+				element "edge" (return ()) >>= fun _ ->
+				many (order_element default_smt ~mono:false)
+			) >>= fun orders_egde ->
+			default 0 (
+				element "loop" (int_attribute "steps" >>= return)
+			) >>= fun loop ->
+			return (orders_dp,orders_egde,loop)
 		) >>= fun rest ->
-		return (pre,freezing,rest)
+		return (pre,freezing,rest,[])
+	) <|> element "non-reachability" (
+		default default_smt Smt.params_of_xml >>= fun default_smt ->
+		many (order_element default_smt ~mono:false) >>= fun non ->
+		return ([],false,None,non)
 	)
 
 let of_string default_smt =
@@ -333,19 +360,19 @@ let default smt = (
 	true, Some ( [
 		order_params smt (sum_weight ~mono:false);
 		order_params smt (max_weight ~mono:false);
-		order_params smt ~prec:PREC_quasi ~status:S_partial no_weight;
+		order_params smt ~prec:PREC_quasi ~status:S_partial [];
 		order_params smt (neg_max_sum_weight ~maxarity:0);
 		order_params smt ~prec:PREC_quasi ~status:S_partial (max_sum_weight ~simp:false ~maxarity:0);
 		order_params smt (bmat_weight ~mono:false ~simp:false ~dim:2);
-		order_params smt (weight "sum_sum_int,sum_neg" [
-			(Pos, O_strict, ArityChoice(function
+		order_params smt [
+			(Pos, O_strict, "Sum-Sum", ArityChoice(function
 				| 0 -> Var Pos
 				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
 			) );
-			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
-		]);
-		order_params smt (weight "heuristic_int,sum_neg" [
-			(Pos, O_strict, ArityChoice(function
+			(Neg, O_weak, "Sum", SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
+		];
+		order_params smt [
+			(Pos, O_strict, "MaxSum-Sum", ArityChoice(function
 				| 0 -> Var Pos
 				| 1 -> Max[(Var Bool *? Arg(0,0)) +? (Var Bool *? Arg(0,1)) +? Var Full; Const 0]
 				| _ -> Heuristic1 (
@@ -363,15 +390,13 @@ let default smt = (
 						Const 0
 					]
 			) ) );
-			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
-		]);
+			(Neg, O_weak, "Sum", SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
+		];
 	], [
-		order_params smt (weight "sum_sum_int,sum_neg" [
-			(Pos, O_strict, ArityChoice(function
-				| 0 -> Var Pos
-				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
-			) );
-			(Neg, O_weak, SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
-		]);
-	], 3)
+	], 3),
+	[
+		order_params ~quantified:true smt [
+			(Full, O_equal, "Sum", SumArgs(Var Bool *? Arg(-1,0)) +? Var Full);
+		];
+	]
 )

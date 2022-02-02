@@ -7,6 +7,7 @@ type 'a term = Node of 'a * 'a term list
 type ('a,'b) wterm = WT of 'a * ('a,'b) wterm list * 'b
 
 let root (Node(f,_)) = f
+let wterm_root (WT(f,_,_)) = f
 let get_weight (WT(_,_,ws)) = ws
 let rec erase_w (WT(f,ss,_)) = Node(f,List.map erase_w ss)
 
@@ -211,11 +212,13 @@ class rule strength (l : sym term) (r : sym term) (conds : (sym term * sym term)
 	let lvars = vars l in
   let rvars = vars r in
   let vars = List.fold_left (fun acc (s,t) -> union_vars acc t) lvars conds in
+  let conditional = conds <> [] in
   object (x)
     inherit Io.output
     method l = l
     method r = r
     method conds = conds
+    method conditional = conditional
     method strength = strength
     method vars = vars
     method size = size l + size r
@@ -235,6 +238,12 @@ class rule strength (l : sym term) (r : sym term) (conds : (sym term * sym term)
         | WeakRule -> " ->= "
         | _ -> " ->? ");
       output_term pr r;
+      List.iter (fun (s,t) ->
+        pr#puts " | ";
+        output_term pr s;
+        pr#puts " --> ";
+        output_term pr t;
+      ) conds;
     method output_xml : 'b. (#printer as 'b) -> unit =
       MyXML.enclose "rule" (
         MyXML.enclose "lhs" (fun pr -> output_xml_term pr l) <<
