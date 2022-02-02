@@ -183,12 +183,8 @@ let weight_element ~mono ~simp =
 		mandatory (int_attribute "dim") >>= fun dim ->
 		return (bmat_weight mono simp dim)
 	) <|>
-	element "tuple" (
-		many_i ~minOccurs:1 template_entry_element >>= fun ents ->
-		return ents
-	) <|> (
-		template_entry_element 0 >>= fun ent -> return [ent]
-	)
+		many_i template_entry_element
+
 
 type prec_mode =
 | PREC_none
@@ -213,6 +209,7 @@ type order_params = {
 	status_copy : bool;
 	status_nest : int;
 	prec_mode : prec_mode;
+	prec_quantify : bool;
 	mincons : bool;
 	maxcons : bool;
 	ac_w : bool;
@@ -233,14 +230,15 @@ let nonmonotone p =
   p.status_mode = S_empty && p.prec_mode <> PREC_none
 
 let order_params
-	?(dp=true) ?(prec=PREC_none) ?(status=S_empty) ?(collapse=status<>S_empty)
-	?(usable=true) ?(quantified=false) ?(negcoeff=false)
+	?(dp=true) ?(prec=PREC_none) ?(prec_quantify=false) ?(status=S_empty) ?(collapse=status<>S_empty)
+	?(usable=true) ?(w_quantify=false) ?(negcoeff=false)
 	smt w_templates = {
-	smt_params = if quantified then { smt with quantified = true; linear = false; } else smt;
+	smt_params = if w_quantify || prec_quantify then { smt with quantified = true; linear = false; } else smt;
 	dp = dp;
-	w_quantify = quantified;
+	w_quantify = w_quantify;
 	w_templates = Array.of_list w_templates;
 	prec_mode = prec;
+	prec_quantify = prec_quantify;
 	status_mode = status;
 	status_nest = 0;
 	status_copy = false;
@@ -320,10 +318,8 @@ let order_element default_smt ~mono =
 			default false (bool_attribute "quantified")
 		) >>= fun quantified ->
 		default default_smt Smt.params_of_xml >>= fun smt ->
-		default [] (
-			weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total)
-		) >>= fun weight ->
-		return (order_params smt ~dp:(not mono) ~prec:prec ~status:status ~collapse:collapse ~usable:usable ~quantified:quantified weight)
+		weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total) >>= fun weight ->
+		return (order_params smt ~dp:(not mono) ~prec:prec ~prec_quantify:quantified ~status:status ~collapse:collapse ~usable:usable ~w_quantify:quantified weight)
 	)
 
 let strategy_element default_smt =
@@ -395,7 +391,7 @@ let default smt = (
 	], [
 	], 3),
 	[
-		order_params ~quantified:true smt [
+		order_params ~w_quantify:true smt [
 			(Full, O_equal, "Sum", SumArgs(Var Bool *? Arg(-1,0)) +? Var Full);
 		];
 	]

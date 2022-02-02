@@ -1004,11 +1004,11 @@ and subcontext consistent temp_names p =
 			| d ->
 				declarations <- d::declarations;
 		method close_exists e =
-			let e = x#expand e in
-			Exists(declarations,assertion &^ e)
+			let body = x#expand (assertion &^ e) in
+			if declarations = [] then body else Exists(declarations,body)
 		method close_for_all e =
-			let e = x#expand e in
-			ForAll(declarations,assertion =>^ e)
+			let body = x#expand (assertion =>^ e) in
+			if declarations = [] then body else ForAll(declarations,body)
 	end
 
 let smt_context_for_all f = ContextForAll (Delay f)

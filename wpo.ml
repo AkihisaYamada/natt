@@ -75,7 +75,32 @@ class t =
       (if finfo#base#is_associative then add_prec_ac else add_prec_default) fname finfo
   in
   (* Precedence over symbols *)
+  let var_prec x = "vprec_" ^ x#name in
+  let quantify_prec vs e =
+    smt_context_for_all (fun context ->
+      List.iter (fun v ->
+        let ev = context#new_variable_base (var_prec v) in
+        context#add_assertion (LI 0 <=^ ev);
+        context#add_assertion (ev <=^ !pmax);
+      ) vs;
+      e
+    )
+  in
   let (spo, co_spo) =
+    let prec f =
+      if f#is_var then EV(var_prec f) else (lookup f)#prec
+    in
+    let spo_quasi_open (f:#sym) (g:#sym) =
+      let pf = prec f in
+      let pg = prec g in
+      Cons(pf >=^ pg, pf >^ pg)
+    in
+    let spo_equiv_open (f:#sym) (g:#sym) =
+      Cons(prec f =^ prec g, LB false)
+    in
+    let co_spo_equiv_open (f:#sym) (g:#sym) =
+      Cons(LB true, prec f <>^ prec g)
+    in
     let spo_quasi (f:#sym) (g:#sym) =
       if f#is_var then
         Cons((if g#is_var then LB(f#equals g) else pmin =^ (lookup g)#prec), LB false)
@@ -123,8 +148,10 @@ class t =
     in
     match p.prec_mode with
     | PREC_none -> (fun _ _ -> Cons (LB true, LB false)), (fun _ _ -> Cons (LB true, LB false))
-    | PREC_quasi -> (spo_quasi, spo_quasi)
-    | PREC_equiv -> (spo_equiv, co_spo_equiv)
+    | PREC_quasi ->
+      if p.prec_quantify then (spo_quasi_open, spo_quasi_open) else (spo_quasi, spo_quasi)
+    | PREC_equiv ->
+      if p.prec_quantify then (spo_equiv_open, spo_equiv_open) else (spo_equiv, co_spo_equiv)
     | _ -> (spo_strict, co_spo_strict)
   in
 
@@ -719,15 +746,24 @@ class t =
         )
       )
     in
-    if p.w_quantify then
+    let order_rule_quantified quantify order co_order rule =
+      let co_cond = smt_list_exists (fun (s,t) -> strictly (co_order t s)) rule#conds in
+      let orient = order rule#l rule#r in
+      let vs = rule#vars in
+      Cons(
+        quantify vs (co_cond |^ weakly orient),
+        quantify vs (co_cond |^ strictly orient)
+      )
+    in
+    if p.prec_quantify then
+      if p.w_quantify then
+        order_rule_quantified (fun vs e -> quantify_prec vs (interpreter#quantify vs e)) order_open co_order_open
+      else
+        order_rule_quantified (fun vs e -> quantify_prec vs e) order_closed co_order_closed
+    else if p.w_quantify then
       fun rule ->
       if rule#conditional then
-        let co_cond = smt_list_exists (fun (s,t) -> strictly (co_order_open t s)) rule#conds in
-        let orient = order_open rule#l rule#r in
-        Cons(
-          interpreter#quantify (rule#vars) (co_cond |^ weakly orient),
-          interpreter#quantify (rule#vars) (co_cond |^ strictly orient)
-        )
+        order_rule_quantified (fun vs e -> interpreter#quantify vs e) order_open co_order_open rule
       else closed rule
     else closed
   in
