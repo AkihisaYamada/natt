@@ -456,7 +456,7 @@ object (x)
 			let tester p =
 				(new Wpo.t p trs dummy_estimator dummy_dg)#co_order t s
 			in
-			if not (estimator#may_reach s t) then begin
+			if params.nonreach_estimator && not (estimator#may_reach s t) then begin
 				proof (estimator#output);
 				print_endline "YES";
 			end else if Array.exists tester params.orders_nonreach then begin

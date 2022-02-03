@@ -98,8 +98,8 @@ class t =
     let spo_equiv_open (f:#sym) (g:#sym) =
       Cons(prec f =^ prec g, LB false)
     in
-    let co_spo_equiv_open (f:#sym) (g:#sym) =
-      Cons(LB true, prec f <>^ prec g)
+    let co_spo_equiv_open (g:#sym) (f:#sym) =
+      Cons(LB true, prec g <>^ prec f)
     in
     let spo_quasi (f:#sym) (g:#sym) =
       if f#is_var then
@@ -124,7 +124,7 @@ class t =
         LB true,
         ( if g#equals f then LB false
           else if g#is_var || f#is_var then LB false
-        	else smt_not ((lookup g)#prec =^ (lookup f)#prec)
+        	else (lookup g)#prec <>^ (lookup f)#prec
         )
       )
     in
@@ -151,7 +151,7 @@ class t =
     | PREC_quasi ->
       if p.prec_quantify then (spo_quasi_open, spo_quasi_open) else (spo_quasi, spo_quasi)
     | PREC_equiv ->
-      if p.prec_quantify then (spo_equiv_open, spo_equiv_open) else (spo_equiv, co_spo_equiv)
+      if p.prec_quantify then (spo_equiv_open, co_spo_equiv_open) else (spo_equiv, co_spo_equiv)
     | _ -> (spo_strict, co_spo_strict)
   in
 
@@ -583,7 +583,7 @@ class t =
       else not_ordered
   in
   (* compargs for f and g *)
-  let compargs fname gname finfo ginfo =
+  let compargs finfo ginfo =
     match finfo#base#ty, ginfo#base#ty with
     | Fun, Fun -> default_compargs finfo ginfo
     | Th "C", Th "C" -> fun order ss ts ->
@@ -594,7 +594,7 @@ class t =
     | Th "AC", Th "AC"  -> fun order ss ts ->
       smt_if (finfo#mapped 1)
         (smt_if (ginfo#mapped 1)
-          (flat_compargs fname gname finfo order ss ts)
+          (flat_compargs finfo#base#name ginfo#base#name finfo order ss ts)
           strictly_ordered
         )
         (smt_if (ginfo#mapped 1) weakly_ordered not_ordered)
@@ -608,14 +608,14 @@ class t =
       some_ge <=> $s_i \gsim t$ for some $i \in \sigma(f)$
       some_gt <=> $s_i \gt t$ for some $i \in \sigma(f)$
     *)
-    let rec sub i some_ge some_gt order finfo ss t =
+    let rec sub i some_ge some_gt order fperm ss t =
       match ss with
       | []  -> Cons(some_ge, some_gt)
       | s::ss ->
         smt_split (order s t) (fun curr_ge curr_gt ->
           sub (i+1) 
-          (some_ge |^ (finfo#permed i &^ curr_ge))
-          (some_gt |^ (finfo#permed i &^ curr_gt)) order finfo ss t
+          (some_ge |^ (fperm i &^ curr_ge))
+          (some_gt |^ (fperm i &^ curr_gt)) order fperm ss t
         )
     in
     if p.status_mode = S_empty then
@@ -628,7 +628,7 @@ class t =
       all_ge <=> $s \gsim t_j$ for all $j \in \sigma(g)$
       all_gt <=> $s \gt t_j$ for all $j \in \sigma(g)$
     *)
-    let rec sub j all_ge all_gt order s ginfo ts =
+    let rec sub j all_ge all_gt order s gperm ts =
       match ts with
       | []  -> Cons(all_ge, all_gt)
       | t::ts ->
@@ -636,8 +636,8 @@ class t =
           smt_let Bool curr_gt
           (fun curr_gt ->
             sub (j+1)
-            (all_ge &^ (ginfo#permed j =>^ curr_ge))
-            (all_gt &^ (ginfo#permed j =>^ curr_gt)) order s ginfo ts
+            (all_ge &^ (gperm j =>^ curr_ge))
+            (all_gt &^ (gperm j =>^ curr_gt)) order s gperm ts
           )
         )
     in
@@ -673,14 +673,26 @@ class t =
       compose (wo sw tw) (wpo2 wo spo s t)
   and wpo2 wo spo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     if f#is_var then
-      Cons(var_eq f#name t, LB false)
-    else match ss,ts with
+      if g#is_var then
+        Cons(LB (f#equals g), LB false)
+      else
+        let ginfo = lookup g in
+        smt_split (order_all_args (wpo1 wo spo) s ginfo#permed ts) (
+          fun all_ge all_gt ->
+          smt_split (spo f g) (fun sge sgt ->
+            let col_g = ginfo#collapse in
+            Cons((col_g &^ all_ge) |^ (all_gt &^ sge), all_gt &^ (col_g |^ sgt))
+          ) 
+        )
+    else
+    match ss,ts with
     | [s1], [t1] when f#equals g ->
       let fltp = (lookup f)#permed 1 in
       smt_split (wpo2 wo spo s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
     | _ -> 
     let finfo = lookup f in
-    smt_split (order_by_some_arg (wpo1 wo spo) finfo ss t) (fun some_ge some_gt ->
+    smt_split (order_by_some_arg (wpo1 wo spo) finfo#permed ss t) (
+      fun some_ge some_gt ->
       smt_let Bool some_ge (fun some_ge ->
         let col_f = finfo#collapse in
         let some_gt = smt_if col_f some_gt some_ge in
@@ -690,14 +702,14 @@ class t =
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
-          smt_split (order_all_args (wpo1 wo spo) s ginfo ts) (fun all_ge all_gt ->
+          smt_split (order_all_args (wpo1 wo spo) s ginfo#permed ts) (
+            fun all_ge all_gt ->
             let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
               smt_split (
-                compose (spo (wterm_root s) (wterm_root t))
-                  (compargs f#name g#name finfo ginfo (wpo1 wo spo) ss ts)
+                compose (spo f g) (compargs finfo ginfo (wpo1 wo spo) ss ts)
                 ) (fun rest_ge rest_gt ->
                 smt_let Bool all_gt (fun all_gt ->
                   let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
@@ -736,6 +748,7 @@ class t =
         ) )
       )
   in
+  let quantify_prec_weight vs e = quantify_prec vs (interpreter#quantify vs e) in
   let order_rule =
     let closed rule =
       smt_let Bool (smt_list_exists (fun (s,t) -> strictly (co_order_closed t s)) rule#conds) (
@@ -757,29 +770,34 @@ class t =
     in
     if p.prec_quantify then
       if p.w_quantify then
-        order_rule_quantified (fun vs e -> quantify_prec vs (interpreter#quantify vs e)) order_open co_order_open
+        order_rule_quantified quantify_prec_weight order_open co_order_open
       else
-        order_rule_quantified (fun vs e -> quantify_prec vs e) order_closed co_order_closed
+        order_rule_quantified quantify_prec order_closed co_order_closed
     else if p.w_quantify then
       fun rule ->
       if rule#conditional then
-        order_rule_quantified (fun vs e -> interpreter#quantify vs e) order_open co_order_open rule
+        order_rule_quantified interpreter#quantify order_open co_order_open rule
       else closed rule
     else closed
   in
   let (order,co_order) =
-    if p.w_quantify then
-      let sub ord t s =
-        let vars = union_vars (vars t) s in
-        let orient = ord t s in
-        Cons(
-          interpreter#quantify vars (weakly orient),
-          interpreter#quantify vars (strictly orient)
-        )
-      in
-      (sub order_open, sub co_order_open)
-    else
-      (order_closed, co_order_closed)
+    let sub quantify ord t s =
+      let vars = union_vars (vars t) s in
+      let orient = ord t s in
+      Cons(quantify vars (weakly orient), quantify vars (strictly orient))
+    in
+    if p.prec_quantify then
+      if p.w_quantify then (
+        sub quantify_prec_weight order_open,
+        sub quantify_prec_weight co_order_open
+      ) else (
+        sub quantify_prec order_closed,
+        sub quantify_prec co_order_closed
+      )
+    else if p.w_quantify then (
+      sub interpreter#quantify order_open,
+      sub interpreter#quantify co_order_open
+    ) else (order_closed, co_order_closed)
   in
 object (x)
 

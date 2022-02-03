@@ -44,6 +44,7 @@ type params_type = {
   mutable orders_rule : order_params array;
   mutable orders_dp : order_params array;
   mutable orders_edge : order_params array;
+  mutable nonreach_estimator : bool;
   mutable orders_nonreach : order_params array;
   mutable result : bool;
   mutable cpf : bool;
@@ -67,6 +68,7 @@ let params = {
   orders_rule = [||];
   orders_dp = [||];
   orders_edge = [||];
+  nonreach_estimator = false;
   orders_nonreach = [||];
   result = true;
   cpf = false;

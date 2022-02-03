@@ -1004,10 +1004,10 @@ and subcontext consistent temp_names p =
 			| d ->
 				declarations <- d::declarations;
 		method close_exists e =
-			let body = x#expand (assertion &^ e) in
+			let body = assertion &^ x#expand e in
 			if declarations = [] then body else Exists(declarations,body)
 		method close_for_all e =
-			let body = x#expand (assertion =>^ e) in
+			let body = assertion =>^ x#expand e in(* why not expand assertions?? *)
 			if declarations = [] then body else ForAll(declarations,body)
 	end
 
