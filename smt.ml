@@ -21,7 +21,7 @@ type params = {
 let default_params cmd args = {
 	cmd = cmd;
 	args = args;
-	base_ty = Int;
+	base_ty = Real;
 	tmpvar = true;
 	linear = true;
 	quantified = false;
@@ -39,6 +39,9 @@ let params_of_xml =
 		default true (bool_attribute "tempvars") >>= fun tmpvar ->
 		default true (bool_attribute "linear") >>= fun linear ->
 		default false (bool_attribute "quantified") >>= fun quantified ->
+		default Int (validated_attribute "type" "int|real" >>=
+			function "int" -> return Int | "real" -> return Real
+		) >>= fun ty ->
 		(	element "command" string >>= fun cmd ->
 			many (element "arg" string) >>= fun args ->
 			return (cmd,args)
@@ -52,7 +55,7 @@ let params_of_xml =
 		return {
 			cmd = cmd;
 			args = args;
-			base_ty = Int;
+			base_ty = ty;
 			tmpvar = tmpvar;
 			linear = linear;
 			quantified = quantified;

@@ -232,8 +232,11 @@ let nonmonotone p =
 let order_params
 	?(dp=true) ?(prec=PREC_none) ?(prec_quantify=false) ?(status=S_empty) ?(collapse=status<>S_empty)
 	?(usable=true) ?(w_quantify=false) ?(negcoeff=false)
-	smt w_templates = {
-	smt_params = if w_quantify || prec_quantify then { smt with quantified = true; linear = false; } else smt;
+	(smt:Smt.params) w_templates = {
+	smt_params = { smt with
+		quantified = smt.quantified || w_quantify || prec_quantify;
+		linear = smt.linear && not w_quantify;
+	};
 	dp = dp;
 	w_quantify = w_quantify;
 	w_templates = Array.of_list w_templates;
@@ -319,7 +322,9 @@ let order_element default_smt ~mono =
 		) >>= fun quantified ->
 		default default_smt Smt.params_of_xml >>= fun smt ->
 		weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total) >>= fun weight ->
-		return (order_params smt ~dp:(not mono) ~prec:prec ~prec_quantify:quantified ~status:status ~collapse:collapse ~usable:usable ~w_quantify:quantified weight)
+		return (
+			order_params smt ~dp:(not mono) ~prec:prec ~prec_quantify:false ~status:status ~collapse:collapse ~usable:usable ~w_quantify:quantified
+			weight)
 	)
 
 let strategy_element default_smt =

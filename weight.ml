@@ -478,7 +478,7 @@ type sym_info = {
 }
 
 let add_svar context (v,i,s) =
-	let ev = context#new_variable (string_of_var (v,i)) Int in
+	let ev = context#new_variable_base (string_of_var (v,i)) in
 	match s with
 	| Pos -> context#add_assertion (ev >=^ LI 0)
 	| Neg -> context#add_assertion (ev <=^ LI 0)
