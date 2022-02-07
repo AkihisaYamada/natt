@@ -446,20 +446,23 @@ object (x)
 			problem (puts "Input TRS:" << endl << enter 4 << trs#output << leave 4);
 			problem (puts "Infeasibility test:" << endl <<
 				put_list (fun (s,t) -> puts "    " << put_term s << puts " --> " << put_term t) endl nop eqs << endl);
-			let estimator = Estimator.sym_trans trs in
-			debug (estimator#output);
 			let (ss,ts) = List.split eqs in
 			let c = new Sym.sym_unmarked Fun " #" in
 			(trs#get_sym c)#set_arity (List.length ss);
 			let s = Node(c,ss) in
 			let t = Node(c,ts) in
-			let tester p =
-				(new Wpo.t p trs dummy_estimator dummy_dg)#co_order t s
-			in
-			if params.nonreach_estimator && not (estimator#may_reach s t) then begin
-				proof (estimator#output);
-				print_endline "YES";
-			end else if Array.exists tester params.orders_nonreach then begin
+			if params.nonreach_estimator && (
+				let estimator = Estimator.sym_trans trs in
+				not (estimator#may_reach s t) && (
+					proof (estimator#output);
+					true
+				)
+			) || (
+				let tester p =
+					(new Wpo.t p trs dummy_estimator dummy_dg)#co_order t s
+				in
+				Array.exists tester params.orders_nonreach
+			) then begin
 				print_endline "YES";
 			end else begin
 				comment (puts "failed." << endl);

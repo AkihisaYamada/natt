@@ -212,13 +212,13 @@ class rule strength (l : sym term) (r : sym term) (conds : (sym term * sym term)
 	let lvars = vars l in
   let rvars = vars r in
   let vars = List.fold_left (fun acc (s,t) -> union_vars acc t) lvars conds in
-  let conditional = conds <> [] in
+  let is_conditional = conds <> [] in
   object (x)
     inherit Io.output
     method l = l
     method r = r
     method conds = conds
-    method conditional = conditional
+    method is_conditional = is_conditional
     method strength = strength
     method vars = vars
     method size = size l + size r

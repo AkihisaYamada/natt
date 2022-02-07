@@ -76,30 +76,22 @@ class t =
   in
   (* Precedence over symbols *)
   let var_prec x = "vprec_" ^ x#name in
-  let quantify_prec vs e =
-    smt_context_for_all (fun context ->
-      List.iter (fun v ->
-        let ev = context#new_variable_base (var_prec v) in
-        context#add_assertion (LI 0 <=^ ev);
-        context#add_assertion (ev <=^ !pmax);
-      ) vs;
-      e
-    )
+  let quantify_prec =
+    if p.prec_quantify then
+      fun vs e ->
+      smt_context_for_all (fun context ->
+        List.iter (fun v ->
+          let ev = context#new_variable_base (var_prec v) in
+          context#add_assertion (LI 0 <=^ ev);
+          context#add_assertion (ev <=^ !pmax);
+        ) vs;
+        e
+      )
+    else fun _ e -> e
   in
-  let (spo, co_spo) =
+  let (spo, spo_open, co_spo, co_spo_open) =
     let prec f =
       if f#is_var then EV(var_prec f) else (lookup f)#prec
-    in
-    let spo_quasi_open (f:#sym) (g:#sym) =
-      let pf = prec f in
-      let pg = prec g in
-      Cons(pf >=^ pg, pf >^ pg)
-    in
-    let spo_equiv_open (f:#sym) (g:#sym) =
-      Cons(prec f =^ prec g, LB false)
-    in
-    let co_spo_equiv_open (g:#sym) (f:#sym) =
-      Cons(LB true, prec g <>^ prec f)
     in
     let spo_quasi (f:#sym) (g:#sym) =
       if f#is_var then
@@ -111,6 +103,14 @@ class t =
         let pg = (lookup g)#prec in
         Cons(pf >=^ pg, pf >^ pg)
     in
+    let spo_quasi_open =
+      if p.prec_quantify then
+        fun (f:#sym) (g:#sym) ->
+        let pf = prec f in
+        let pg = prec g in
+        Cons(pf >=^ pg, pf >^ pg)
+      else spo_quasi
+    in
     let spo_equiv (f:#sym) (g:#sym) =
       Cons(
         ( if f#equals g then LB true
@@ -118,6 +118,11 @@ class t =
           else (lookup f)#prec =^ (lookup g)#prec
         ), LB false
       )
+    in
+    let spo_equiv_open =
+      if p.prec_quantify then
+        fun (f:#sym) (g:#sym) -> Cons(prec f =^ prec g, LB false)
+      else spo_equiv
     in
     let co_spo_equiv (g:#sym) (f:#sym) =
       Cons(
@@ -127,6 +132,11 @@ class t =
         	else (lookup g)#prec <>^ (lookup f)#prec
         )
       )
+    in
+    let co_spo_equiv_open =
+      if p.prec_quantify then
+        fun (g:#sym) (f:#sym) -> Cons(LB true, prec g <>^ prec f)
+      else co_spo_equiv
     in
     let spo_strict (f:#sym) (g:#sym) =
       if f#equals g then
@@ -146,13 +156,12 @@ class t =
         let ge = (lookup g)#prec >=^ (lookup f)#prec in
         Cons(ge,ge)
     in
+    let spo_triv _ _ = Cons (LB true, LB false) in
     match p.prec_mode with
-    | PREC_none -> (fun _ _ -> Cons (LB true, LB false)), (fun _ _ -> Cons (LB true, LB false))
-    | PREC_quasi ->
-      if p.prec_quantify then (spo_quasi_open, spo_quasi_open) else (spo_quasi, spo_quasi)
-    | PREC_equiv ->
-      if p.prec_quantify then (spo_equiv_open, co_spo_equiv_open) else (spo_equiv, co_spo_equiv)
-    | _ -> (spo_strict, co_spo_strict)
+    | PREC_none -> (spo_triv, spo_triv, spo_triv, spo_triv)
+    | PREC_quasi -> (spo_quasi, spo_quasi_open, spo_quasi, spo_quasi_open)
+    | PREC_equiv -> (spo_equiv, spo_equiv_open, co_spo_equiv, co_spo_equiv_open)
+    | _ -> (spo_strict, spo_strict, co_spo_strict, spo_quasi_open)
   in
 
   (*** Usable rules ***)
@@ -666,18 +675,60 @@ class t =
       in
       is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
   in
-  let rec wpo1 wo spo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
+  (* quantifying variable orderings *)
+  let wpo_var x y = Cons(LB false, LB false) in
+  let wpo_ge_var_name x y = "ge_" ^ x ^ "_" ^ y in
+  let wpo_ge_var x y = EV(wpo_ge_var_name x y) in
+  let wpo_gt_var_name x y = "gt_" ^ x ^ "_" ^ y in
+  let wpo_gt_var x y = EV(wpo_gt_var_name x y) in
+  let wpo_var_open =
+    if p.wpo_quantify then
+      fun x y ->
+      let xname = x#name in
+      let yname = y#name in
+      Cons(wpo_ge_var xname yname, wpo_gt_var xname yname)
+    else wpo_var
+  in
+  let quantify_wpo =
+    if p.wpo_quantify then
+      let rec add_wpo_vars context =
+        let rec sub xname = function
+          | [] -> ()
+          | y::ys ->
+            let yname = y#name in
+            let ge_xy = context#new_variable (wpo_ge_var_name xname yname) Smt.Bool in
+            let gt_xy = context#new_variable (wpo_gt_var_name xname yname) Smt.Bool in
+            let ge_yx = context#new_variable (wpo_ge_var_name yname xname) Smt.Bool in
+            let gt_yx = context#new_variable (wpo_gt_var_name yname xname) Smt.Bool in
+            context#add_assertion (gt_xy =>^ (ge_xy &^ smt_not ge_yx));
+            context#add_assertion (gt_yx =>^ (ge_yx &^ smt_not ge_xy));
+            List.iter (fun z ->
+              let zname = z#name in
+              context#add_assertion (ge_xy &^ wpo_ge_var yname zname =>^ wpo_ge_var xname zname);
+              context#add_assertion (ge_xy &^ wpo_gt_var yname zname =>^ wpo_gt_var xname zname);
+              context#add_assertion (gt_xy &^ wpo_ge_var yname zname =>^ wpo_gt_var xname zname);
+            ) ys;
+            sub xname ys;
+        in
+        function
+        | [] -> ()
+        | x::xs -> sub x#name xs; add_wpo_vars context xs
+      in
+      fun vs e -> smt_context_for_all (fun context -> add_wpo_vars context vs; e)
+    else fun _ e -> e
+  in
+  let rec wpo1 vo wo spo (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) =
     if ac_eq s t then
       weakly_ordered
     else
-      compose (wo sw tw) (wpo2 wo spo s t)
-  and wpo2 wo spo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
+      compose (wo sw tw) (wpo2 vo wo spo s t)
+  and wpo2 vo wo spo (WT(f,ss,_) as s) (WT(g,ts,_) as t) =
     if f#is_var then
       if g#is_var then
-        Cons(LB (f#equals g), LB false)
+        vo f g
       else
         let ginfo = lookup g in
-        smt_split (order_all_args (wpo1 wo spo) s ginfo#permed ts) (
+        smt_split (order_all_args (wpo1 vo wo spo) s ginfo#permed ts) (
           fun all_ge all_gt ->
           smt_split (spo f g) (fun sge sgt ->
             let col_g = ginfo#collapse in
@@ -688,10 +739,10 @@ class t =
     match ss,ts with
     | [s1], [t1] when f#equals g ->
       let fltp = (lookup f)#permed 1 in
-      smt_split (wpo2 wo spo s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
+      smt_split (wpo2 vo wo spo s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
     | _ -> 
     let finfo = lookup f in
-    smt_split (order_by_some_arg (wpo1 wo spo) finfo#permed ss t) (
+    smt_split (order_by_some_arg (wpo1 vo wo spo) finfo#permed ss t) (
       fun some_ge some_gt ->
       smt_let Bool some_ge (fun some_ge ->
         let col_f = finfo#collapse in
@@ -702,14 +753,14 @@ class t =
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
-          smt_split (order_all_args (wpo1 wo spo) s ginfo#permed ts) (
+          smt_split (order_all_args (wpo1 vo wo spo) s ginfo#permed ts) (
             fun all_ge all_gt ->
             let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
               smt_split (
-                compose (spo f g) (compargs finfo ginfo (wpo1 wo spo) ss ts)
+                compose (spo f g) (compargs finfo ginfo (wpo1 vo wo spo) ss ts)
                 ) (fun rest_ge rest_gt ->
                 smt_let Bool all_gt (fun all_gt ->
                   let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
@@ -725,8 +776,8 @@ class t =
   let (order_closed,co_order_closed,order_open,co_order_open) =
     let wo = interpreter#order ~closed:true in
     let co_wo = interpreter#co_order ~closed:true in
-    let wo_open = interpreter#order ~closed:false in
-    let co_wo_open = interpreter#co_order ~closed:false in
+    let wo_open = interpreter#order ~closed:(not p.w_quantify) in
+    let co_wo_open = interpreter#co_order ~closed:(not p.w_quantify) in
     if p.prec_mode = PREC_none && p.status_mode = S_empty then
       let eval = interpreter#eval in (
         (fun s t -> wo (eval s) (eval t)),
@@ -736,19 +787,22 @@ class t =
       )
     else
       let a = interpreter#annotate in (
-        ( fun s t -> Delay (fun c -> wpo1 wo spo (a c s) (a c t))),
-        ( fun t s -> Delay (fun c -> wpo1 co_wo co_spo (a c t) (a c s))),
+        ( fun s t -> Delay (fun c -> wpo1 wpo_var wo spo (a c s) (a c t))),
+        ( fun t s -> Delay (fun c -> wpo1 wpo_var co_wo co_spo (a c t) (a c s))),
         ( fun s t -> Cons (
-            Delay (fun c -> weakly (wpo1 wo_open spo (a c s) (a c t))),
-            Delay (fun c -> strictly (wpo1 wo_open spo (a c s) (a c t)))
+            Delay (fun c -> weakly (wpo1 wpo_var_open wo_open spo_open (a c s) (a c t))),
+            Delay (fun c -> strictly (wpo1 wpo_var_open wo_open spo_open (a c s) (a c t)))
         ) ),
         ( fun t s -> Cons (
-            Delay (fun c -> weakly (wpo1 co_wo_open co_spo (a c t) (a c s))),
-            Delay (fun c -> strictly (wpo1 co_wo_open co_spo (a c t) (a c s)))
+            Delay (fun c -> weakly (wpo1 wpo_var_open co_wo_open co_spo_open (a c t) (a c s))),
+            Delay (fun c -> strictly (wpo1 wpo_var_open co_wo_open co_spo_open (a c t) (a c s)))
         ) )
       )
   in
-  let quantify_prec_weight vs e = quantify_prec vs (interpreter#quantify vs e) in
+  let quantify_w =
+    if p.w_quantify then interpreter#quantify else fun _ e -> e
+  in
+	let quantify vs e = quantify_wpo vs (quantify_prec vs (quantify_w vs e)) in
   let order_rule =
     let closed rule =
       smt_let Bool (smt_list_exists (fun (s,t) -> strictly (co_order_closed t s)) rule#conds) (
@@ -759,45 +813,31 @@ class t =
         )
       )
     in
-    let order_rule_quantified quantify order co_order rule =
-      let co_cond = smt_list_exists (fun (s,t) -> strictly (co_order t s)) rule#conds in
-      let orient = order rule#l rule#r in
+    let quantified rule =
+      let co_cond = smt_list_exists (fun (s,t) -> strictly (co_order_open t s)) rule#conds in
+      let orient = order_open rule#l rule#r in
       let vs = rule#vars in
       Cons(
         quantify vs (co_cond |^ weakly orient),
         quantify vs (co_cond |^ strictly orient)
       )
     in
-    if p.prec_quantify then
-      if p.w_quantify then
-        order_rule_quantified quantify_prec_weight order_open co_order_open
-      else
-        order_rule_quantified quantify_prec order_closed co_order_closed
-    else if p.w_quantify then
-      fun rule ->
-      if rule#conditional then
-        order_rule_quantified interpreter#quantify order_open co_order_open rule
-      else closed rule
+    if p.wpo_quantify || p.prec_quantify || p.w_quantify then
+      if p.quantify_unconditional then quantified
+      else fun rule ->
+        if rule#is_conditional then quantified rule
+        else closed rule
     else closed
   in
   let (order,co_order) =
-    let sub quantify ord t s =
+    let sub1 ord t s =
       let vars = union_vars (vars t) s in
       let orient = ord t s in
       Cons(quantify vars (weakly orient), quantify vars (strictly orient))
     in
-    if p.prec_quantify then
-      if p.w_quantify then (
-        sub quantify_prec_weight order_open,
-        sub quantify_prec_weight co_order_open
-      ) else (
-        sub quantify_prec order_closed,
-        sub quantify_prec co_order_closed
-      )
-    else if p.w_quantify then (
-      sub interpreter#quantify order_open,
-      sub interpreter#quantify co_order_open
-    ) else (order_closed, co_order_closed)
+    if p.wpo_quantify || p.prec_quantify || p.w_quantify then
+      (sub1 order_open, sub1 co_order_open)
+    else (order_closed, co_order_closed)
   in
 object (x)
 
@@ -1181,8 +1221,8 @@ object (x)
       trs#iter_rules (fun i rule ->
         debug (putc ' ' << put_int i);
         solver#add_assertion (weakly (order_rule rule));
+        debug (putc '.' << flush);
       );
-      comment (putc '.' << flush);
       debug (endl << puts "	Asserting co-ordering.");
       solver#add_assertion (strictly (co_order t s));
       comment (putc '.' << flush);

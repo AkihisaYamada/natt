@@ -545,15 +545,21 @@ class interpreter p =
 		method init : 't. (#context as 't) -> Trs.trs -> Dp.dg -> unit = fun solver trs dg ->
 			let heu = maxsum_heuristic trs dg in
 			let iterer f =
+				let mkvar = object
+					val mutable cnt = 0
+					method make =
+						cnt <- cnt + 1;
+						"w_" ^ f#name ^ "_" ^ string_of_int cnt
+				end in
 				let n = f#arity in
 				let to_n = int_list 0 (n-1) in
 				let rec sub k t =
 					match t with
 					| Strategy.Var Bool ->
-						let v = solver#temp_variable Smt.Bool in
+						let v = solver#new_variable mkvar#make Smt.Bool in
 						Smt(smt_if v (LI 1) (LI 0))
 					| Strategy.Var r ->
-						let v = solver#temp_variable_base in
+						let v = solver#new_variable_base mkvar#make in
 						if r = Pos then solver#add_assertion (v >=^ LI 0)
 						else if r = Neg then solver#add_assertion (v <=^ LI 0);
 						Smt v
@@ -562,7 +568,7 @@ class interpreter p =
 							| [] -> acc
 							| t::ts ->
 								let w = sub k t in
-								let c = solver#temp_variable Smt.Bool in
+								let c = solver#new_variable mkvar#make Smt.Bool in
 								match acc, w with
 								| Smt e1, Smt e2 -> sub2 (Smt (smt_if c e1 e2)) ts
 								| _ -> sub2 (Cond(c,w,acc)) ts

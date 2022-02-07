@@ -21,7 +21,7 @@ type params = {
 let default_params cmd args = {
 	cmd = cmd;
 	args = args;
-	base_ty = Real;
+	base_ty = Int;
 	tmpvar = true;
 	linear = true;
 	quantified = false;
@@ -30,27 +30,29 @@ let default_params cmd args = {
 	peek_to = stderr;
 }
 
-let params_of_xml =
+let params_of_xml default_params =
 	element "smt" (
 		default (false,stderr) (
 			(bool_attribute "peek" >>= fun b -> return (b,stderr)) <|>
 			(attribute "peekTo" >>= fun file -> return (true,open_out file))
 		) >>= fun (peek,peek_to) ->
-		default true (bool_attribute "tempvars") >>= fun tmpvar ->
-		default true (bool_attribute "linear") >>= fun linear ->
-		default false (bool_attribute "quantified") >>= fun quantified ->
-		default Int (validated_attribute "type" "int|real" >>=
+		default default_params.tmpvar (bool_attribute "tempvars") >>= fun tmpvar ->
+		default default_params.linear (bool_attribute "linear") >>= fun linear ->
+		default default_params.quantified (bool_attribute "quantified") >>= fun quantified ->
+		default default_params.base_ty (validated_attribute "type" "int|real" >>=
 			function "int" -> return Int | "real" -> return Real
 		) >>= fun ty ->
-		(	element "command" string >>= fun cmd ->
-			many (element "arg" string) >>= fun args ->
-			return (cmd,args)
-		) <|>
-		element "z3" (
-			return ("z3", ["-smt2";"-in"])
-		) <|>
-		element "cvc4" (
-			return ("cvc4", ["--lang=smt2"; "--incremental"; "--produce-models"])
+		default (default_params.cmd, default_params.args) (
+			(	element "command" string >>= fun cmd ->
+				many (element "arg" string) >>= fun args ->
+				return (cmd,args)
+			) <|>
+			element "z3" (
+				return ("z3", ["-smt2";"-in"])
+			) <|>
+			element "cvc4" (
+				return ("cvc4", ["--lang=smt2"; "--incremental"; "--produce-models"])
+			)
 		) >>= fun (cmd,args) ->
 		return {
 			cmd = cmd;
@@ -170,7 +172,22 @@ class virtual sexp_printer =
 	object (x)
 		inherit printer
 		method virtual pr_v : string -> unit
-		method virtual pr_ds : dec list -> unit
+		method pr_ty =
+			function
+			| Int -> x#puts "Int";
+			| Real	-> x#puts "Real";
+			| Bool	-> x#puts "Bool";
+			| _	 -> raise (Internal "type");
+		method pr_ds =
+			let pr_d =
+				function
+				| Dec(v,ty) -> x#pr_v v; x#puts " "; x#pr_ty ty;
+				| _		 -> raise (Internal "dec");
+			in
+			function
+			| []	-> ()
+			| d::[] -> x#puts "("; pr_d d; x#puts ")";
+			| d::ds -> x#puts "("; pr_d d; x#puts ") "; x#pr_ds ds;
 		method pr_e e =
 			let pr = x#puts in
 			let pr_e = x#pr_e in
@@ -312,7 +329,6 @@ class sexp_printer_wrap (base : #printer) = object
 	method enter = base#enter
 	method leave = base#leave
 	method pr_v = base#puts
-	method pr_ds = raise (No_support "SMT")
 end;;
 
 let put_exp e (pr : #printer) = (new sexp_printer_wrap pr)#pr_e e
@@ -652,6 +668,19 @@ and (>^) e1 e2 =
 		)
 	| _ -> Gt(e1,e2)
 
+(*
+let simplify_under e1 e2 = e2
+let (&^) e1 e2 = And(e1,e2)
+let (|^) e1 e2 = Or(e1,e2)
+let (=>^) e1 e2 = Imp(e1,e2)
+let (=^) e1 e2 = Eq(e1,e2)
+let ( *^) e1 e2 =  Mul(e1,e2)
+let smt_pre_if c nc t e = If(c,t,e,true)
+let smt_if c t e = If(c,t,e,true)
+let (+^) e1 e2 = Add(e1,e2)
+let (>=^) e1 e2 = Ge(e1, e2)
+let (>^) e1 e2 = Gt(e1,e2)
+*)
 let (<>^) e1 e2 = smt_not (e1 =^ e2)
 
 let (<=^) e1 e2 = e2 >=^ e1
@@ -808,54 +837,62 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			| LB false	-> LB true
 			| e1		-> e1 =>^ x#expand e2
 
-		method private linearize_add e1 e2 =
-			match x#linearize e1, x#linearize e2 with
+		method private linearize e = match e with
+			| Add(e1,e2) -> x#linearize_add_sub (x#linearize e1) (x#linearize e2)
+			| Mul(e1,e2) -> x#linearize_mul e1 e2
+			| If(c,e1,e2,f) -> x#linearize_if_sub c (x#linearize e1) (x#linearize e2)
+			| _ -> e
+
+		method private linearize_add_sub e1 e2 =
+			match e1, e2 with
 			| If(c,t,e,_), _ ->
 				let e2 = x#refer_base e2 in
-				smt_if c (x#linearize_add t e2) (x#linearize_add e e2)
+				smt_if c (x#linearize_add_sub t e2) (x#linearize_add_sub e e2)
 			| _, If(c,t,e,_) ->
 				let e1 = x#refer_base e1 in
-				smt_if c (x#linearize_add e1 t) (x#linearize_add e1 e)
+				smt_if c (x#linearize_add_sub e1 t) (x#linearize_add_sub e1 e)
 			| _ -> Add(e1,e2)
 
 		method private linearize_mul e1 e2 =
-			let e1 = x#linearize e1 in
-			if is_zero e1 then e1 else
-			let e2 = x#linearize e2 in
-			if is_zero e2 then e2 else
+			x#linearize_mul_sub (x#linearize e1) (x#linearize e2)
+
+		method private linearize_mul_sub e1 e2 =
 			match e1, e2 with
+			| LI 0, _ | LR 0.0, _ -> e1
+			| _, LI 0 | _, LR 0.0 -> e2
+			| LI 1, _ | LR 1.0, _ -> e2
+			| _, LI 1 | _, LR 1.0 -> e1
 			| If(c,t,e,_), _ ->
 				let nc = smt_not c in
 				if is_zero t then
-					smt_pre_if c nc t (e *^ simplify_under nc e2)
+					smt_pre_if c nc t (x#linearize_mul_sub e (simplify_under nc e2))
 				else if is_zero e then
-					smt_pre_if c nc (t *^ simplify_under c e2) e
+					smt_pre_if c nc (x#linearize_mul_sub t (simplify_under c e2)) e
 				else
 					let e2 = x#refer_sub base_ty e2 in
-					smt_pre_if c nc (t *^ e2) (e *^ e2)
+					smt_pre_if c nc (x#linearize_mul_sub t e2) (x#linearize_mul_sub e e2)
 			| _, If(c,t,e,_) ->
 				let nc = smt_not c in
 				if is_zero t then
-					smt_pre_if c nc t (simplify_under nc e1 *^ e)
+					smt_pre_if c nc t (x#linearize_mul_sub (simplify_under nc e1) e)
 				else if is_zero e then
-					smt_pre_if c nc (simplify_under nc e1 *^ t) e
+					smt_pre_if c nc (x#linearize_mul_sub (simplify_under nc e1) t) e
 				else
 					let e1 = x#refer_sub base_ty e1 in
-					smt_pre_if c (smt_not c) (e1 *^ t) (e1 *^ e)
+					smt_pre_if c (smt_not c) (x#linearize_mul_sub e1 t) (x#linearize_mul_sub e1 e)
 			| _ -> Mul(e1,e2)
 
-		method private linearize_if c t e =
-			let c = x#expand c in
+		method private linearize_if_sub c t e =
 			match c with
 			| LB b -> if b then x#linearize t else x#linearize e
 			| _ ->If(c, x#linearize t, x#linearize e, true)
 
 		method private expand_mul e1 e2 =
-			if p.linear then x#linearize_mul e1 e2 else
 			let e1 = x#expand e1 in
   			if is_zero e1 then e1 else
 			let e2 = x#expand e2 in
-			if is_zero e2 then e2 else Mul(e1,e2)
+			if is_zero e2 then e2 else
+			if p.linear then x#linearize_mul e1 e2 else Mul(e1,e2)
 
 		method private zero_one = (* returns (zero, one) *)
 			function
@@ -930,23 +967,21 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			| If(c,t,e,p) -> x#expand_if c (smt_cdr t) (smt_cdr e)
 			| e		 -> raise (Invalid_formula ("expand_cdr", e))
 
+		method private expand_if_sub e1 e2 e3 =
+			match x#expand e2, x#expand e3 with
+			| Cons(e4,e5), Cons(e6,e7) ->
+				let e1 = x#refer_sub Bool e1 in
+				Cons(x#expand_if_sub e1 e4 e6, x#expand_if_sub e1 e5 e7)
+			| e2,e3 -> smt_if e1 e2 e3
+
 		method private expand_if e1 e2 e3 =
 			match x#expand e1 with
 			| LB b	-> x#expand (if b then e2 else e3)
-			| e1	->
-				match x#expand e2, x#expand e3 with
-				| Cons(e4,e5), Cons(e6,e7) ->
-					let e1 = x#refer_sub Bool e1 in
-					Cons(smt_if e1 e4 e6, smt_if e1 e5 e7)
-				| e2,e3 -> smt_if e1 e2 e3
+			| e1	-> x#expand_if_sub e1 e2 e3
 
-		method private linearize e = match e with
-			| Add(e1,e2) -> x#linearize_add e1 e2
-			| Mul(e1,e2) -> x#linearize_mul e1 e2
-			| If(c,t,e,f) -> x#linearize_if c t e
-			| _ -> e
-		method expand =
-			function
+		method expand e = 
+let ret =
+			match e with
 			| Nil	-> Nil
 			| EV v -> EV v
 			| LB b -> LB b
@@ -977,19 +1012,21 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 				List.iter branch#add_declaration ds;
 				branch#close_exists e
 			| ContextForAll e -> x#branch#close_for_all e
-			| ContextExists e -> x#branch#close_for_all e
+			| ContextExists e -> x#branch#close_exists e
 			| ZeroOne es -> x#expand_zero_one es
 			| ES1 es     -> x#expand_es1 es
 			| AtMost1 es -> x#expand_atmost1 es
 			| OD es      -> x#expand_od es
 			| Car e	     -> x#expand_car e
 			| Cdr e	     -> x#expand_cdr e
-			| Cons(e1,e2) -> Cons(x#expand e1,x#expand e2)
+			| Cons(e1,e2) -> Cons(e1,e2) (* do not expand at this point *)
 			| Dup(ty,e)  -> let e = x#refer ty e in Cons(e,e)
 			| If(c,t,e,p) -> x#expand_if c t e
 			| App es  -> App(List.map x#expand es)
 			| Delay f -> x#expand (f (x :> (exp,dec) base))
 			| e	      -> raise (Invalid_formula ("expand",e))
+in comment (endl << put_exp e << puts "  -->  " << put_exp ret); ret
+
 		method expand_pair e =
 			match x#expand e with Cons(e1,e2) -> (e1,e2) | _ -> raise (Invalid_formula ("smt_split", e))
 	end
@@ -1007,11 +1044,11 @@ and subcontext consistent temp_names p =
 			| d ->
 				declarations <- d::declarations;
 		method close_exists e =
-			let body = assertion &^ x#expand e in
-			if declarations = [] then body else Exists(declarations,body)
+			let e = x#expand e in(* by this, declarations are made! *)
+			if declarations = [] then e else Exists(declarations, assertion &^ e)
 		method close_for_all e =
-			let body = assertion =>^ x#expand e in(* why not expand assertions?? *)
-			if declarations = [] then body else ForAll(declarations,body)
+			let e = x#expand e in(* by this, declarations are made! *)
+			if declarations = [] then e else ForAll(declarations, assertion =>^ e)
 	end
 
 let smt_context_for_all f = ContextForAll (Delay f)
@@ -1271,22 +1308,6 @@ class virtual smt_lib_2_0 p =
 				end
 			in
 			sub 0
-		method pr_ty =
-			function
-			| Int -> x#puts "Int";
-			| Real	-> x#puts "Real";
-			| Bool	-> x#puts "Bool";
-			| _	 -> raise (Internal "type");
-		method pr_ds =
-			let pr_d =
-				function
-				| Dec(v,ty) -> x#pr_v v; x#puts " "; x#pr_ty ty;
-				| _		 -> raise (Internal "dec");
-			in
-			function
-			| []	-> ()
-			| d::[] -> x#puts "("; pr_d d; x#puts ")";
-			| d::ds -> x#puts "("; pr_d d; x#puts ") "; x#pr_ds ds;
 	end
 
 let create_solver p =

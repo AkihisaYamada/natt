@@ -130,7 +130,7 @@ while !i < argc do
     | "-help", _ -> prerr_help (); exit 0;
     | "s", Some file -> strategy_file := file;
     | "S", Some str -> strategy_str := str;
-    | "-smt", Some str -> default_smt := Txtr.parse_string Smt.params_of_xml str;
+    | "-smt", Some str -> default_smt := Txtr.parse_string (Smt.params_of_xml Smt.z3_params) str;
     | "-z3", None -> default_smt := Smt.z3_params;
     | "-cvc4", None -> default_smt := Smt.cvc4_params;
     | "-naive-C", None -> params.naive_C <- true;

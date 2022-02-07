@@ -4,12 +4,16 @@ open Io
 
 type range = Pos | Bool | Full | Neg | Arctic
 
-let put_range = function
-| Pos -> puts "Nat"
-| Bool -> puts "Bool"
-| Full -> puts "Int"
-| Neg -> puts "Neg"
-| Arctic -> puts "Arctic"
+let put_range ty range =
+	match ty, range with
+	| Smt.Int, Pos -> puts "Nat"
+	| Smt.Int, Full -> puts "Int"
+	| Smt.Int, Neg -> puts "NegInt"
+	| Smt.Real, Pos -> puts "PosReal"
+	| Smt.Real, Neg -> puts "NegReal"
+	| Smt.Real, Full -> puts "Real"
+	| _, Bool -> puts "Bool"
+	| _, Arctic -> puts "Arctic"
 
 
 type template =
@@ -110,41 +114,41 @@ let range_attribute =
 		validated_attribute "range" "pos|neg|bool|full" >>= fun s ->
 		return (match s with "full" -> Full | "neg" -> Neg | "bool" -> Bool | _ -> Pos)
 	)
-let rec exp_element xmls = (
+let rec exp_element coord xmls = (
 	element "const" (int >>= fun i -> return (Const i)) <|>
-	element "sum" (many exp_element >>= fun ss -> return (Sum ss)) <|>
-	element "prod" (many exp_element >>= fun ss -> return (Prod ss)) <|>
-	element "max" (many ~minOccurs:1 exp_element >>= fun ss -> return (Max ss)) <|>
+	element "sum" (many (exp_element coord) >>= fun ss -> return (Sum ss)) <|>
+	element "prod" (many (exp_element coord) >>= fun ss -> return (Prod ss)) <|>
+	element "max" (many ~minOccurs:1 (exp_element coord) >>= fun ss -> return (Max ss)) <|>
 	element "bot" (return (Max [])) <|>
-	element "min" (many ~minOccurs:1 exp_element >>= fun ss -> return (Min ss)) <|>
+	element "min" (many ~minOccurs:1 (exp_element coord) >>= fun ss -> return (Min ss)) <|>
 	element "var" (range_attribute >>= fun r -> return (Var r)) <|>
-	element "choice" (many ~minOccurs:1 exp_element >>= fun ss -> return (Choice ss)) <|>
+	element "choice" (many ~minOccurs:1 (exp_element coord) >>= fun ss -> return (Choice ss)) <|>
 	element "heuristic" (validated_attribute "mode" "maxsum" >>= fun m ->
-		exp_element >>= fun s ->
-		exp_element >>= fun t ->
+		exp_element coord >>= fun s ->
+		exp_element coord >>= fun t ->
 		return (Heuristic1(s,t))
 	) <|>
 	element "arg" (
 		default (-1) (int_attribute "index") >>= fun i ->
-		default 0 (int_attribute "coord") >>= fun j ->
+		default coord (int_attribute "coord") >>= fun j ->
 		return (Arg(i,j))
 	) <|>
 	element "args" (
 		default "sum" (validated_attribute "mode" "sum|max|prod") >>= fun mode ->
-		exp_element >>= fun s ->
+		exp_element coord >>= fun s ->
 		return (match mode with "max" -> MaxArgs s | "prod" -> ProdArgs s | _ -> SumArgs s)
 	)
 ) xmls
 
-let exp_seq =
+let exp_seq coord =
 	many (
 		element "case" (
 			mandatory (int_attribute "arity") >>= fun a ->
-			exp_element >>= fun s ->
+			exp_element coord >>= fun s ->
 			return (a,s)
 		)
 	) >>= fun ass ->
-	exp_element >>= fun d ->
+	exp_element coord >>= fun d ->
 	let f a = match List.assoc_opt a ass with Some s -> s | None -> d in
 	return (ArityChoice f)
 
@@ -160,7 +164,7 @@ let template_entry_element i =
 				| _ -> O_equal
 			)
 		) >>= fun ord ->
-		exp_seq >>= fun t ->
+		exp_seq i >>= fun t ->
 		return (r,ord,name,t)
 	)
 
@@ -201,6 +205,8 @@ type status_mode =
 type order_params = {
 	smt_params : Smt.params;
 	dp : bool;
+	quantify_unconditional : bool;
+	wpo_quantify : bool;
 	w_quantify : bool;
 	w_templates : (range * order_mode * string * template) array;
 	ext_mset : bool;
@@ -231,13 +237,16 @@ let nonmonotone p =
 
 let order_params
 	?(dp=true) ?(prec=PREC_none) ?(prec_quantify=false) ?(status=S_empty) ?(collapse=status<>S_empty)
+	?(wpo_quantify=false)
+	?(quantify_unconditional=false)
 	?(usable=true) ?(w_quantify=false) ?(negcoeff=false)
 	(smt:Smt.params) w_templates = {
 	smt_params = { smt with
 		quantified = smt.quantified || w_quantify || prec_quantify;
-		linear = smt.linear && not w_quantify;
 	};
 	dp = dp;
+	wpo_quantify = wpo_quantify;
+	quantify_unconditional = quantify_unconditional;
 	w_quantify = w_quantify;
 	w_templates = Array.of_list w_templates;
 	prec_mode = prec;
@@ -259,10 +268,10 @@ let order_params
 	negcoeff = negcoeff;
 }
 
-let put_templates_name templates pr =
-	Array.fold_left (fun p (range,order,name,template) ->
-		pr#puts p;
-		put_range range pr;
+let put_templates_name ty templates pr =
+	Array.fold_left (fun pre (range,order,name,template) ->
+		pr#puts pre;
+		put_range ty range pr;
 		pr#putc ',';
 		put_order_mode order pr;
 		pr#putc ',';
@@ -274,7 +283,7 @@ let put_templates_name templates pr =
 let put_order p =
 	let weighted = Array.length p.w_templates > 0 in
 	if p.status_mode = S_empty && p.prec_mode = PREC_none then
-		puts "Order" << put_templates_name p.w_templates
+		puts "Order" << put_templates_name p.smt_params.base_ty p.w_templates
 	else fun pr ->
 		(	match p.prec_mode with
 			| PREC_quasi -> pr#puts "Q"
@@ -293,7 +302,7 @@ let put_order p =
 			| S_empty -> pr#puts "eS"
 			| _ -> ()
 		);
-		if weighted then put_templates_name p.w_templates pr;;
+		if weighted then put_templates_name p.smt_params.base_ty p.w_templates pr;;
 
 let order_element default_smt ~mono =
 	element "order" (
@@ -317,19 +326,31 @@ let order_element default_smt ~mono =
 		) >>= fun collapse -> (
 			if mono then return false
 			else default true (bool_attribute "usable")
-		) >>= fun usable -> (
-			default false (bool_attribute "quantified")
-		) >>= fun quantified ->
-		default default_smt Smt.params_of_xml >>= fun smt ->
+		) >>= fun usable ->
+		( default "" (validated_attribute "quantify" "|none|all|weight|wpo") >>= fun str ->
+			return (
+				match str with
+				| "" | "none" ->  (false,false)
+				| "all" -> (true,true)
+				| "weight" -> (false,true)
+				| "wpo" -> (true,false)
+			)
+		) >>= fun (quantify_wpo, quantify_weight) ->
+		default true (bool_attribute "linear") >>= fun linear ->
+		let smt = { default_smt with
+			Smt.linear = linear;
+			quantified = quantify_wpo || quantify_weight;
+		} in
+		default smt (Smt.params_of_xml smt) >>= fun smt ->
 		weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total) >>= fun weight ->
 		return (
-			order_params smt ~dp:(not mono) ~prec:prec ~prec_quantify:false ~status:status ~collapse:collapse ~usable:usable ~w_quantify:quantified
+			order_params smt ~dp:(not mono) ~prec:prec ~prec_quantify:quantify_wpo ~status:status ~collapse:collapse ~usable:usable ~wpo_quantify:quantify_wpo ~w_quantify:quantify_weight
 			weight)
 	)
 
 let strategy_element default_smt =
 	element "strategy" (
-		default default_smt Smt.params_of_xml >>= fun default_smt ->
+		default default_smt (Smt.params_of_xml default_smt) >>= fun default_smt ->
 		many (order_element default_smt ~mono:true) >>= fun pre ->
 		default false (element "freezing" (return true)) >>= fun freezing ->
 		optional (
@@ -346,7 +367,6 @@ let strategy_element default_smt =
 		) >>= fun rest ->
 		return (pre,freezing,rest,[])
 	) <|> element "non-reachability" (
-		default default_smt Smt.params_of_xml >>= fun default_smt ->
 		many (order_element default_smt ~mono:false) >>= fun non ->
 		return ([],false,None,non)
 	)

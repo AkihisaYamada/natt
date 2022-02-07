@@ -7,6 +7,7 @@ class virtual outputter =
     method put_int i = x#puts (string_of_int i)
     method put_hex i = x#puts (Printf.sprintf "%X" i)
     method put_float f = x#puts (string_of_float f)
+    method put_bool b = x#puts (if b then "true" else "false")
     method endl = x#putc '\n'; x#flush;
   end
 
@@ -123,6 +124,7 @@ let (<<) f g pr = f pr; g pr
 let puts s pr = pr#puts s
 let putc c pr = pr#putc c
 let put_int i pr = pr#put_int i
+let put_bool b pr = pr#put_bool b
 let endl pr = pr#endl
 let flush pr = pr#flush
 let nop pr = pr
