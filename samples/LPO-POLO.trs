@@ -1,4 +1,5 @@
 (VAR x)
 (RULES
 	f(g(h(x))) -> g(f(h(g(x))))
+	f(g(h(x))) -> x
 )

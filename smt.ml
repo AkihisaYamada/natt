@@ -770,20 +770,17 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 		method private branch = new subcontext consistent temp_names p
 
 		method add_assertion =
-			let rec sub =
-				function
-				| And(e1,e2)	-> sub e1; sub e2;
-				| LB true	 -> ();
-				| e ->
-					x#add_assertion_body e;
-					if e = LB false then begin
-						debug (endl << puts "False assertion is made." << endl);
-						consistent <- false;
-						raise Inconsistent;
-					end;
+			let rec sub e =
+				x#add_assertion_body e;
+				if e = LB false then begin
+					debug (endl << puts "False assertion is made." << endl);
+					consistent <- false;
+					raise Inconsistent;
+				end;
 			in
-			fun e -> if consistent then sub (x#expand e);
-
+			fun e -> if consistent then begin
+				sub (x#expand e);
+			end;
 		method private add_declaration d =
 			if consistent then begin
 				let d =
