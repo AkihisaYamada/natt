@@ -21,7 +21,7 @@ type params = {
 let default_params cmd args = {
 	cmd = cmd;
 	args = args;
-	base_ty = Int;
+	base_ty = Real;
 	tmpvar = true;
 	linear = true;
 	quantified = false;
@@ -127,7 +127,7 @@ type exp =
 	| Dup of ty * exp
 	| Car of exp
 	| Cdr of exp
-	| If of exp * exp * exp * (* flag for purity *) bool
+	| If of exp * exp * exp
 	| App of exp list
 and dec =
 	| Dec of name * ty
@@ -302,7 +302,7 @@ class virtual sexp_printer =
 			| Dup(_,e)		-> pr "(dup "; pr_e e; pr ")";
 			| Car(e)		-> pr "(car "; pr_e e; pr ")";
 			| Cdr(e)		-> pr "(cdr "; pr_e e; pr ")";
-			| If(e1,e2,e3,_)	->
+			| If(e1,e2,e3)	->
 				let mid = if very_simple e1 && very_simple e2 && very_simple e3 then putc ' ' else endl in
 				pr "(ite "; x#enter 4; pr_e e1; mid x; pr_e e2; mid x; pr_e e3; pr ")"; x#leave 4;
 			| Max(es)	 -> pr "(max"; List.iter (fun e -> pr " "; pr_e e;) es; pr ")";
@@ -356,7 +356,7 @@ let rec smt_not =
 	| Ge(e1,e2) -> Gt(e2,e1)
 	| Or(e1,e2) -> And(smt_not e1, smt_not e2)
 	| And(e1,e2) -> Or(smt_not e1, smt_not e2)
-	| If(c,t,e,p) -> If(c, smt_not t, smt_not e, p)
+	| If(c,t,e) -> If(c, smt_not t, smt_not e)
 	| e	 -> Not(e)
 
 let smt_delay e f =
@@ -418,10 +418,10 @@ let rec simplify_knowing kn e =
 	)
 	| Add(e1,e2) -> simplify_knowing kn e1 +^ simplify_knowing kn e2
 	| Mul(e1,e2) -> simplify_knowing kn e1 *^ simplify_knowing kn e2
-	| If(c,t,e,p) -> (
+	| If(c,t,e) -> (
 		match simplify_knowing kn c with
 		| LB b -> if b then simplify_knowing kn t else simplify_knowing kn e
-		| c -> If(c, simplify_knowing (assume_true c kn) t, simplify_knowing (assume_false c kn) e, p)
+		| c -> If(c, simplify_knowing (assume_true c kn) t, simplify_knowing (assume_false c kn) e)
 	)
 	| _ -> e
 and assume_true e kn =
@@ -475,12 +475,12 @@ and simplify_under e1 e2 =
 			else if simple_eq e3 e4 = Some true then e3
 			else Or(e3,e4)
 	)
-	| _, If(c,t,e,p) -> (
+	| _, If(c,t,e) -> (
 		match simplify_under e1 c with
 		| LB b -> if b then simplify_under e1 t else simplify_under e1 e
 		| c ->
 			(* t and e should be already simplified w.r.t. c *)
-			If(c, simplify_under e1 t, simplify_under e1 e, p)
+			If(c, simplify_under e1 t, simplify_under e1 e)
 	)
 	| Eq(l1,r1), Gt(l2,r2) ->
 		let l2 = simplify_under e1 l2 in
@@ -568,9 +568,9 @@ and (=^) e1 e2 =
 		when simple_eq l1 l2 = Some true && simple_eq r1 r2 = Some true
 			|| simple_eq l1 r2 = Some true && simple_eq r1 l2 = Some true
 		-> LB true
-		| If(c,t,e,p), e2 when very_simple e2 -> smt_if c (t =^ e2) (e =^ e2)
-		| e1, If(c,t,e,p) when very_simple e1 -> smt_if c (e1 =^ t) (e1 =^ e)
-		| _ -> Eq(e1,e2)
+(*		| If(c,t,e), e2 when very_simple e2 -> smt_if c (t =^ e2) (e =^ e2)
+		| e1, If(c,t,e) when very_simple e1 -> smt_if c (e1 =^ t) (e1 =^ e)
+*)		| _ -> Eq(e1,e2)
 	)
 and ( *^) e1 e2 =
 	match e1, e2 with
@@ -584,13 +584,13 @@ and ( *^) e1 e2 =
 	| _, LR 1.0 -> e1
 	| LI i1, LI i2 -> LI(i1 * i2)
 	| LR r1, LR r2 -> LR(r1 *. r2)
-	| If(c,t,e,p), _ when is_zero t ->
+	| If(c,t,e), _ when is_zero t ->
 		let nc = smt_not c in smt_pre_if c nc t (e *^ simplify_under nc e2)
-	| If(c,t,e,p), _ when is_zero e ->
+	| If(c,t,e), _ when is_zero e ->
 		smt_pre_if c (smt_not c) (t *^ simplify_under c e2) e
-	| _, If(c,t,e,p) when is_zero t ->
+	| _, If(c,t,e) when is_zero t ->
 		let nc = smt_not c in smt_pre_if c nc t (simplify_under nc e1 *^ e)
-	| _, If(c,t,e,p) when is_zero e ->
+	| _, If(c,t,e) when is_zero e ->
 		smt_pre_if c (smt_not c) (simplify_under c e1 *^ t) e
 	| _ -> Mul(e1,e2)
 and smt_pre_if c nc t e =
@@ -599,17 +599,11 @@ and smt_pre_if c nc t e =
 		| LB b, _ -> if b then c |^ e else nc &^ e
 		| _, LB b -> if b then c =>^ t else c &^ t
 		| _ when simple_eq t e = Some true -> t
-		| If(c',t',e',p), _ when simple_eq e' e = Some true -> If(c	&^ c', t', e', p) (* c ? (c' ? t' : e) : e --> c && c' ? t' : e *)
-		| If(c',t',e',p), _ when simple_eq t' e = Some true -> If(nc |^ c', t', e', p) (* c ? (c' ? e : e') : e --> !c || c' ? e : e' *)
-		| _, If(c',t',e',p) when simple_eq e' t = Some true -> If(nc &^ c', t', e', p) (* c ? t : (c' ? t' : t) --> !c && c' ? t' : t *)
-		| _, If(c',t',e',p) when simple_eq t' t = Some true -> If(c	|^ c', t', e', p) (* c ? t : (c' ? t : e') --> c || c' ? t : e' *)
-		| Nil, _
-		| _, Nil
-		| Cons _, _
-		| _, Cons _
-		| If(_,_,_,false), _
-		| _, If(_,_,_,false) -> If(c,t,e,false)
-		| _ -> If(c,t,e,true)
+		| If(c',t',e'), _ when simple_eq e' e = Some true -> If( c &^ c', t', e') (* c ? (c' ? t' : e) : e --> c && c' ? t' : e *)
+		| If(c',t',e'), _ when simple_eq t' e = Some true -> If(nc |^ c', t', e') (* c ? (c' ? e : e') : e --> !c || c' ? e : e' *)
+		| _, If(c',t',e') when simple_eq e' t = Some true -> If(nc &^ c', t', e') (* c ? t : (c' ? t' : t) --> !c && c' ? t' : t *)
+		| _, If(c',t',e') when simple_eq t' t = Some true -> If( c |^ c', t', e') (* c ? t : (c' ? t : e') --> c || c' ? t : e' *)
+		| _ -> If(c,t,e)
 and smt_if c t e =
 	match c with
 	| LB b	-> if b then t else e
@@ -634,13 +628,13 @@ and (>=^) e1 e2 =
 	| LI i1, LR r2 -> LB(float_of_int i1 >= r2)
 	| LR r1, LI i2 -> LB(r1 >= float_of_int i2)
 	| LR r1, LR r2 -> LB(r1 >= r2)
-	| If(c,t,e,p), e2 -> (
+	| If(c,t,e), e2 -> (
 		match t >=^ simplify_under c e2, e >=^ simplify_under (smt_not c) e2 with
 		| LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
 		| t', LB be -> if be then c =>^ t' else c &^ t'
 		| _ -> Ge(e1, e2)
 		)
-	| _, If(c,t,e,p) -> (
+	| _, If(c,t,e) -> (
 		match simplify_under c e1 >=^ t, simplify_under (smt_not c) e1 >=^ e with
 		| LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
 		| t', LB be -> if be then c =>^ t' else c &^ t'
@@ -654,13 +648,13 @@ and (>^) e1 e2 =
 	| LI i1, LR r2 -> LB(float_of_int i1 > r2)
 	| LR r1, LI i2 -> LB(r1 > float_of_int i2)
 	| LR r1, LR r2 -> LB(r1 > r2)
-	| If(c,t,e,p), e2 -> (
+	| If(c,t,e), e2 -> (
 		match t >^ simplify_under c e2, e >^ simplify_under (smt_not c) e2 with
 		| LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
 		| t', LB be -> if be then c =>^ t' else c &^ t'
 		| _ -> Gt(e1, e2)
 		)
-	| _, If(c,t,e,p) -> (
+	| _, If(c,t,e) -> (
 		match simplify_under c e1 >^ t, simplify_under (smt_not c) e1 >^ e with
 		| LB bt, e' -> if bt then c |^ e' else smt_not c &^ e'
 		| t', LB be -> if be then c =>^ t' else c &^ t'
@@ -675,8 +669,8 @@ let (|^) e1 e2 = Or(e1,e2)
 let (=>^) e1 e2 = Imp(e1,e2)
 let (=^) e1 e2 = Eq(e1,e2)
 let ( *^) e1 e2 =  Mul(e1,e2)
-let smt_pre_if c nc t e = If(c,t,e,true)
-let smt_if c t e = If(c,t,e,true)
+let smt_pre_if c nc t e = If(c,t,e)
+let smt_if c t e = If(c,t,e)
 let (+^) e1 e2 = Add(e1,e2)
 let (>=^) e1 e2 = Ge(e1, e2)
 let (>^) e1 e2 = Gt(e1,e2)
@@ -699,9 +693,22 @@ let smt_xor e1 e2 =
 	| _, LB b -> if b then smt_not e1 else e1
 	| _ -> match e1 =^ e2 with LB b -> LB (not b) | _ -> Xor(e1,e2)
 
-let smt_sum f xs = List.(fold_left (+^) (LI 0) (map f xs))
+let smt_list_max = function
+	| [e] -> e
+	| es -> Max es
 
-let smt_prod f =
+let smt_sum es = List.fold_left (+^) (LI 0) es
+
+let smt_map_sum f xs = smt_sum (List.map f xs)
+
+let smt_prod =
+	let rec sub acc = function
+	| [] -> acc
+	| e::es -> let acc' = acc *^ e in if is_zero acc' then acc' else sub acc' es
+	in
+	sub (LI 1)
+
+let smt_map_prod f =
 	let rec sub acc = function
 	| [] -> acc
 	| x::xs -> let acc' = acc *^ f x in if is_zero acc' then acc' else sub acc' xs
@@ -805,9 +812,8 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			if not p.tmpvar || not consistent || is_simple e then e
 			else
 				match e with
-					(* Impure formula will not be represented by a variable *)
-				| If(c,t,e,false) -> If(c, x#refer_sub ty t, x#refer_sub ty e, false)
-				| If(c,t,e,_) when very_simple t && very_simple e -> If(c,t,e,true)
+					(* referring to IF expression can cause non-linearity *)
+				| If(c,t,e) when ty <> Bool -> If(x#refer_sub Bool c, x#refer_sub ty t, x#refer_sub ty e)
 				| Cons(e1,e2) ->
 					(match ty with
 					 | Prod(ty1,ty2) -> Cons(x#refer_sub ty1 e1, x#refer_sub ty2 e2)
@@ -840,15 +846,15 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 		method private linearize e = match e with
 			| Add(e1,e2) -> x#linearize_add_sub (x#linearize e1) (x#linearize e2)
 			| Mul(e1,e2) -> x#linearize_mul e1 e2
-			| If(c,e1,e2,f) -> x#linearize_if_sub c (x#linearize e1) (x#linearize e2)
+			| If(c,e1,e2) -> x#linearize_if_sub c (x#linearize e1) (x#linearize e2)
 			| _ -> e
 
 		method private linearize_add_sub e1 e2 =
 			match e1, e2 with
-			| If(c,t,e,_), _ ->
+			| If(c,t,e), _ ->
 				let e2 = x#refer_base e2 in
 				smt_if c (x#linearize_add_sub t e2) (x#linearize_add_sub e e2)
-			| _, If(c,t,e,_) ->
+			| _, If(c,t,e) ->
 				let e1 = x#refer_base e1 in
 				smt_if c (x#linearize_add_sub e1 t) (x#linearize_add_sub e1 e)
 			| _ -> Add(e1,e2)
@@ -862,7 +868,7 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			| _, LI 0 | _, LR 0.0 -> e2
 			| LI 1, _ | LR 1.0, _ -> e2
 			| _, LI 1 | _, LR 1.0 -> e1
-			| If(c,t,e,_), _ ->
+			| If(c,t,e), _ ->
 				let nc = smt_not c in
 				if is_zero t then
 					smt_pre_if c nc t (x#linearize_mul_sub e (simplify_under nc e2))
@@ -871,7 +877,7 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 				else
 					let e2 = x#refer_sub base_ty e2 in
 					smt_pre_if c nc (x#linearize_mul_sub t e2) (x#linearize_mul_sub e e2)
-			| _, If(c,t,e,_) ->
+			| _, If(c,t,e) ->
 				let nc = smt_not c in
 				if is_zero t then
 					smt_pre_if c nc t (x#linearize_mul_sub (simplify_under nc e1) e)
@@ -885,7 +891,7 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 		method private linearize_if_sub c t e =
 			match c with
 			| LB b -> if b then x#linearize t else x#linearize e
-			| _ ->If(c, x#linearize t, x#linearize e, true)
+			| _ ->If(c, x#linearize t, x#linearize e)
 
 		method private expand_mul e1 e2 =
 			let e1 = x#expand e1 in
@@ -956,7 +962,7 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			| Cons(e,_) -> x#expand e
 			| Dup(_,e)	-> x#expand e
 			| Delay(f)	-> x#expand_car (x#force f)
-			| If(c,t,e,p) -> x#expand_if c (smt_car t) (smt_car e)
+			| If(c,t,e) -> x#expand_if c (smt_car t) (smt_car e)
 			| e				 -> raise (Invalid_formula ("expand_car", e))
 
 		method private expand_cdr =
@@ -964,7 +970,7 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			| Cons(_,e) -> x#expand e
 			| Dup(_,e)	-> x#expand e
 			| Delay(f)	-> x#expand_cdr (x#force f)
-			| If(c,t,e,p) -> x#expand_if c (smt_cdr t) (smt_cdr e)
+			| If(c,t,e) -> x#expand_if c (smt_cdr t) (smt_cdr e)
 			| e		 -> raise (Invalid_formula ("expand_cdr", e))
 
 		method private expand_if_sub e1 e2 e3 =
@@ -980,7 +986,6 @@ class virtual context ?(consistent=true) ?(temp_names=0) p =
 			| e1	-> x#expand_if_sub e1 e2 e3
 
 		method expand e = 
-let ret =
 			match e with
 			| Nil	-> Nil
 			| EV v -> EV v
@@ -1021,11 +1026,10 @@ let ret =
 			| Cdr e	     -> x#expand_cdr e
 			| Cons(e1,e2) -> Cons(e1,e2) (* do not expand at this point *)
 			| Dup(ty,e)  -> let e = x#refer ty e in Cons(e,e)
-			| If(c,t,e,p) -> x#expand_if c t e
+			| If(c,t,e) -> x#expand_if c t e
 			| App es  -> App(List.map x#expand es)
 			| Delay f -> x#expand (f (x :> (exp,dec) base))
 			| e	      -> raise (Invalid_formula ("expand",e))
-in comment (endl << put_exp e << puts "  -->  " << put_exp ret); ret
 
 		method expand_pair e =
 			match x#expand e with Cons(e1,e2) -> (e1,e2) | _ -> raise (Invalid_formula ("smt_split", e))
@@ -1248,7 +1252,7 @@ class virtual smt_lib_2_0 p =
 			| LB _
 			| LI _
 			| LR _ -> v
-			| If(c,t,e,false) ->
+			| If(c,t,e) ->
 				x#get_value (if x#get_bool c then t else e)
 			| _ ->
 				x#puts "(get-value (";

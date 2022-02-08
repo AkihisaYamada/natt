@@ -223,13 +223,11 @@ let put_range s = puts (
 
 let string_of_var (v,i) = v ^ "_" ^ string_of_int (i+1)
 
-let string_of_svar (v,i,s) = string_of_var (v,i)
-
-let exp_of_svar vis = EV (string_of_svar vis)
+let exp_of_var vis = EV (string_of_var vis)
 
 let put_var vi = putc '<' << puts (string_of_var vi) << putc '>'
 
-let put_svar (v,i,s) = putc '<' << puts (string_of_svar (v,i,s)) << putc ':' << put_range s << putc '>'
+let put_svar (v,i,s) = putc '<' << puts (string_of_var (v,i)) << putc ':' << put_range s << putc '>'
 
 (* A polynomial is represented by a map. *)
 module Poly = Map.Make(LexList(Hashed (struct type t = string * int * range end)))
@@ -244,8 +242,6 @@ let poly_coeff vs p =
 let put_monom vs e os = put_exp e os; List.iter (fun v -> puts "*" os; put_svar v os) vs
 
 let put_poly p os = puts "SUM {" os; Poly.iter (fun vs e -> put_monom vs e os; os#puts ", ") p; putc '}' os
-
-let exp_of_poly p = Poly.fold (fun vs e acc -> acc +^ (e *^ smt_prod exp_of_svar vs)) p (LI 0)
 
 let refer_poly solver = Poly.map solver#refer_base
 
@@ -337,8 +333,6 @@ let cond_cmpoly c cmp1 cmp2 =
 (* Vectors *)
 let zero_vec dim = Array.make dim (zero_cmpoly)
 
-let refer_vec solver = Array.map (refer_cmpoly solver)
-
 let smult e = Array.map (fun cmp -> prod_cmpoly [const_cmpoly e; cmp])
 
 let add_vec v1 v2 = Array.mapi (fun i w1 -> sum_cmpoly [w1; v2.(i)]) v1
@@ -406,20 +400,12 @@ let ge_poly p1 p2 = smt_list_for_all (fun (vs,e) -> e) (ge_poly_coeffs p1 p2)
 let ge_mpoly = rel_mpoly ge_poly
 let ge_cmpoly = rel_cmpoly ge_mpoly
 
-let ge_poly_open p1 p2 = exp_of_poly p1 >=^ exp_of_poly p2
-let ge_mpoly_open = rel_mpoly ge_poly_open
-let ge_cmpoly_open = rel_cmpoly ge_mpoly_open
-
 let pre_ge_poly p1 p2 =
 		smt_list_for_all (fun (vs,e) -> if vs = [] then LB true else e) (ge_poly_coeffs p1 p2)
 
 let gt_poly p1 p2 = pre_ge_poly p1 p2 &^ (poly_coeff [] p1 >^ poly_coeff [] p2)
 let gt_mpoly = rel_mpoly gt_poly
 let gt_cmpoly = rel_cmpoly gt_mpoly
-
-let gt_poly_open p1 p2 = exp_of_poly p1 >^ exp_of_poly p2
-let gt_mpoly_open = rel_mpoly gt_poly_open
-let gt_cmpoly_open = rel_cmpoly gt_mpoly_open
 
 let order_poly context p1 p2 =
 	let pre = context#refer Smt.Bool (pre_ge_poly p1 p2) in
@@ -429,12 +415,8 @@ let order_poly context p1 p2 =
 let order_mpoly = relpair_mpoly order_poly
 let order_cmpoly = relpair_cmpoly order_mpoly
 
-let order_poly_open context p1 p2 =
-	let e1 = context#refer_base (exp_of_poly p1) in
-	let e2 = context#refer_base (exp_of_poly p2) in
+let order_open solver e1 e2 =
 	(e1 >=^ e2, e1 >^ e2)
-let order_mpoly_open = relpair_mpoly order_poly_open
-let order_cmpoly_open = relpair_cmpoly order_mpoly_open
 
 (** Equality **)
 let eq_0_poly p =
@@ -457,15 +439,7 @@ let eq_poly =
 let eq_mpoly mp1 mp2 = rel_mpoly eq_poly mp1 mp2 &^ rel_mpoly eq_poly mp2 mp1
 let eq_cmpoly = rel_cmpoly eq_mpoly
 
-let eq_poly_open p1 p2 = exp_of_poly p1 =^ exp_of_poly p2
-let eq_mpoly_open mp1 mp2 = rel_mpoly eq_poly_open mp1 mp2 &^ rel_mpoly eq_poly_open mp2 mp1
-let eq_cmpoly_open = rel_cmpoly eq_mpoly_open
-
 let co_eq_cmpoly cmp1 cmp2 = gt_cmpoly cmp1 cmp2 |^ gt_cmpoly cmp2 cmp1
-
-let co_eq_poly_open p1 p2 = smt_not (exp_of_poly p1 =^ exp_of_poly p2)
-let co_eq_mpoly_open mp1 mp2 = rel_mpoly co_eq_poly_open mp1 mp2 &^ rel_mpoly co_eq_poly_open mp2 mp1
-let co_eq_cmpoly_open = rel_cmpoly co_eq_mpoly_open
 
 type pos_info = {
 	const : exp;
@@ -531,6 +505,59 @@ object (x)
 		loop ();
 		initialized <- true;
 end;;
+
+let transpose_array_list vs =
+	match vs with
+	| [] -> raise (Invalid_argument "transpose_array_list")
+	| v::vs ->
+		let rec sub acc vs =
+			match vs with
+			| [] -> acc
+			| v::vs -> sub (Array.mapi (fun i xs -> v.(i)::xs) acc) vs
+		in
+		sub (Array.map (fun x -> [x]) v) vs
+
+let order_main w_templates order_w ge_w eq_w v1 v2 =
+	Delay (fun solver ->
+		let (_,ge,gt_pre,gt) =
+			Array.fold_left (
+				fun (i,ge_rest,gt_pre,gt_rest) (_,mode,_,_) ->
+				let w1 = v1.(i) in
+				let w2 = v2.(i) in
+				match mode with
+				| O_strict ->
+					let (ge,gt) = order_w solver w1 w2 in
+					(i+1, ge_rest &^ ge, gt_pre, gt_rest |^ gt)
+				| O_weak ->
+					let ge = solver#refer Bool (ge_w w1 w2) in
+					(i+1, ge_rest &^ ge, gt_pre &^ ge, gt_rest)
+				| O_equal ->
+					let eq = solver#refer Bool (eq_w w1 w2) in
+					(i+1, ge_rest &^ eq, gt_pre &^ eq, gt_rest)
+			) (0, LB true, LB true, LB false) w_templates
+		in
+		Cons(ge, gt &^ gt_pre)
+	)
+
+let co_order_main w_templates order_w gt_w co_eq_w v2 v1 =
+	Delay (fun solver ->
+		let (_,co_ge,co_gt_pre,co_gt) =
+			Array.fold_left (
+				fun (i,co_ge_rest,co_gt_pre,co_gt_rest) (_,mode,_,_) ->
+				let w2 = v2.(i) in
+				let w1 = v1.(i) in
+				match mode with
+				| O_strict ->
+					let (ge,gt) = order_w solver w2 w1 in
+					(i+1, co_ge_rest &^ ge, co_gt_pre, co_gt_rest |^ gt)
+				| O_weak ->
+					(i+1, co_ge_rest, co_gt_pre, co_gt_rest |^ gt_w w2 w1)
+				| O_equal ->
+					(i+1, co_ge_rest, co_gt_pre, co_gt_rest |^ co_eq_w w2 w1)
+			) (0, LB true, LB true, LB false) w_templates
+		in
+		Cons(co_ge, co_gt &^ co_gt_pre)
+	)
 
 class interpreter p =
 	let dim = Array.length p.w_templates in
@@ -648,14 +675,38 @@ class interpreter p =
 			if f#is_var then Array.init dim (fun i -> var_cmpoly f#name i (range_of_coord i))
 			else Array.map sub (x#encode_sym f)
 
+		method private interpret_open : 'f. (#sym as 'f) -> exp array list -> exp array =
+			fun f vs ->
+			let subst = Array.of_list vs in
+			let rec sub w =
+				match w with
+				| Smt e -> e
+				| BVar((k,i),s) -> subst.(k).(i)
+				| Max ws -> smt_list_max (List.map sub ws)
+				| Sum ws -> smt_sum (List.map sub ws)
+				| Prod ws -> smt_prod (List.map sub ws)
+				| Cond(e,w1,w2) -> smt_if e (sub w1) (sub w2)
+			in
+			if f#is_var then Array.init dim (fun i -> exp_of_var (f#name,i))
+			else Array.map sub (x#encode_sym f)
+
 		method eval : 'f. (#sym as 'f) term -> cmpoly array =
 			fun (Node(f,ss)) -> x#interpret f (List.map x#eval ss)
+
+		method eval_open : 'f. (#sym as 'f) term -> exp array =
+			fun (Node(f,ss)) -> x#interpret_open f (List.map x#eval_open ss)
 
 		method annotate : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, cmpoly array) wterm =
 			fun solver (Node(f,ss)) ->
 			let ts = List.map (x#annotate solver) ss in
 			let vec = x#interpret f (List.map get_weight ts) in
-			WT(f, ts, refer_vec solver vec)
+			WT(f, ts, Array.map (refer_cmpoly solver) vec)
+
+		method annotate_open : 't 'f. (#context as 't) -> (#sym as 'f) term -> ('f, exp array) wterm =
+			fun solver (Node(f,ss)) ->
+			let ts = List.map (x#annotate_open solver) ss in
+			let vec = x#interpret_open f (List.map get_weight ts) in
+			WT(f, ts, Array.map solver#refer_base vec)
 
 		method output_sym : 't 'f 'o. (#solver as 't) -> (#Trs.sym_detailed as 'f) -> (#printer as 'o) -> unit =
 			fun solver f os -> put_template_vec put_arg (eval_template_vec solver (x#encode_sym f)) os;
@@ -663,59 +714,13 @@ class interpreter p =
 		method output_sym_template : 'o 'f. (#sym as 'f) -> (#printer as 'o) -> unit =
 			fun f -> f#output << puts ": " << put_template_vec put_arg (x#encode_sym f)
 
-		method order ~closed =
-			let (order_w,ge_w,eq_w) =
-				if closed then (order_cmpoly, ge_cmpoly, eq_cmpoly)
-				else (order_cmpoly_open, ge_cmpoly_open, eq_cmpoly_open)
-			in
-			if dim = 0 then fun _ _ -> weakly_ordered
-			else fun v1 v2 ->
-				Delay (fun solver ->
-					let (_,ge,gt_pre,gt) =
-						Array.fold_left (
-							fun (i,ge_rest,gt_pre,gt_rest) (_,mode,_,_) ->
-							let w1 = v1.(i) in
-							let w2 = v2.(i) in
-							match mode with
-							| O_strict ->
-								let (ge,gt) = order_w solver w1 w2 in
-								(i+1, ge_rest &^ ge, gt_pre, gt_rest |^ gt)
-							| O_weak ->
-								let ge = solver#refer Bool (ge_w w1 w2) in
-								(i+1, ge_rest &^ ge, gt_pre &^ ge, gt_rest)
-							| O_equal ->
-								let eq = solver#refer Bool (eq_w w1 w2) in
-								(i+1, ge_rest &^ eq, gt_pre &^ eq, gt_rest)
-						) (0, LB true, LB true, LB false) p.w_templates
-					in
-					Cons(ge, gt &^ gt_pre)
-				)
+		method order = order_main p.w_templates order_cmpoly ge_cmpoly eq_cmpoly
 
-		method co_order ~closed =
-			let (order_w,gt_w,co_eq_w) =
-				if closed then (order_cmpoly, gt_cmpoly, co_eq_cmpoly)
-				else (order_cmpoly_open, gt_cmpoly_open, co_eq_cmpoly_open)
-			in
-			if dim = 0 then fun _ _ -> weakly_ordered
-			else fun v2 v1 ->
-				Delay (fun solver ->
-					let (_,co_ge,co_gt_pre,co_gt) =
-						Array.fold_left (
-							fun (i,co_ge_rest,co_gt_pre,co_gt_rest) (_,mode,_,_) ->
-							let w2 = v2.(i) in
-							let w1 = v1.(i) in
-							match mode with
-							| O_strict ->
-								let (ge,gt) = order_w solver w2 w1 in
-								(i+1, co_ge_rest &^ ge, co_gt_pre, co_gt_rest |^ gt)
-							| O_weak ->
-								(i+1, co_ge_rest, co_gt_pre, co_gt_rest |^ gt_w w2 w1)
-							| O_equal ->
-								(i+1, co_ge_rest, co_gt_pre, co_gt_rest |^ co_eq_w w2 w1)
-						) (0, LB true, LB true, LB false) p.w_templates
-					in
-					Cons(co_ge, co_gt &^ co_gt_pre)
-				)
+		method order_open = order_main p.w_templates order_open (>=^) (=^)
+
+		method co_order = co_order_main p.w_templates order_cmpoly gt_cmpoly co_eq_cmpoly
+
+		method co_order_open = co_order_main p.w_templates order_open (>^) (<>^)
 
 		method quantify : 'f. (#Sym.named as 'f) list -> exp -> exp =
 			if dim = 0 then

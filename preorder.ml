@@ -243,7 +243,8 @@ let filtered_mset_extension_body ifilter jfilter nxs nys compa =
 
 
 
-let filtered_mset_extension ifilter jfilter order xs ys =
+let filtered_mset_extension : 'a. _ -> _ -> ('a -> 'a -> exp) -> 'a list -> 'a list -> exp =
+  fun ifilter jfilter order xs ys ->
   let nxs = List.length xs in
   let nys = List.length ys in
   let xa = Array.of_list xs in
@@ -261,6 +262,6 @@ let filtered_mset_extension2 xfilter yfilter order xs ys =
   let jfilter j = yfilter ya.(j-1) in
   filtered_mset_extension_body ifilter jfilter nxs nys compa
 
-let mset_extension order =
+let mset_extension : 'a. ('a -> 'a -> exp) -> 'a list -> 'a list -> exp =
   let triv _ = LB true in
-  filtered_mset_extension triv triv order
+  fun order xs ys -> filtered_mset_extension triv triv order xs ys

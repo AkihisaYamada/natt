@@ -38,21 +38,23 @@ let rec term_eq (Node((f:#sym),ss)) (Node(g,ts)) =
 let rec wterm_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
   f#equals g && List.for_all2 wterm_eq ss ts
 
-let rec ac_eq (WT((f:#sym),ss,sw)) (WT(g,ts,tw)) =
-  f#equals g &&
-  if f#is_commutative then eq_mset ss ts
-  else List.for_all2 ac_eq ss ts
-and delete_one ts1 s =
+let rec delete_one eq ts1 s =
   function
   | [] -> None
-  | t::ts -> if ac_eq s t then Some(ts1@ts) else delete_one (t::ts1) s ts
-and eq_mset ss ts =
+  | t::ts -> if eq s t then Some(ts1@ts) else delete_one eq (t::ts1) s ts
+and eq_mset eq ss ts =
   match ss with
   | [] -> ts = []
   | s::ss' ->
-    match delete_one [] s ts with
+    match delete_one eq [] s ts with
     | None -> false
-    | Some ts' -> eq_mset ss' ts'
+    | Some ts' -> eq_mset eq ss' ts'
+
+let rec ac_eq : 'f 'a. (#sym as 'f,'a)wterm -> ('f,'a)wterm -> bool =
+  fun (WT(f,ss,sw)) (WT(g,ts,tw)) ->
+  f#equals g &&
+  if f#is_commutative then eq_mset ac_eq ss ts
+  else List.for_all2 ac_eq ss ts
 
 (* subterm relation *)
 let rec strict_subterm (s:#sym term) (Node(_,ts)) =
