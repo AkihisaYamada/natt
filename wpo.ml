@@ -206,69 +206,67 @@ module Make(P : WPO_PARAMS) = struct
     fun fname args -> sub fname (LB true) [] [] args
   in
   let rec ac_rpo_compargs = 
-    fun order fname f ss ts ->
-    Delay (fun context ->
-      let mapper (scw,scs,ss') =
-        (context#refer Bool scw, context#refer Bool scs, ss')
-      in
-      let sss = List.map mapper (emb_candidates context fname ss) in
-      let tss = List.map mapper (emb_candidates context fname ts) in
+    fun context order fname f ss ts ->
+    let mapper (scw,scs,ss') =
+      (context#refer Smt.Bool scw, context#refer Smt.Bool scs, ss')
+    in
+    let sss = List.map mapper (emb_candidates context fname ss) in
+    let tss = List.map mapper (emb_candidates context fname ts) in
 
-      let rec step2 =
-        fun ge gt ss' tss ->
-      match tss with
-      | [] ->
-        (* ge to all proper embedding is a condition for gt *)
-        (ge, ge &^ gt)
-      | (tcw,tcs,ts') :: tss ->
-        if tcw = LB false then
-          (* this is not even a weak embedding, so don't care *)
-          step2 ge gt ss' tss
-        else if tcs = LB false then
-          (* this is at best \pi(t), so go real comparison *)
-          let (ge2,gt2) = context#expand_pair (comparg_ac context order f ss' ts') in
-          let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
-          step2 ge gt ss' tss
-        else
-          let (ge3,gt3) = context#expand_pair (ac_rpo_compargs order fname f ss' ts') in
-          let (ge,gt) =
-            (ge &^ (tcw =>^ smt_if tcs gt3 ge3),
-             gt |^ (tcw =>^ (smt_not tcs &^ gt3)))
-          in
-          step2 ge gt ss' tss
-      in
-      let rec step1 ge gt sss =
-      match sss with
-      | [] ->
-        (ge,gt)
-      | (scw,scs,ss') :: sss ->
-        if scw = LB false then
-          (* this is not even a weak embedding, so don't care *)
-          step1 ge gt sss
-        else if scs = LB false then
-          (* this is at best only weak embedding, so go to the next step *)
-          let (ge2,gt2) = step2 (LB true) (LB false) ss' tss in
-          let (ge,gt) = (ge |^ (scw &^ ge2), gt |^ (scw &^ gt2)) in
-          step1 ge gt sss
-        else
-          let (ge3,gt3) = context#expand_pair (ac_rpo_compargs order fname f ss' ts) in
-          (* if this is strict embedding, weak order results strict order *)
-          step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
-      in
-      let (ge,gt) = step1 (LB false) (LB false) sss in
-      Cons(ge,gt);
-    )
+    let rec step2 =
+      fun ge gt ss' tss ->
+    match tss with
+    | [] ->
+      (* ge to all proper embedding is a condition for gt *)
+      (ge, ge &^ gt)
+    | (tcw,tcs,ts') :: tss ->
+      if tcw = LB false then
+        (* this is not even a weak embedding, so don't care *)
+        step2 ge gt ss' tss
+      else if tcs = LB false then
+        (* this is at best \pi(t), so go real comparison *)
+        let Cons(ge2,gt2) = (comparg_ac context order f ss' ts') in
+        let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
+        step2 ge gt ss' tss
+      else
+        let Cons(ge3,gt3) = ac_rpo_compargs context order fname f ss' ts' in
+        let (ge,gt) =
+          (ge &^ (tcw =>^ smt_if tcs gt3 ge3),
+           gt |^ (tcw =>^ (smt_not tcs &^ gt3)))
+        in
+        step2 ge gt ss' tss
+    in
+    let rec step1 ge gt sss =
+    match sss with
+    | [] ->
+      (ge,gt)
+    | (scw,scs,ss') :: sss ->
+      if scw = LB false then
+        (* this is not even a weak embedding, so don't care *)
+        step1 ge gt sss
+      else if scs = LB false then
+        (* this is at best only weak embedding, so go to the next step *)
+        let (ge2,gt2) = step2 (LB true) (LB false) ss' tss in
+        let (ge,gt) = (ge |^ (scw &^ ge2), gt |^ (scw &^ gt2)) in
+        step1 ge gt sss
+      else
+        let Cons(ge3,gt3) = ac_rpo_compargs context order fname f ss' ts in
+        (* if this is strict embedding, weak order results strict order *)
+        step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
+    in
+    let (ge,gt) = step1 (LB false) (LB false) sss in
+    Cons(ge,gt);
   in
   let flat_compargs =
-    fun f g order ss ts ->
+    fun context f g order ss ts ->
       let fname = ac_unmark_name f#name in
       let gname = ac_unmark_name g#name in
       if fname = gname then
-        ac_rpo_compargs order fname f ss ts
+        ac_rpo_compargs context order fname f ss ts
       else not_ordered
   in
   (* compargs for f and g *)
-  let compargs = fun f g (finfo:wpo_sym) ginfo ->
+  let compargs = fun context f g (finfo:wpo_sym) ginfo ->
     match f#ty, g#ty with
     | Fun, Fun -> default_compargs finfo ginfo
     | Th "C", Th "C" -> fun order ss ts ->
@@ -279,7 +277,7 @@ module Make(P : WPO_PARAMS) = struct
     | Th "AC", Th "AC"  -> fun order ss ts ->
       smt_if (finfo#mapped 1)
         (smt_if (ginfo#mapped 1)
-          (flat_compargs f g order ss ts)
+          (flat_compargs context f g order ss ts)
           strictly_ordered
         )
         (smt_if (ginfo#mapped 1) weakly_ordered not_ordered)
@@ -330,20 +328,20 @@ module Make(P : WPO_PARAMS) = struct
       in
       fun order s gperm ts -> sub 1 (LB true) (LB true) order s gperm ts
   in
-  let rec wpo1 =
+  let rec wpo1 context =
     fun (WT(f,ss,sw) as s) (WT(g,ts,tw) as t) ->
     if ac_eq s t then
       weakly_ordered
     else
-      compose (wo sw tw) (wpo2 s t)
-  and wpo2 =
+      compose (wo sw tw) (wpo2 context s t)
+  and wpo2 context =
     fun (WT(f,ss,_) as s) (WT(g,ts,_) as t) ->
     if f#is_var then
       if g#is_var then
         vo f g
       else
         let ginfo = lookup g in
-        smt_split (order_all_args (wpo1) s ginfo#permed ts) (
+        smt_split (order_all_args (wpo1 context) s ginfo#permed ts) (
           fun all_ge all_gt ->
           smt_split (spo f g) (fun sge sgt ->
             let col_g = ginfo#collapse in
@@ -354,10 +352,10 @@ module Make(P : WPO_PARAMS) = struct
     match ss,ts with
     | [s1], [t1] when f#equals g ->
       let fltp = (lookup f)#permed 1 in
-      smt_split (wpo2 s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
+      smt_split (wpo2 context s1 t1) (fun rge rgt -> Cons(fltp =>^ rge, fltp &^ rgt))
     | _ -> 
     let finfo = lookup f in
-    smt_split (order_by_some_arg (wpo1) finfo#permed ss t) (
+    smt_split (order_by_some_arg (wpo1 context) finfo#permed ss t) (
       fun some_ge some_gt ->
       smt_let Bool some_ge (fun some_ge ->
         let col_f = finfo#collapse in
@@ -368,14 +366,14 @@ module Make(P : WPO_PARAMS) = struct
           Cons(some_ge, some_gt)
         else
           let ginfo = lookup g in
-          smt_split (order_all_args (wpo1) s ginfo#permed ts) (
+          smt_split (order_all_args (wpo1 context) s ginfo#permed ts) (
             fun all_ge all_gt ->
             let col_g = ginfo#collapse in
             if all_gt = LB false then
               Cons(some_ge |^ (col_g &^ all_ge), some_gt)
             else
               smt_split (
-                compose (spo f g) (compargs f g finfo ginfo (wpo1) ss ts)
+                compose (spo f g) (compargs context f g finfo ginfo (wpo1 context) ss ts)
                 ) (fun rest_ge rest_gt ->
                 smt_let Bool all_gt (fun all_gt ->
                   let cond = smt_not col_f &^ smt_not col_g &^ all_gt in 
@@ -388,7 +386,8 @@ module Make(P : WPO_PARAMS) = struct
       )
     )
   in
-  wpo1
+  fun annotate s t ->
+  Delay(fun context -> wpo1 context (annotate context s) (annotate context t))
 end
 
 class t =
@@ -801,7 +800,6 @@ class t =
         (fun t s -> co_wo_open (interpreter#eval_open t) (interpreter#eval_open s))
       )
     else
-      let a = interpreter#annotate in
       let module Wpo = Make(struct
           type a = Weight.cmpoly array
           let p = p
@@ -812,24 +810,13 @@ class t =
           let p = p
         end)
       in
-      let wpo = Wpo.wpo lookup wpo_var wo spo in
-      let co_wpo = Wpo.wpo lookup wpo_var wo co_spo in
-      let wpo_open = Wpo_Open.wpo lookup wpo_var_open wo_open spo_open in
-      let co_wpo_open = Wpo_Open.wpo lookup wpo_var_open co_wo_open co_spo_open in
-      let obj = wpo in
-      let obj_open = wpo_open  in
-      let ao = interpreter#annotate_open in (
-        ( fun s t -> Delay (fun c -> wpo (a c s) (a c t)) ),
-        ( fun t s -> Delay (fun c -> co_wpo (a c t) (a c s)) ),
-        ( fun s t -> Cons (
-            Delay (fun c -> weakly (wpo_open (ao c s) (ao c t))),
-            Delay (fun c -> strictly (wpo_open (ao c s) (ao c t)))
-        ) ),
-        ( fun t s -> Cons (
-            Delay (fun c -> weakly (co_wpo_open (ao c t) (ao c s))),
-            Delay (fun c -> strictly (co_wpo_open (ao c t) (ao c s)))
-        ) )
-      )
+      let a = interpreter#annotate in
+      let wpo = Wpo.wpo lookup wpo_var wo spo a in
+      let co_wpo = Wpo.wpo lookup wpo_var wo co_spo a in
+      let a_open = interpreter#annotate_open in
+      let wpo_open = Wpo_Open.wpo lookup wpo_var_open wo_open spo_open a_open in
+      let co_wpo_open = Wpo_Open.wpo lookup wpo_var_open co_wo_open co_spo_open a_open in
+      (wpo,co_wpo,wpo_open,co_wpo_open)
   in
   let quantify_w =
     if p.w_quantify then interpreter#quantify else fun _ e -> e
