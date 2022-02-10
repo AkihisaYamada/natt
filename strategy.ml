@@ -192,9 +192,8 @@ let weight_element ~mono ~simp =
 
 type prec_mode =
 | PREC_none
-| PREC_linear
+| PREC_strict
 | PREC_quasi
-| PREC_partial
 | PREC_equiv
 type status_mode =
 | S_none
@@ -215,6 +214,7 @@ type order_params = {
 	status_copy : bool;
 	status_nest : int;
 	prec_mode : prec_mode;
+	prec_partial : bool;
 	prec_quantify : bool;
 	mincons : bool;
 	maxcons : bool;
@@ -236,7 +236,7 @@ let nonmonotone p =
   p.status_mode = S_empty && p.prec_mode <> PREC_none
 
 let order_params
-	?(dp=true) ?(prec=PREC_none) ?(prec_quantify=false) ?(status=S_empty) ?(collapse=status<>S_empty)
+	?(dp=true) ?(prec_mode=PREC_none) ?(prec_partial=false) ?(prec_quantify=false) ?(status=S_empty) ?(collapse=status<>S_empty)
 	?(wpo_quantify=false)
 	?(quantify_unconditional=false)
 	?(usable=true) ?(w_quantify=false) ?(negcoeff=false)
@@ -249,7 +249,8 @@ let order_params
 	quantify_unconditional = quantify_unconditional;
 	w_quantify = w_quantify;
 	w_templates = Array.of_list w_templates;
-	prec_mode = prec;
+	prec_mode = prec_mode;
+	prec_partial = prec_partial;
 	prec_quantify = prec_quantify;
 	status_mode = status;
 	status_nest = 0;
@@ -306,17 +307,17 @@ let put_order p =
 
 let order_element default_smt ~mono =
 	element "order" (
-		default PREC_none (
+		default (PREC_none,false) (
 			validated_attribute "precedence" "none|quasi|partial|linear|equiv" >>= fun str ->
 			return (
 				match str with
-				| "quasi" -> PREC_quasi
-				| "linear" -> PREC_linear
-				| "partial" -> PREC_partial
-				| "equiv" -> PREC_equiv
-				| _ -> PREC_none
+				| "quasi" -> (PREC_quasi,false)
+				| "linear" -> (PREC_strict,false)
+				| "partial" -> (PREC_quasi,true)
+				| "equiv" -> (PREC_equiv,false)
+				| _ -> (PREC_none,false)
 			)
-		) >>= fun prec ->
+		) >>= fun (prec_mode,prec_partial) ->
 		default S_empty (
 			validated_attribute "status" "none|partial|total|empty" >>= fun str ->
 			return (match str with "none" -> S_none | "partial" -> S_partial | "total" -> S_total | _ -> S_empty)
@@ -344,7 +345,7 @@ let order_element default_smt ~mono =
 		default smt (Smt.params_of_xml smt) >>= fun smt ->
 		weight_element ~mono:(mono && status = S_empty) ~simp:(status = S_none || status = S_total) >>= fun weight ->
 		return (
-			order_params smt ~dp:(not mono) ~prec:prec ~prec_quantify:quantify_wpo ~status:status ~collapse:collapse ~usable:usable ~wpo_quantify:quantify_wpo ~w_quantify:quantify_weight
+			order_params smt ~dp:(not mono) ~prec_mode ~prec_partial ~prec_quantify:quantify_wpo ~status:status ~collapse:collapse ~usable:usable ~wpo_quantify:quantify_wpo ~w_quantify:quantify_weight
 			weight)
 	)
 
@@ -381,9 +382,9 @@ let default smt = (
 	true, Some ( [
 		order_params smt (sum_weight ~mono:false);
 		order_params smt (max_weight ~mono:false);
-		order_params smt ~prec:PREC_quasi ~status:S_partial [];
+		order_params smt ~prec_mode:PREC_quasi ~prec_partial:true ~status:S_partial [];
 		order_params smt (neg_max_sum_weight ~maxarity:0);
-		order_params smt ~prec:PREC_quasi ~status:S_partial (max_sum_weight ~simp:false ~maxarity:0);
+		order_params smt ~prec_mode:PREC_quasi ~prec_partial:true ~status:S_partial (max_sum_weight ~simp:false ~maxarity:0);
 		order_params smt (bmat_weight ~mono:false ~simp:false ~dim:2);
 		order_params smt [
 			(Pos, O_strict, "Sum-Sum", ArityChoice(function

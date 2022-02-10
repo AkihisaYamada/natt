@@ -52,10 +52,20 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
           interpreter#output_sym solver finfo#base pr;
         end
       in
-      let pr_prec finfo =
-        if prec_is_used then begin
-          pr#puts "\tprecedence: ";
-          pr_exp (solver#get_value finfo#prec);
+      let pr_prec fname finfo =
+        if prec_is_used && not (solver#get_bool finfo#collapse) then begin
+          if p.prec_partial then begin
+            pr#puts "\tprecedence above:";
+            Hashtbl.iter (fun gname (ginfo:wpo_sym) ->
+              if fname <> gname && solver#get_bool (finfo#prec_ge gname) then begin
+                pr#putc ' ';
+                ginfo#base#output (pr:>Io.outputter);
+              end;
+            ) sigma;
+          end else begin
+            pr#puts "\tprecedence: ";
+            pr_exp (solver#get_value finfo#prec);
+          end;
         end;
       in
       let pr_symbol fname (finfo:wpo_sym) =
@@ -65,12 +75,11 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
         pr#putc ')';
         pr_interpret finfo;
         pr_perm finfo;
-        if not (solver#get_bool finfo#collapse) then begin
-          pr_prec finfo;
-        end;
+        pr_prec fname finfo;
         pr#endl;
       in
       Hashtbl.iter pr_symbol sigma;
+
     method output_usables : 'pr 'a. (int -> exp) -> int list -> (#printer as 'pr) -> unit =
       fun usable usables ->
       if usable_is_used || verbosity.(6) then

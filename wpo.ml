@@ -36,21 +36,25 @@ let delete_variables : 'f 'a. (#sym as 'f,'a) wterm list -> ('f,'a) wterm list =
   in
   fun ss -> sub [] ss
 
-  let ac_unmark_name name =
-    if marked_name name then unmark_name name else name
+let ac_unmark_name name =
+  if marked_name name then unmark_name name else name
 
-  (* SMT variables *)
-  let usable_v i = "u" ^ string_of_int i
-  let usable_p_v i = "uP" ^ string_of_int i
-  let gt_v i = "gt#" ^ string_of_int i
-  let ge_v i = "ge#" ^ string_of_int i
-  let gt_r_v i = "gt" ^ string_of_int i
-  let ge_r_v i = "ge" ^ string_of_int i
-	let gt_e_v i j = "gt#" ^ string_of_int i ^ "#" ^ string_of_int j
-	let gt_post_e_v i j = "gtp#" ^ string_of_int i ^ "#" ^ string_of_int j
-  let gt_p_v i = "gtP" ^ string_of_int i (* probabilistic rules *)
-  let ge_p_v i = "geP" ^ string_of_int i
-  let supply_index v i = v ^ "_" ^ string_of_int i
+(* SMT variables *)
+let usable_v i = "u" ^ string_of_int i
+let usable_p_v i = "uP" ^ string_of_int i
+let gt_v i = "gt#" ^ string_of_int i
+let ge_v i = "ge#" ^ string_of_int i
+let gt_r_v i = "gt" ^ string_of_int i
+let ge_r_v i = "ge" ^ string_of_int i
+let gt_e_v i j = "gt#" ^ string_of_int i ^ "#" ^ string_of_int j
+let gt_post_e_v i j = "gtp#" ^ string_of_int i ^ "#" ^ string_of_int j
+let gt_p_v i = "gtP" ^ string_of_int i (* probabilistic rules *)
+let ge_p_v i = "geP" ^ string_of_int i
+let supply_index v i = v ^ "_" ^ string_of_int i
+
+let prec_ge_v fname gname = "pge_" ^ fname ^ "_" ^ gname
+let prec_ge fname gname = EV(prec_ge_v fname gname)
+
 
 module type WPO_PARAMS = sig
   type a
@@ -423,6 +427,27 @@ class t =
   let add_prec =
     match p.prec_mode with
     | PREC_none -> fun _ _ -> ()
+    | _ when p.prec_partial -> fun fname (finfo : wpo_sym) ->
+      finfo#set_prec_ge (prec_ge fname);
+      finfo#set_prec_gt (fun gname -> prec_ge fname gname &^ smt_not (prec_ge gname fname));
+      ignore (Hashtbl.fold (fun gname ginfo dones ->
+        let fg = solver#new_variable (prec_ge_v fname gname) Bool in
+        let gf = solver#new_variable (prec_ge_v gname fname) Bool in
+        List.iter (fun hname ->
+debug2 (puts fname << puts " vs " << puts gname << puts " vs " << puts hname << endl);
+          let fh = prec_ge fname hname in
+          let hf = prec_ge hname fname in
+          let gh = prec_ge gname hname in
+          let hg = prec_ge hname gname in
+          solver#add_assertion ((fh &^ hg) =>^ fg);
+          solver#add_assertion ((gh &^ hf) =>^ gf);
+          solver#add_assertion ((hg &^ gf) =>^ hf);
+          solver#add_assertion ((fg &^ gh) =>^ fh);
+          solver#add_assertion ((hf &^ fg) =>^ hg);
+          solver#add_assertion ((gf &^ fh) =>^ gh);
+        ) dones;
+        gname::dones
+      ) sigma [])
     | _ -> fun fname finfo ->
       (if finfo#base#is_associative then add_prec_ac else add_prec_default) fname finfo
   in
@@ -445,7 +470,7 @@ class t =
     let prec f =
       if f#is_var then EV(var_prec f) else (lookup f)#prec
     in
-    let spo_quasi (f:#sym) (g:#sym) =
+    let spo_total (f:#sym) (g:#sym) =
       if f#is_var then
         Cons((if g#is_var then LB(f#equals g) else pmin =^ (lookup g)#prec), LB false)
       else if g#is_var then
@@ -455,13 +480,21 @@ class t =
         let pg = (lookup g)#prec in
         Cons(pf >=^ pg, pf >^ pg)
     in
-    let spo_quasi_open =
+    let spo_total_open =
       if p.prec_quantify then
         fun (f:#sym) (g:#sym) ->
         let pf = prec f in
         let pg = prec g in
         Cons(pf >=^ pg, pf >^ pg)
-      else spo_quasi
+      else spo_total
+    in
+    let spo_partial (f:#sym) (g:#sym) =
+      if f#equals g then Cons(LB true, LB false)
+      else if f#is_var || g#is_var then Cons(LB false,LB false)
+      else
+        let finfo = lookup f in
+        let gname = g#name in
+        Cons(finfo#prec_ge gname, finfo#prec_gt gname)
     in
     let spo_equiv (f:#sym) (g:#sym) =
       Cons(
@@ -511,10 +544,11 @@ class t =
     let spo_triv _ _ = Cons (LB true, LB false) in
     match p.prec_mode with
     | PREC_none -> (spo_triv, spo_triv, spo_triv, spo_triv)
-    | PREC_quasi -> (spo_quasi, spo_quasi_open, spo_quasi, spo_quasi_open)
+    | _ when p.prec_partial -> (spo_partial, spo_partial, spo_partial, spo_partial)
+    | PREC_quasi -> (spo_total, spo_total_open, spo_total, spo_total_open)
     | PREC_equiv -> (spo_equiv, spo_equiv_open, co_spo_equiv, co_spo_equiv_open)
-    | _ -> (spo_strict, spo_strict, co_spo_strict, spo_quasi_open)
-  in
+    | PREC_strict -> (spo_strict, spo_strict, co_spo_strict, spo_total_open)
+   in
 
   (*** Usable rules ***)
   let using_usable = p.usable && (not p.dp || dg#minimal) in
@@ -699,8 +733,11 @@ class t =
   in
 
   (*** preparing for function symbols ***)
-  let add_symbol fname (finfo:wpo_sym) =
-    let n = finfo#base#arity in
+  let add_symbol f =
+    let fname = f#name in
+    let finfo = new wpo_sym f in
+
+    let n = f#arity in
     let to_n = int_list 1 n in
 
     add_prec fname finfo;
@@ -719,33 +756,11 @@ class t =
       (* permed position must be weakly simple *)
       solver#add_assertion (smt_not pi |^ interpreter#weak_simple_at finfo#base i);
     done;
-    if finfo#status_mode = S_partial && p.mincons then begin
-      let v = "qconst_" ^ fname in
-      solver#add_definition v Bool
-        (smt_not finfo#collapse &^ smt_list_for_all (fun i -> smt_not (finfo#permed i)) to_n &^ (fp >=^ pmin));
-      finfo#set_is_quasi_const (EV v);
-    end;
+
+    Hashtbl.add sigma f#name finfo;
   in
 
 (*** WPO ***)
-  let is_mincons =
-    if p.mincons then
-      fun finfo -> finfo#is_quasi_const &^ (finfo#prec =^ pmin)
-    else
-      fun _ -> LB false
-  in
-  let rec var_eq xname (WT(g,ts,_)) =
-    if g#is_var then
-      LB(xname = g#name)
-    else 
-      let ginfo = lookup g in
-      let rec sub j =
-        function
-        | [] -> LB true
-        | t::ts -> (ginfo#permed j =>^ var_eq xname t) &^ sub (j+1) ts
-      in
-      is_mincons ginfo |^ (ginfo#collapse &^ Delay(fun _ -> sub 1 ts))
-  in
   (* quantifying variable orderings *)
   let wpo_var x y = Cons(LB false, LB false) in
   let wpo_ge_var_name x y = "ge_" ^ x ^ "_" ^ y in
@@ -881,34 +896,13 @@ object (x)
     interpreter#init solver trs dg;
 
     (* generating the signature *)
-    Hashtbl.clear sigma;
-    let iterer f =
-      Hashtbl.add sigma f#name (new wpo_sym f);
-    in
-    trs#iter_funs iterer;
 
     if p.prec_mode <> PREC_none then
       (* set max precedence *)
-      pmax := LI (Hashtbl.length sigma);
+      pmax := LI (trs#get_fun_count);
 
-    Hashtbl.iter add_symbol sigma;
-
-    if p.prec_mode = PREC_linear then begin
-      (* asserting no equivalence in precedence *)
-      let rec subsub pf =
-        function
-        | [] -> ()
-        | pg::pgs ->
-          solver#add_assertion (smt_not (pf =^ pg));
-          subsub pf pgs;
-      in
-      let rec sub =
-        function
-        | []    -> ()
-        | pf::pfs -> subsub pf pfs; sub pfs
-      in
-      sub (Hashtbl.fold (fun _ finfo vs -> finfo#prec :: vs) sigma [])
-    end;
+    Hashtbl.clear sigma;
+    trs#iter_funs add_symbol;
 
     if p.prec_mode <> PREC_none then begin
       (* special treatment of associative symbols *)

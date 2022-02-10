@@ -10,8 +10,7 @@ let weakly = smt_car
 
 let compose trit1 trit2 =
   smt_split trit1 (fun ge1 gt1 ->
-    if ge1 = LB false then not_ordered
-    else if gt1 = LB true then strictly_ordered
+    if ge1 = LB false || gt1 = LB true then Cons(ge1,gt1)
     else
       smt_split trit2 (fun ge2 gt2 ->
         if ge2 = LB false then Dup(Bool,gt1)
