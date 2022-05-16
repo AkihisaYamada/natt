@@ -11,7 +11,7 @@
 		<value-of select="s/group[1]"/>
 	</class>
 	<class name="var">
-		<read ref="symbol" as="sym"/>
+		<call ref="symbol" as="sym"/>
 		<element name="var">
 			<value-of select="sym"/>
 		</element>
@@ -19,7 +19,7 @@
 	<class name="syms">
 		<option>
 			<match>\(VAR(\s+|(?=[\(\)\[\]\{\}]))</match>
-			<read ref="var" maxOccurs="unbounded"/>
+			<call ref="var" maxOccurs="unbounded"/>
 			<match>\)\s*</match>
 		</option>
 		<option>
@@ -27,7 +27,7 @@
 			<group minOccurs="0" maxOccurs="unbounded">
 				<match as="th">\((AC|A|C)\s+</match>
 				<group maxOccurs="unbounded">
-					<read ref="symbol" as="s"/>
+					<call ref="symbol" as="s"/>
 					<element name="sym">
 						<attribute name="theory">
 							<value-of select="th/group[1]"/>
@@ -41,7 +41,7 @@
 		</option>
 	</class>
 	<class name="term">
-		<read ref="symbol" as="s"/>
+		<call ref="symbol" as="s"/>
 		<choice>
 			<group>
 				<match>\(\s*</match>
@@ -50,10 +50,10 @@
 						<value-of select="s"/>
 					</element>
 					<group minOccurs="0">
-						<read ref="term"/>
+						<call ref="term"/>
 						<group minOccurs="0" maxOccurs="unbounded">
 							<match>\s*,\s*</match>
-							<read ref="term"/>
+							<call ref="term"/>
 						</group>
 					</group>
 					<match>\)\s*</match>
@@ -67,73 +67,73 @@
 		</choice>
 	</class>
 	<class name="cond">
-		<read ref="term" as="lhs"/>
+		<call ref="term" as="lhs"/>
 		<match>\=\=\s*</match>
-		<read ref="term" as="rhs"/>
+		<call ref="term" as="rhs"/>
 		<element name="cond">
 			<value-of select="lhs"/>
 			<value-of select="rhs"/>
 		</element>
 	</class>
 	<class name="conds">
-		<read ref="cond"/>
+		<call ref="cond"/>
 		<group minOccurs="0" maxOccurs="unbounded">
 			<match>,\s*</match>
-			<read ref="cond"/>
+			<call ref="cond"/>
 		</group>
 	</class>
 	<class name="rule">
-		<read ref="term" as="lhs"/>
+		<call ref="term" as="lhs"/>
 		<match>->\s*</match>
-		<read ref="term" as="rhs"/>
+		<call ref="term" as="rhs"/>
 		<element name="rule">
 			<value-of select="lhs"/>
 			<value-of select="rhs"/>
 			<group minOccurs="0">
 				<match>\|\s+</match>
-				<read ref="conds"/>
+				<call ref="conds"/>
 			</group>
 		</element>
 		<match>\s*</match>
 	</class>
 	<class name="rules">
 		<match>\(RULES\s+</match>
-		<read ref="rule" maxOccurs="unbounded"/>
+		<call ref="rule" maxOccurs="unbounded"/>
 		<match>\)\s*</match>
 	</class>
 
 	<element name="trs">
-		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+		<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		<group minOccurs="0">
 			<match as="prob">\(PROBLEM\s+([^)]*)\)\s*</match>
 			<attribute name="problem">
 				<value-of select="prob/group[1]"/>
 			</attribute>
-			<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+			<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		</group>
 		<group minOccurs="0">
 			<match as="ct">\(CONDITIONTYPE\s+(.*)\)\s*</match>
 			<attribute name="condition-type">
 				<value-of select="ct/group[1]"/>
 			</attribute>
-			<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+			<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		</group>
 		<element name="syms">
-			<read ref="syms" minOccurs="0" maxOccurs="unbounded"/>
+			<call ref="syms" minOccurs="0" maxOccurs="unbounded"/>
 		</element>
-		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
-		<read ref="rules"/>
-		<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+		<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+		<call ref="rules"/>
+		<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		<if test="prob/group[1] = 'INFEASIBILITY'">
 			<element name="infeasibility">
 				<element name="syms">
-					<read ref="syms" minOccurs="0" maxOccurs="unbounded"/>
+					<call ref="syms" minOccurs="0" maxOccurs="unbounded"/>
 				</element>
 				<match>\(CONDITION\s+</match>
-				<read ref="conds"/>
+				<call ref="conds"/>
 			</element>
 			<match>\)\s*</match>
-			<read ref="comment" minOccurs="0" maxOccurs="unbounded"/>
+			<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		</if>
 	</element>
 </txtruct>
