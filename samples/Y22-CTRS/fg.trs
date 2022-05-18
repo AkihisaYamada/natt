@@ -1,0 +1,10 @@
+(PROBLEM INFEASIBILITY)
+(CONDITIONTYPE ORIENTED)
+(VAR x y)
+(RULES
+  f(x) -> x
+  g(x) -> y | f(x) == y
+)
+(VAR x)
+(CONDITION f(x) == g(x))
+

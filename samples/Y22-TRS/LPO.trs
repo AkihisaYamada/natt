@@ -1,0 +1,12 @@
+(PROBLEM INFEASIBILITY)
+(VAR x)
+(RULES
+	f(g(h(x))) -> g(f(h(g(x))))
+	f(x) -> x
+	g(x) -> x
+	h(x) -> x
+)
+(VAR x)
+(CONDITION
+	f(g(h(x))) == g(f(g(h(x))))
+)

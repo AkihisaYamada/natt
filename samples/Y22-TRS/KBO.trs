@@ -1,0 +1,10 @@
+(PROBLEM INFEASIBILITY)
+(VAR x)
+(RULES
+	f(g(x)) -> g(f(f(x)))
+	g(x) -> x
+)
+(VAR x)
+(CONDITION
+	x == f(x)
+)

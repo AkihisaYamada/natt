@@ -1,0 +1,8 @@
+(PROBLEM INFEASIBILITY)
+(CONDITIONTYPE ORIENTED)
+(VAR x y)
+(RULES
+  a -> b | b == a
+)
+(CONDITION a == b)
+

@@ -1,0 +1,10 @@
+(PROBLEM INFEASIBILITY)
+(VAR x y)
+(RULES
+	add(0,y) -> y
+	add(s(x),y) -> s(add(x,y))
+)
+(VAR x y)
+(CONDITION
+	add(x,s(y)) == x
+)

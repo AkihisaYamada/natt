@@ -1,0 +1,11 @@
+(PROBLEM INFEASIBILITY)
+(VAR x y x' y')
+(RULES
+	ack(x,y) -> s(y) | x == 0
+	ack(x,y) -> ack(x',s(0)) | x == s(x'), y == 0
+	ack(x,y) -> ack(x',ack(x,y')) | x == s(x'), y == s(y')
+)
+(var x)
+(CONDITION
+	x == s(x)
+)
