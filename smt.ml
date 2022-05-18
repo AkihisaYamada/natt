@@ -298,7 +298,7 @@ class virtual sexp_printer =
 				x#leave 8;
 				pr_e e; pr ")";
 				x#endl;
-			| Cons(e1,e2) -> pr "(cons "; pr_e e1; pr " "; pr_e e2; pr ")";
+			| Cons(e1,e2) -> x#enter 6; pr "(cons "; pr_e e1; x#endl; pr_e e2; pr ")"; x#leave 6;
 			| Dup(_,e)		-> pr "(dup "; pr_e e; pr ")";
 			| Car(e)		-> pr "(car "; pr_e e; pr ")";
 			| Cdr(e)		-> pr "(cdr "; pr_e e; pr ")";
@@ -675,6 +675,7 @@ let (+^) e1 e2 = Add(e1,e2)
 let (>=^) e1 e2 = Ge(e1, e2)
 let (>^) e1 e2 = Gt(e1,e2)
 *)
+
 let (<>^) e1 e2 = smt_not (e1 =^ e2)
 
 let (<=^) e1 e2 = e2 >=^ e1

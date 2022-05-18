@@ -411,11 +411,13 @@ object (x)
 
 	method duplicating = trs#exists_rule (fun _ rule -> rule#is_duplicating)
 
+	method conditional = trs#exists_rule (fun _ rule -> rule#is_conditional)
+
 	method run =
 		let prob = Txtr.parse_in (Trs.problem_xml trs) (if params.file = "" then stdin else Stdlib.open_in params.file) in
-		begin match prob with
-		| Some mode -> params.mode <- mode
-		| None -> ()
+		begin match params.mode, prob with
+		| MODE_default, Some mode -> params.mode <- mode
+		| _ -> ()
 		end;
 		cpf (
 			puts "<?xml version=\"1.0\"?>" << endl <<
@@ -439,8 +441,12 @@ object (x)
 			if trs#exists_rule (fun _ rule -> emb_le rule#l rule#r) then
 				err "Not simple";
 		| MODE_dup	->
-			if x#duplicating then err "Duplicating TRS";
-			warn "Non-duplicating TRS";
+			if x#duplicating then err "Duplicating";
+			warn "Non-duplicating";
+			exit 0;
+		| MODE_cond ->
+			if x#conditional then err "Conditional";
+			warn "Unconditional";
 			exit 0;
 		| MODE_infeasibility eqs ->
 			problem (puts "Input TRS:" << endl << enter 4 << trs#output << leave 4);

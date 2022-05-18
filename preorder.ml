@@ -1,5 +1,6 @@
 open Smt;;
-
+open Util;;
+open Io;;
 
 let not_ordered = Cons(LB false, LB false)
 let weakly_ordered = Cons(LB true, LB false)

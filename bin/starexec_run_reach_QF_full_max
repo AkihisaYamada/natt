@@ -1,0 +1,32 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+STR='<non-reachability>
+  <order>
+    <entry range="full" name="Max">
+      <case arity="0">
+        <var range="full"/>
+      </case>
+      <case arity="1">
+        <sum>
+          <prod>
+            <var range="bool"/>
+            <arg coord="0"/>
+          </prod>
+          <var range="full"/>
+        </sum>
+      </case>
+      <args mode="max">
+        <prod>
+          <var range="bool"/>
+          <sum>
+            <arg coord="0"/>
+            <var range="full"/>
+          </sum>
+        </prod>
+      </args>
+    </entry>
+  </order>
+</non-reachability>'
+java -jar $DIR/txtr-0.jar $DIR/trs.xml.txtr "$1" | $DIR/NaTT.exe -S:"$STR" 2> "$2/stderr.txt"
+cat $2/stderr.txt

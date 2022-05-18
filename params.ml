@@ -19,11 +19,13 @@ type rdp_mode = (* for relative DP *)
 | RDP_naive
 | RDP_move
 type mode =
+| MODE_default
 | MODE_order
 | MODE_flat
 | MODE_freezing
 | MODE_simple
 | MODE_dup
+| MODE_cond
 | MODE_through
 | MODE_higher_xml
 | MODE_xml
@@ -54,7 +56,7 @@ type params_type = {
 };;
 
 let params = {
-  mode = MODE_order;
+  mode = MODE_default;
   file = "";
   dp = false;
   edge_mode = E_sym_trans;
@@ -176,6 +178,7 @@ while !i < argc do
       params.cpf_to <- open_out file;
       params.naive_C <- true;
     | "-dup", None -> params.mode <- MODE_dup;
+    | "-cond", None -> params.mode <- MODE_cond;
     | "-tcap", None -> params.edge_mode <- E_tcap;
     | "-edge", Some s -> params.edge_length <- safe_atoi s arg;
     | "t", mode -> (

@@ -1,0 +1,20 @@
+#!/bin/sh
+DIR=${0%/*}
+PATH=$DIR:$PATH
+STR='<non-reachability>
+  <order quantify="weight">
+    <entry range="pos" name="Sum">
+      <sum>
+        <args mode="sum">
+          <prod>
+            <var range="bool"/>
+            <arg/>
+          </prod>
+        </args>
+        <var range="pos"/>
+      </sum>
+    </entry>
+  </order>
+</non-reachability>'
+java -jar $DIR/txtr-0.jar $DIR/trs.xml.txtr "$1" | $DIR/NaTT.exe -S:"$STR" 2> "$2/stderr.txt"
+cat $2/stderr.txt
