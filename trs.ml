@@ -495,9 +495,7 @@ let problem_xml trs =
 		optional (attribute "problem") >>= fun pto ->
 		optional trs#input_syms >>= fun _ ->
 		many trs#input_rule >>= fun _ ->
-		match pto with
-		| None -> return None
-		| Some "INFEASIBILITY" -> debug (puts "input infeasibility problem" << endl);
+		optional (
 			element "infeasibility" (
 				optional trs#input_syms >>= fun _ ->
 				many (
@@ -507,9 +505,9 @@ let problem_xml trs =
 						return (l,r)
 					)
 				) >>= fun conds ->
-				return (Some (MODE_infeasibility conds))
+				return (MODE_infeasibility conds)
 			)
-		| Some pt -> raise (No_support ("problem-type: " ^ pt))
+		)
 	) <|>
 	element "problem" ((* XTC format *)
 		element "trs" (

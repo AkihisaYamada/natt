@@ -7,7 +7,8 @@ This is NaTT ver.2.2.
 
 Please install OPAM (https://opam.ocaml.org/). Then please install required packages by
 ```
-opam install ocamlfind ocamlgraph xml-light re
+opam install ocamlfind ocamlgraph re
+opam install xml-light
 ```
 Then please just `make`.
 

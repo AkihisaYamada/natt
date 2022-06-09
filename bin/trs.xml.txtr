@@ -107,9 +107,6 @@
 		<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		<group minOccurs="0">
 			<match as="prob" pattern="\(PROBLEM\s+([^)]*)\)\s*"/>
-			<attribute name="problem">
-				<value-of select="prob/group[1]"/>
-			</attribute>
 			<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		</group>
 		<group minOccurs="0">
