@@ -418,7 +418,19 @@ let default smt = (
 	], 3),
 	[
 		order_params ~w_quantify:true smt [
-			(Full, O_equal, "Sum", SumArgs(Var Bool *? Arg(-1,0)) +? Var Full);
+			(Neg, O_weak, "Sum", SumArgs(Var Bool *? Arg(-1,0)) +? Var Neg);
+		];
+		order_params smt ~prec_mode:PREC_quasi ~prec_partial:true ~status:S_partial [];
+		order_params ~w_quantify:true ~prec_mode:PREC_quasi ~prec_partial:true ~status:S_partial smt [
+			(Pos, O_strict, "Sum", SumArgs(Var Bool *? Arg(-1,0)) +? Var Pos);
+		];
+		order_params ~w_quantify:true smt [
+			(Pos, O_weak, "Sum-Sum",
+				SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Pos
+			);
+			(Pos, O_weak, "Sum-Sum",
+				SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Pos
+			);
 		];
 	]
 )

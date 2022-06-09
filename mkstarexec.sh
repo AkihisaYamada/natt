@@ -25,11 +25,10 @@ then
 	
 	mkdir "$bak/bin"
 	cp $doc $bak
-	cp -r strategies $bak
 
 	(cd bin; eval cp $bin starexec_* \"$bak/bin/\")
 
-	(cd $bak; $tar -czf $1.tar.gz bin $doc strategies)
+	(cd $bak; $tar -czf $1.tar.gz bin $doc)
 	
 	rm -rf "$bak/bin" $bak/$doc
 else
