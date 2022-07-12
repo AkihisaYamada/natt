@@ -48,8 +48,8 @@ let put_order_mode = function
 let arg mono x = if mono then x else Var Bool *? x
 
 let sum_ac_mono i = Arg(0,i) +? Arg(1,i) +? Var Pos
-let sum_ac i = (Var Bool *? (Arg(0,i) +? Arg(1,i))) +? Var Pos
-let sum_a i = (Var Bool *? Arg(0,i)) +? (Var Bool *? Arg(1,i)) +? Var Pos
+let sum_ac i ran = (Var Bool *? (Arg(0,i) +? Arg(1,i))) +? Var ran
+let sum_a i ran = (Var Bool *? Arg(0,i)) +? (Var Bool *? Arg(1,i)) +? Var ran
 let max_ac_simp i = Arg(0,i) |? Arg(1,i) |? Var Pos
 let max_ac i = Var Bool *? (Arg(0,i) |? Arg(1,i)) |? Var Pos
 let max_c_simp i = (Arg(0,i) |? Arg(1,i)) +? Var Pos
@@ -60,8 +60,8 @@ let sum_weight ~mono =
 	[Pos, O_strict, "Sum", ArityChoice(fun a ->
 			if a >= 0 then SumArgs(arg mono (Arg(-1,0)) +? Var Pos)
 			else if mono then sum_ac_mono 0
-			else if a = -1 (* A *) then sum_a 0
-			else sum_ac 0 (* AC/C *)
+			else if a = -1 (* A *) then sum_a 0 Pos
+			else sum_ac 0 Pos (* AC/C *)
 		)
 	]
 let coeff12 = Choice[Const 2; Const 1]
@@ -86,8 +86,8 @@ let max_weight ~simp =
 	]
 let neg_sum_weight =
 	[	Pos, O_strict, "Sum", ArityChoice(function
-			| -3 | -2 (* AC/C *)  -> sum_ac 0
-			| -1 (* A *)  -> sum_a 0
+			| -3 | -2 (* AC/C *)  -> sum_ac 0 Pos
+			| -1 (* A *)  -> sum_a 0 Pos
 			| 0 -> Var Pos
 			| _ -> (SumArgs(Var Bool *? Arg(-1,0)) +? Var Full) |? Const 0
 		)
@@ -103,9 +103,9 @@ let neg_max_weight =
 	]
 let max_sum_weight ~maxarity ~simp =
 	[	Pos, O_strict, "MaxSum", ArityChoice(function
-			| -3 (* AC *) -> if simp then Heuristic1(sum_ac_mono 0, max_ac_simp 0) else Heuristic1(sum_ac 0, max_ac 0)
-			| -2 (* C  *) -> if simp then Heuristic1(sum_ac_mono 0, max_c_simp 0) else Heuristic1(sum_ac 0, max_c 0)
-			| -1 (* A  *) -> if simp then Heuristic1(sum_ac_mono 0, max_ac_simp 0) else Heuristic1(sum_a 0, max_a 0)
+			| -3 (* AC *) -> if simp then Heuristic1(sum_ac_mono 0, max_ac_simp 0) else Heuristic1(sum_ac 0 Pos, max_ac 0)
+			| -2 (* C  *) -> if simp then Heuristic1(sum_ac_mono 0, max_c_simp 0) else Heuristic1(sum_ac 0 Pos, max_c 0)
+			| -1 (* A  *) -> if simp then Heuristic1(sum_ac_mono 0, max_ac_simp 0) else Heuristic1(sum_a 0 Pos, max_a 0)
 			| 0 -> Var Pos
 			| 1 -> arg simp (Arg(-1,0)) +? Var Pos
 			| _ -> Heuristic1(SumArgs(arg simp (Arg(-1,0))) +? Var Pos, MaxArgs(arg simp (Arg(-1,0) +? Var Pos)))
@@ -118,9 +118,9 @@ let max_sum_weight ~maxarity ~simp =
 	]
 let neg_max_sum_weight ~maxarity =
 	[	Pos, O_strict, "MaxSum", ArityChoice(function
-			| -3 (* AC *) -> Heuristic1(sum_ac 0, max_ac 0)
-			| -2 (* C  *) -> Heuristic1(sum_ac 0, max_c 0)
-			| -1 (* A  *) -> Heuristic1(sum_a 0, max_a 0)
+			| -3 (* AC *) -> Heuristic1(sum_ac 0 Pos, max_ac 0)
+			| -2 (* C  *) -> Heuristic1(sum_ac 0 Pos, max_c 0)
+			| -1 (* A  *) -> Heuristic1(sum_a 0 Pos, max_a 0)
 			| 0 -> Var Pos
 			| 1 -> Max[(Var Bool *? Arg(0,0)) +? Var Full; Const 0]
 			| _ -> Heuristic1(
@@ -144,9 +144,9 @@ let bmat_weight ~mono ~simp ~dim =
 	in
 	List.init dim (fun j ->
 		(Pos, (if j = 0 then O_strict else O_weak), "Sum-Sum", ArityChoice(function
-				| -3 (* AC *) -> sum_ac j
-				| -2 (* C *) -> sum_ac j
-				| -1 (* A  *) -> sum_a j
+				| -3 (* AC *) -> sum_ac j Pos
+				| -2 (* C  *) -> sum_ac j Pos
+				| -1 (* A  *) -> sum_a j Pos
 				| _ -> SumArgs(Sum(List.init dim entry)) +? Var Pos
 			)
 		)
@@ -432,13 +432,23 @@ let default smt = (
 		order_params smt (bmat_weight ~mono:false ~simp:false ~dim:2);
 		order_params smt [
 			(Pos, O_strict, "Sum-Sum", ArityChoice(function
+				| -3 | -2 (* A?C *) -> sum_ac 0 Pos
+				| -1 (* A  *) -> sum_a 0 Pos
 				| 0 -> Var Pos
 				| _ -> Max[SumArgs((Var Bool *? Arg(-1,0)) +? (Var Bool *? Arg(-1,1))) +? Var Full; Const 0]
 			) );
-			(Neg, O_weak, "Sum", SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
+			(Neg, O_weak, "Sum", ArityChoice(function
+				| -3 | -2 (* A?C *) -> sum_ac 0 Neg
+				| -1 (* A  *) -> sum_a 0 Neg
+				| 0 -> Var Pos
+				| _ -> SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg
+			) );
 		];
 		order_params smt [
 			(Pos, O_strict, "MaxSum-Sum", ArityChoice(function
+				| -3 (* AC *) -> Heuristic1(sum_ac 0 Pos, max_ac 0)
+				| -2 (* C  *) -> Heuristic1(sum_ac 0 Pos, max_c 0)
+				| -1 (* A  *) -> Heuristic1(sum_a 0 Pos, max_a 0)
 				| 0 -> Var Pos
 				| 1 -> Max[(Var Bool *? Arg(0,0)) +? (Var Bool *? Arg(0,1)) +? Var Full; Const 0]
 				| _ -> Heuristic1 (
@@ -456,7 +466,12 @@ let default smt = (
 						Const 0
 					]
 			) ) );
-			(Neg, O_weak, "Sum", SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg);
+			(Neg, O_weak, "Sum", ArityChoice(function
+				| -3 | -2 (* A?C *) -> sum_ac 0 Neg
+				| -1 (* A  *) -> sum_a 0 Neg
+				| 0 -> Var Pos
+				| _ -> SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg
+			) );
 		];
 	], [
 	], 3),

@@ -54,7 +54,7 @@ end
 let var_sym name = new sym_unmarked Var name
 
 let mark_name name = " #" ^ name
-let marked_name name = String.sub name 0 2 = " #"
+let marked_name name = name.[0] = ' ' && name.[1] = '#'
 let unmark_name name = String.sub name 2 (String.length name - 2)
 
 

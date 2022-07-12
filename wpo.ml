@@ -126,37 +126,39 @@ module Make(P : WPO_PARAMS) = struct
     fun h s -> smt_not (small_head h s)
   in
   let comparg_ac =
-    fun context order h ss ts ->
-    let ss, ts = delete_common ac_eq ss ts in
-    let nss = List.length ss in
-    let nts = List.length ts in
-    (* variables in ss may not contribute to other than length *)
-    let ss = delete_variables ss in
-    (* for efficiency *)
-    let nxs = List.length ss in
-    let nys = nts in
-    let xa = Array.of_list ss in
-    let ya = Array.of_list ts in
-    let compa = Array.init nxs
-      (fun i -> Array.init nys
-        (fun j -> context#refer Smt.(Prod(Bool,Bool)) (order xa.(i) ya.(j)))
-      )
-    in
-    compose
-    (
-      let ifilter i = no_small_head h xa.(i-1) in
-      let jfilter j = no_small_head h ya.(j-1) in
-      filtered_mset_extension_body ifilter jfilter nxs nys compa
-    )
-    (
-      if nss > nts then
-        strictly_ordered
-      else if nss < nts then
-        not_ordered
-      else
-        let ifilter i = small_head h xa.(i-1) in
-        let jfilter j = small_head h ya.(j-1) in
+    fun order h ss ts ->
+    Delay (fun context ->
+      let ss, ts = delete_common ac_eq ss ts in
+      let nss = List.length ss in
+      let nts = List.length ts in
+      (* variables in ss may not contribute to other than length *)
+      let ss = delete_variables ss in
+      (* for efficiency *)
+      let nxs = List.length ss in
+      let nys = nts in
+      let xa = Array.of_list ss in
+      let ya = Array.of_list ts in
+      let compa = Array.init nxs
+        (fun i -> Array.init nys
+          (fun j -> context#refer Smt.(Prod(Bool,Bool)) (order xa.(i) ya.(j)))
+        )
+      in
+      compose
+      (
+        let ifilter i = no_small_head h xa.(i-1) in
+        let jfilter j = no_small_head h ya.(j-1) in
         filtered_mset_extension_body ifilter jfilter nxs nys compa
+      )
+      (
+        if nss > nts then
+          strictly_ordered
+        else if nss < nts then
+          not_ordered
+        else
+          let ifilter i = small_head h xa.(i-1) in
+          let jfilter j = small_head h ya.(j-1) in
+          filtered_mset_extension_body ifilter jfilter nxs nys compa
+      )
     )
   in
   (* For AC-RPO.
@@ -209,64 +211,67 @@ module Make(P : WPO_PARAMS) = struct
     in
     fun fname args -> sub fname (LB true) [] [] args
   in
-  let rec ac_rpo_compargs = 
-    fun context order fname f ss ts ->
-    let mapper (scw,scs,ss') =
-      (context#refer Smt.Bool scw, context#refer Smt.Bool scs, ss')
-    in
-    let sss = List.map mapper (emb_candidates context fname ss) in
-    let tss = List.map mapper (emb_candidates context fname ts) in
-
-    let rec step2 =
-      fun ge gt ss' tss ->
-    match tss with
-    | [] ->
-      (* ge to all proper embedding is a condition for gt *)
-      (ge, ge &^ gt)
-    | (tcw,tcs,ts') :: tss ->
-      if tcw = LB false then
-        (* this is not even a weak embedding, so don't care *)
-        step2 ge gt ss' tss
-      else if tcs = LB false then
-        (* this is at best \pi(t), so go real comparison *)
-        let Cons(ge2,gt2) = (comparg_ac context order f ss' ts') in
-        let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
-        step2 ge gt ss' tss
-      else
-        let Cons(ge3,gt3) = ac_rpo_compargs context order fname f ss' ts' in
-        let (ge,gt) =
-          (ge &^ (tcw =>^ smt_if tcs gt3 ge3),
-           gt |^ (tcw =>^ (smt_not tcs &^ gt3)))
-        in
-        step2 ge gt ss' tss
-    in
-    let rec step1 ge gt sss =
-    match sss with
-    | [] ->
-      (ge,gt)
-    | (scw,scs,ss') :: sss ->
-      if scw = LB false then
-        (* this is not even a weak embedding, so don't care *)
-        step1 ge gt sss
-      else if scs = LB false then
-        (* this is at best only weak embedding, so go to the next step *)
-        let (ge2,gt2) = step2 (LB true) (LB false) ss' tss in
-        let (ge,gt) = (ge |^ (scw &^ ge2), gt |^ (scw &^ gt2)) in
-        step1 ge gt sss
-      else
-        let Cons(ge3,gt3) = ac_rpo_compargs context order fname f ss' ts in
-        (* if this is strict embedding, weak order results strict order *)
-        step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
-    in
-    let (ge,gt) = step1 (LB false) (LB false) sss in
-    Cons(ge,gt);
+  let rec ac_rpo_compargs order fname f ss ts =
+    Delay (fun context ->
+      let mapper (scw,scs,ss') =
+        (context#refer Smt.Bool scw, context#refer Smt.Bool scs, ss')
+      in
+      let sss = List.map mapper (emb_candidates context fname ss) in
+      let tss = List.map mapper (emb_candidates context fname ts) in
+      let rec step2 =
+        fun ge gt ss' tss ->
+      match tss with
+      | [] ->
+        (* ge to all proper embedding is a condition for gt *)
+        Cons(ge, ge &^ gt)
+      | (tcw,tcs,ts') :: tss ->
+        if tcw = LB false then
+          (* this is not even a weak embedding, so don't care *)
+          step2 ge gt ss' tss
+        else if tcs = LB false then
+          (* this is at best \pi(t), so go real comparison *)
+          smt_split (comparg_ac order f ss' ts') (fun ge2 gt2 ->
+            let (ge,gt) = (ge &^ (tcw =>^ ge2), gt |^ (tcw =>^ gt2)) in
+            step2 ge gt ss' tss
+          )
+        else
+          smt_split (ac_rpo_compargs order fname f ss' ts') (fun ge3 gt3 ->
+            let (ge,gt) =
+              (ge &^ (tcw =>^ smt_if tcs gt3 ge3),
+               gt |^ (tcw =>^ (smt_not tcs &^ gt3)))
+            in
+            step2 ge gt ss' tss
+          )
+      in
+      let rec step1 ge gt sss =
+      match sss with
+      | [] ->
+        Cons(ge,gt)
+      | (scw,scs,ss') :: sss ->
+        if scw = LB false then
+          (* this is not even a weak embedding, so don't care *)
+          step1 ge gt sss
+        else if scs = LB false then
+          (* this is at best only weak embedding, so go to the next step *)
+          smt_split (step2 (LB true) (LB false) ss' tss) (fun ge2 gt2 ->
+            let (ge,gt) = (ge |^ (scw &^ ge2), gt |^ (scw &^ gt2)) in
+            step1 ge gt sss
+          )
+        else
+          smt_split (ac_rpo_compargs order fname f ss' ts) (fun ge3 gt3 ->
+            (* if this is strict embedding, weak order results strict order *)
+            step1 (ge |^ (scw &^ ge3)) (gt |^ (scw &^ smt_if scs ge3 gt3)) sss
+          )
+      in
+      step1 (LB false) (LB false) sss
+    )
   in
   let flat_compargs =
-    fun f g order ss ts context ->
+    fun f g order ss ts ->
       let fname = ac_unmark_name f#name in
       let gname = ac_unmark_name g#name in
       if fname = gname then
-        ac_rpo_compargs context order fname f ss ts
+        ac_rpo_compargs order fname f ss ts
       else not_ordered
   in
   (* compargs for f and g *)
@@ -280,10 +285,7 @@ module Make(P : WPO_PARAMS) = struct
     | Th "A", Th "A"
     | Th "AC", Th "AC"  -> fun order ss ts ->
       smt_if (finfo#mapped 1)
-        (smt_if (ginfo#mapped 1)
-          (Delay (flat_compargs f g order ss ts))
-          strictly_ordered
-        )
+        (smt_if (ginfo#mapped 1) (flat_compargs f g order ss ts) strictly_ordered)
         (smt_if (ginfo#mapped 1) weakly_ordered not_ordered)
     | _ -> fun _ _ _ -> not_ordered
   in
