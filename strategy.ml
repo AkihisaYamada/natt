@@ -440,7 +440,7 @@ let default smt = (
 			(Neg, O_weak, "Sum", ArityChoice(function
 				| -3 | -2 (* A?C *) -> sum_ac 0 Neg
 				| -1 (* A  *) -> sum_a 0 Neg
-				| 0 -> Var Pos
+				| 0 -> Var Neg
 				| _ -> SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg
 			) );
 		];
@@ -469,7 +469,7 @@ let default smt = (
 			(Neg, O_weak, "Sum", ArityChoice(function
 				| -3 | -2 (* A?C *) -> sum_ac 0 Neg
 				| -1 (* A  *) -> sum_a 0 Neg
-				| 0 -> Var Pos
+				| 0 -> Var Neg
 				| _ -> SumArgs(Var Bool *? Arg(-1,1)) +? Var Neg
 			) );
 		];
