@@ -97,7 +97,10 @@ class trs =
 			fun f ->
 				let f' = new sym_detailed (f:>sym) in
 				Hashtbl.add sym_table f#name f';
-				if f#is_var then f'#set_arity 0 else fun_cnt <- fun_cnt + 1;
+				(match f#ty with
+				| Var -> f'#set_arity 0
+				| Fun -> fun_cnt <- fun_cnt + 1;
+				| Th th -> ths <- Ths.add th ths; fun_cnt <- fun_cnt + 1;);
 				f'
 		method get_sym_name name cls =
 			try Hashtbl.find sym_table name
@@ -250,22 +253,18 @@ class trs =
 				return (Node((f:>sym),ss))
 			)
 		) xmls
-		method input_syms =
-			element "syms" (
-				many (
-					element "sym" (
-						attribute "theory" >>= fun th ->
-						string >>= fun name ->
-						if th = "AC" || th = "A" || th = "C" then
-						(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th));
-						return ()
-					) <|>
-					element "var" (
-						string >>= fun s ->
-						x#add_sym (new sym_unmarked Var s);
-						return ()
-					)
-				)
+		method input_sym_decl =
+			element "sym" (
+				attribute "theory" >>= fun th ->
+				string >>= fun name ->
+				if th = "AC" || th = "A" || th = "C" then
+				(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th));
+				return ()
+			) <|>
+			element "var" (
+				string >>= fun s ->
+				ignore (x#add_sym (new sym_unmarked Var s));
+				return ()
 			)
 		method input_rule =
 			element "rule" (
@@ -493,11 +492,11 @@ let problem_xml trs =
 			| Some ct -> raise (No_support ("condition-type: " ^ ct))
 		) >>= fun _ ->
 		optional (attribute "problem") >>= fun pto ->
-		optional trs#input_syms >>= fun _ ->
+		many trs#input_sym_decl >>= fun _ ->
 		many trs#input_rule >>= fun _ ->
 		optional (
 			element "infeasibility" (
-				optional trs#input_syms >>= fun _ ->
+				many trs#input_sym_decl >>= fun _ ->
 				many (
 					element "cond" (
 						trs#term_element >>= fun l ->

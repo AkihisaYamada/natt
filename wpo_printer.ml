@@ -117,18 +117,6 @@ class t p (solver:#solver) sigma (interpreter:#Weight.interpreter) =
           put_status finfo
         ) pr
       in
-      let put_inte e =
-        MyXML.enclose_inline "coefficient" (MyXML.enclose_inline "integer" (put_int (smt_eval_int e)))
-      in
-      let put_vec es =
-        MyXML.enclose "vector" (fun pr -> List.iter (fun e -> put_inte e pr) es)
-      in
-      let put_mat ess =
-        MyXML.enclose "matrix" (fun pr -> List.iter (fun es -> put_vec es pr) (Matrix.trans ess))
-      in
-      let put_coef e =
-        MyXML.enclose "polynomial" (put_inte e)
-      in
       let pr_interpret pr _ (finfo:wpo_sym) =
         MyXML.enter "interpret" pr;
 (*

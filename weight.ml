@@ -112,9 +112,11 @@ let eq_1_template =
 let ge_0_template =
 	let rec sub w =
 		match w with
-		| BVar(_,Pos) | BVar(_,Bool) -> LB true
-		| BVar(_,Neg) -> LB false
-		| BVar(_,Full) -> LB false (* incomplete *)
+		| BVar(_,ran) ->
+			LB (match ran with
+				| Pos | Bool -> true
+				| Neg | Full -> false (* incomplete *)
+			)
 		| Smt e -> e >=^ LI 0
 		| Prod ws -> LB true (* don't support negative in products *)
 		| Sum ws -> smt_list_for_all sub ws (* cancellation is not considered *)
@@ -392,6 +394,7 @@ let ge_poly_coeffs =
 		| Some e1, Some e2 -> ge_monom vs e1 e2
 		| Some e1, None    -> ge_monom vs e1 (LI 0)
 		| None   , Some e2 -> ge_monom vs (LI 0) e2
+		| _ -> assert false
 		)
 	in
 	fun p1 p2 -> Poly.(bindings (merge merger p1 p2))
@@ -433,6 +436,7 @@ let eq_poly =
 		| Some e1, Some e2 -> e1 =^ e2
 		| Some e1, None    -> e1 =^ (LI 0)
 		| None   , Some e2 -> (LI 0) =^ e2
+		| _ -> assert false
 		)
 	in
 	fun p1 p2 -> smt_list_for_all (fun (vs,e) -> e) Poly.(bindings (merge merger p1 p2))
@@ -579,6 +583,10 @@ class interpreter p =
 						"w_" ^ f#name ^ "_" ^ string_of_int cnt
 				end in
 				let n = f#arity in
+				let thy_n = match f#ty with
+					| Th th -> (match th with "A" -> -1 | "C" -> -2 | "AC" -> -3 | _ -> assert false)
+					| _ -> n
+				in
 				let to_n = int_list 0 (n-1) in
 				let rec sub k t =
 					match t with
@@ -610,7 +618,8 @@ class interpreter p =
 					| Strategy.SumArgs t -> sum_template (List.map (fun l -> sub l t) to_n)
 					| Strategy.MaxArgs t -> max_template (List.map (fun l -> sub l t) to_n)
 					| Strategy.Heuristic1(t1,t2) -> sub k (if heu#sym_mode f#name then t2 else t1)
-					| Strategy.ArityChoice fn -> sub k (fn n)
+					| Strategy.ArityChoice fn -> sub k (fn thy_n)
+					| _ -> assert false
 				in
 				let vec = Array.map (fun (range,order,n,t) -> sub 0 t) p.w_templates in
 				Hashtbl.add table f#name {

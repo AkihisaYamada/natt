@@ -2,8 +2,8 @@ BUILD=_build
 TARG=bin/NaTT
 TARG_OPT=bin/NaTT.exe
 PACKS=unix,str,re,ocamlgraph,xml-light
-OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg -I $(BUILD) -g
-OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg -I $(BUILD) -g
+OCAMLC=ocamlfind ocamlc -package $(PACKS) -linkpkg -I $(BUILD) -g -w -8
+OCAMLOPT=ocamlfind ocamlopt -package $(PACKS) -linkpkg -I $(BUILD) -g -w -8
 OCAMLDEP=ocamldep
 OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool" -I $(BUILD)
 

@@ -76,7 +76,6 @@ module SubComponents = Graph.Components.Make(SubDG)
 
 class dg (trs : trs) (estimator : Estimator.t) =
 	(* list of lists to list of sets *)
-	let ll2ls = List.map (List.fold_left (fun s e -> IntSet.add e s) IntSet.empty) in
 	object (x)
 		val mutable minimal = true
 		val dp_table = Hashtbl.create 256

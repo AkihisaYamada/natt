@@ -2,7 +2,7 @@ open Util
 open Txtr
 open Io
 
-type range = Pos | Bool | Full | Neg | Arctic
+type range = Pos | Bool | Full | Neg
 
 let put_range ty range =
 	match ty, range with
@@ -13,8 +13,7 @@ let put_range ty range =
 	| Smt.Real, Neg -> puts "NegReal"
 	| Smt.Real, Full -> puts "Real"
 	| _, Bool -> puts "Bool"
-	| _, Arctic -> puts "Arctic"
-
+	| _ -> assert false
 
 type template =
 | Const of int
@@ -29,10 +28,11 @@ type template =
 | SumArgs of template
 | MaxArgs of template
 | Heuristic1 of template * template
-| ArityChoice of (int -> template)
+| ArityChoice of (int -> template) (* Arity -1,-2,-3 will encode A,C,AC *)
 
 let ( *?) s t = Prod[s;t]
 let (+?) s t = Sum[s;t]
+let (|?) s t = Max[s;t]
 
 type order_mode =
 | O_strict
@@ -47,31 +47,65 @@ let put_order_mode = function
 
 let arg mono x = if mono then x else Var Bool *? x
 
+let sum_ac_mono i = Arg(0,i) +? Arg(1,i) +? Var Pos
+let sum_ac i = (Var Bool *? (Arg(0,i) +? Arg(1,i))) +? Var Pos
+let sum_a i = (Var Bool *? Arg(0,i)) +? (Var Bool *? Arg(1,i)) +? Var Pos
+let max_ac_simp i = Arg(0,i) |? Arg(1,i) |? Var Pos
+let max_ac i = Var Bool *? (Arg(0,i) |? Arg(1,i)) |? Var Pos
+let max_c_simp i = (Arg(0,i) |? Arg(1,i)) +? Var Pos
+let max_c i = Var Bool *? (Arg(0,i) |? Arg(1,i)) +? Var Pos
+let max_a i = (Var Bool *? Arg(0,i)) |? (Var Bool *? Arg(1,i)) |? Var Pos
+
 let sum_weight ~mono =
-	[Pos, O_strict, "Sum", SumArgs(arg mono (Arg(-1,0))) +? Var Pos]
+	[Pos, O_strict, "Sum", ArityChoice(fun a ->
+			if a >= 0 then SumArgs(arg mono (Arg(-1,0)) +? Var Pos)
+			else if mono then sum_ac_mono 0
+			else if a = -1 (* A *) then sum_a 0
+			else sum_ac 0 (* AC/C *)
+		)
+	]
+let coeff12 = Choice[Const 2; Const 1]
+
 let mono_bpoly_weight =
-	[Pos, O_strict, "Poly", SumArgs(Choice[Const 2; Const 1] *? Arg(-1,0)) +? Var Pos]
-let max_weight ~mono =
+	[Pos, O_strict, "Poly", ArityChoice(fun a ->
+			if a >= 0 then SumArgs((coeff12 *? Arg(-1,0)) +? Var Pos)
+			else if a = -1 (* A *) then (coeff12 *? Arg(0,0)) +? (coeff12 *? Arg(1,0)) +? Var Pos
+			else if a = -2 (* C *) then coeff12 *? (Arg(0,0) +? Arg(1,0)) +? Var Pos
+			else (* AC *) sum_ac_mono 0
+		)
+	]
+let max_weight ~simp =
 	[Pos, O_strict, "Max", ArityChoice(function
+			| -3 (* AC *) -> if simp then max_ac_simp 0 else max_ac 0
+			| -2 (* C *)  -> if simp then max_c_simp 0 else max_c 0
+			| -1 (* A *)  -> if simp then max_ac_simp 0 else max_a 0
 			| 0 -> Var Pos
-			| 1 -> arg mono (Arg (0,0)) +? Var Pos
-			| _ -> MaxArgs(arg mono (Arg(-1,0) +? Var Pos))
+			| 1 -> arg simp (Arg (0,0)) +? Var Pos
+			| _ -> MaxArgs(arg simp (Arg(-1,0) +? Var Pos))
 		)
 	]
 let neg_sum_weight =
 	[	Pos, O_strict, "Sum", ArityChoice(function
+			| -3 | -2 (* AC/C *)  -> sum_ac 0
+			| -1 (* A *)  -> sum_a 0
 			| 0 -> Var Pos
-			| _ -> Max[SumArgs(Var Bool *? Arg(-1,0)) +? Var Full; Const 0]
+			| _ -> (SumArgs(Var Bool *? Arg(-1,0)) +? Var Full) |? Const 0
 		)
 	]
 let neg_max_weight =
 	[	Pos, O_strict, "Max", ArityChoice(function
+			| -3 (* AC *) -> max_ac 0
+			| -2 (* C *)  -> max_c 0
+			| -1 (* A *)  -> max_a 0
 			| 0 -> Var Pos
-			| _ -> Max[MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full)); Const 0]
+			| _ -> (MaxArgs(Var Bool *? (Arg(-1,0) +? Var Full))) |? Const 0
 		)
 	]
-let max_sum_weight ?(maxarity=0) ~simp =
+let max_sum_weight ~maxarity ~simp =
 	[	Pos, O_strict, "MaxSum", ArityChoice(function
+			| -3 (* AC *) -> if simp then Heuristic1(sum_ac_mono 0, max_ac_simp 0) else Heuristic1(sum_ac 0, max_ac 0)
+			| -2 (* C  *) -> if simp then Heuristic1(sum_ac_mono 0, max_c_simp 0) else Heuristic1(sum_ac 0, max_c 0)
+			| -1 (* A  *) -> if simp then Heuristic1(sum_ac_mono 0, max_ac_simp 0) else Heuristic1(sum_a 0, max_a 0)
 			| 0 -> Var Pos
 			| 1 -> arg simp (Arg(-1,0)) +? Var Pos
 			| _ -> Heuristic1(SumArgs(arg simp (Arg(-1,0))) +? Var Pos, MaxArgs(arg simp (Arg(-1,0) +? Var Pos)))
@@ -84,6 +118,9 @@ let max_sum_weight ?(maxarity=0) ~simp =
 	]
 let neg_max_sum_weight ~maxarity =
 	[	Pos, O_strict, "MaxSum", ArityChoice(function
+			| -3 (* AC *) -> Heuristic1(sum_ac 0, max_ac 0)
+			| -2 (* C  *) -> Heuristic1(sum_ac 0, max_c 0)
+			| -1 (* A  *) -> Heuristic1(sum_a 0, max_a 0)
 			| 0 -> Var Pos
 			| 1 -> Max[(Var Bool *? Arg(0,0)) +? Var Full; Const 0]
 			| _ -> Heuristic1(
@@ -106,7 +143,13 @@ let bmat_weight ~mono ~simp ~dim =
 		(if simp || (mono && j = 0) then (Choice[Const 2; Const 1]) else Var Bool) *? Arg(-1,j)
 	in
 	List.init dim (fun j ->
-		(Pos, (if j = 0 then O_strict else O_weak), "Sum-Sum", SumArgs(Sum(List.init dim entry)) +? Var Pos)
+		(Pos, (if j = 0 then O_strict else O_weak), "Sum-Sum", ArityChoice(function
+				| -3 (* AC *) -> sum_ac j
+				| -2 (* C *) -> sum_ac j
+				| -1 (* A  *) -> sum_a j
+				| _ -> SumArgs(Sum(List.init dim entry)) +? Var Pos
+			)
+		)
 	)
 
 let range_attribute =
@@ -172,20 +215,20 @@ let weight_element ~mono ~simp =
 	element "poly" (return (mono_bpoly_weight)) <|>
 	element "sum" (
 		default false (bool_attribute "neg") >>= fun neg ->
-		return (if neg then neg_sum_weight else sum_weight mono)
+		return (if neg then neg_sum_weight else sum_weight ~mono)
 	) <|>
 	element "max" (
 		default false (bool_attribute "neg") >>= fun neg ->
-		return (if neg then neg_max_weight else max_weight mono)
+		return (if neg then neg_max_weight else max_weight ~simp:mono)
 	) <|>
 	element "maxSum" (
 		if mono && not simp then fatal (puts "not allowed in rule removal") else
 		default false (bool_attribute "neg") >>= fun neg ->
 		default 4 (int_attribute "maxArity") >>= fun m ->
-		return (if neg then neg_max_sum_weight ~maxarity:m else max_sum_weight ~maxarity:m ~simp)) <|>
+		return (if neg then neg_max_sum_weight ~maxarity:m else max_sum_weight ~simp ~maxarity:m)) <|>
 	element "matrix" (
 		mandatory (int_attribute "dim") >>= fun dim ->
-		return (bmat_weight mono simp dim)
+		return (bmat_weight ~mono ~simp ~dim)
 	) <|>
 		many_i template_entry_element
 
@@ -270,7 +313,7 @@ let order_params
 }
 
 let put_templates_name ty templates pr =
-	Array.fold_left (fun pre (range,order,name,template) ->
+	ignore (Array.fold_left (fun pre (range,order,name,template) ->
 		pr#puts pre;
 		put_range ty range pr;
 		pr#putc ',';
@@ -278,7 +321,7 @@ let put_templates_name ty templates pr =
 		pr#putc ',';
 		pr#puts name;
 		"; "
-	) "(" templates;
+	) "(" templates);
 	pr#puts ")"
 
 let put_order p =
@@ -335,6 +378,7 @@ let order_element default_smt ~mono =
 				| "all" -> (true,true)
 				| "weight" -> (false,true)
 				| "wpo" -> (true,false)
+				| _ -> assert false
 			)
 		) >>= fun (quantify_wpo, quantify_weight) ->
 		default true (bool_attribute "linear") >>= fun linear ->
@@ -381,7 +425,7 @@ let default smt = (
 	[order_params smt ~dp:false mono_bpoly_weight],
 	true, Some ( [
 		order_params smt (sum_weight ~mono:false);
-		order_params smt (max_weight ~mono:false);
+		order_params smt (max_weight ~simp:false);
 		order_params smt ~prec_mode:PREC_quasi ~prec_partial:true ~status:S_partial [];
 		order_params smt (neg_max_sum_weight ~maxarity:0);
 		order_params smt ~prec_mode:PREC_quasi ~prec_partial:true ~status:S_partial (max_sum_weight ~simp:false ~maxarity:0);

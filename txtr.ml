@@ -109,7 +109,7 @@ let many_i ?(minOccurs = 0) ?(maxOccurs = -1) =
 		else
 			match if i < minOccurs then mandatory (p i) elm else p i elm with
 			| Parse(v,elm') -> sub (i+1) (v::acc) p elm'
-			| Mismatch _ as ret -> Parse(List.rev acc, elm)
+			| Mismatch _ -> Parse(List.rev acc, elm)
 			| Fatal err -> Fatal err
 	in
 	sub 0 []

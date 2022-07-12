@@ -99,7 +99,6 @@ let err msg =
 in
 let argv = Sys.argv in
 let argc = Array.length argv in
-let progdir = Filename.dirname Sys.executable_name in
 let prerr_help () =
   let pr = prerr_string in
   let pe = prerr_endline in

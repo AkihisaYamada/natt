@@ -97,6 +97,7 @@ class virtual t (trs:#trs) = object (x)
 					List.map (cu_append (c,u)) st @ ret
 				in
 				List.fold_right folder cus []
+			| _ -> assert false
 
 	method instantiate_path :
 	'a. int -> sym term -> sym term -> (int * sym Subst.t) list =
@@ -187,7 +188,7 @@ let sym_trans (trs:#trs) : t =
 	object (x)
 		inherit t trs
 		method may_reach_0 : 'a 'b. (#sym as 'a) term -> (#sym as 'b) term -> bool =
-			fun (Node(f,ss) as s) (Node(g,ts) as t) -> trans_sym f g
+			fun (Node(f,_)) (Node(g,_)) -> trans_sym f g
 		method output : 'a. (#Io.printer as 'a) -> unit = fun pr ->
 			pr#puts "Symbol transition graph:";
 			pr#enter 4;

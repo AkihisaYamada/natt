@@ -694,13 +694,8 @@ class t =
       match finfo#base#ty with
       | Th th ->
         if th = "C" || th = "AC" then begin
-(*          if Array.for_all (fun cp -> cp.template = TEMP_sum || cp.addend_mode <> W_none) p.w_templates
-          then begin
-            sub_c fname finfo;
-          end else *) begin
-            (* in this case, we cannot ensure monotonicity... *)
-            finfo#set_status_mode S_empty;
-          end
+          (* We assume weights are theory compatible *)
+          sub_c fname finfo;
         end else begin
           sub_lex fname finfo finfo#base#arity to_n;
         end
@@ -755,8 +750,6 @@ class t =
 
     (* for status *)
     add_mset_status fname finfo;
-
-    let fp = finfo#prec in
 
     for i = 1 to n do
       let pi = finfo#permed i in
