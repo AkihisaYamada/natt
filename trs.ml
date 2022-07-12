@@ -31,6 +31,7 @@ class sym_detailed (f : sym) =
 		method original = f
 		method arity_is_unknown = arity = Unknown
 		method set_arity a = arity <- Arity a
+		method set_theory th = ty <- Th th
 		method arity =
 			match arity with
 			| Arity a -> a
@@ -115,6 +116,9 @@ class trs =
 		method find_sym : 'b. (#sym as 'b) -> sym_detailed =
 			fun f ->
 				try Hashtbl.find sym_table f#name with Not_found -> new sym_detailed (f:>sym)
+		method set_theory fname th =
+			ths <- Ths.add th ths;
+			(x#find_sym_name fname)#set_theory th;
 		method iter_syms : (sym_detailed -> unit) -> unit =
 			fun iterer -> Hashtbl.iter (fun _ f -> iterer f) sym_table
 		method iter_funs : (sym_detailed -> unit) -> unit =
@@ -254,7 +258,7 @@ class trs =
 			)
 		) xmls
 		method input_sym_decl =
-			element "sym" (
+			element "fun" (
 				attribute "theory" >>= fun th ->
 				string >>= fun name ->
 				if th = "AC" || th = "A" || th = "C" then
@@ -484,7 +488,7 @@ let path_append (c1,is1) (c2,is2) = (c1 + c2, is1 @ is2)
 let cu_append (c1,u1) (c2,u2) = (c1 + c2, u1#compose u2)
 
 
-let problem_xml trs =
+let problem_xml (trs : trs) =
 	element "trs" (
 		optional (attribute "condition-type") >>= fun cto ->
 		(	match cto with
@@ -511,7 +515,20 @@ let problem_xml trs =
 	element "problem" ((* XTC format *)
 		element "trs" (
 			trs#input_rules_xtc >>= fun _ ->
-			element "signature" (many any) >>= fun _ ->
+			element "signature" (
+				many (
+					element "funcsym" (
+						element "name" string >>= fun fname ->
+						element "arity" int >>= fun _ ->
+						optional (element "theory" string >>= fun th ->
+							if th = "A" || th = "C" || th = "AC" then
+								return (trs#set_theory fname th)
+							else raise (No_support ("theory " ^ th))
+						) >>= fun _ ->
+						return ()
+					)
+				)
+			) >>= fun _ ->
 			optional (element "comment" (many any)) >>= fun _ ->
 			return ()
 		) >>= fun _ ->

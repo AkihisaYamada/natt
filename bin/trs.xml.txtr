@@ -16,9 +16,9 @@
 			<value-of select="sym"/>
 		</element>
 	</class>
-	<class name="theory-sym-decl">
+	<class name="theory-fun-decl">
 		<call ref="symbol" as="s"/>
-		<element name="sym">
+		<element name="fun">
 			<attribute name="theory">
 				<value-of select="th"/>
 			</attribute>
@@ -27,7 +27,7 @@
 	</class>
 	<class name="theory-decl">
 			<match as="th">\((AC|A|C)\s+</match>
-			<call ref="theory-sym-decl" minOccurs="0" maxOccurs="unbounded">
+			<call ref="theory-fun-decl" minOccurs="0" maxOccurs="unbounded">
 				<element name="th"><value-of select="th/group[1]"/></element>
 			</call>
 			<match>\)\s*</match>

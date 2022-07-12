@@ -51,6 +51,9 @@ all: $(TARG_OPT)
 install: all
 	cp -f $(TARG_OPT) xtc2tpdb.xml /usr/local/bin/
 
+$(BUILD):
+	mkdir $(BUILD)
+
 $(TARG_OPT): $(OCAML_CMXS)
 	$(OCAMLOPT) -o $@ $(OCAMLFLAGS) $^
 
@@ -66,12 +69,12 @@ $(BUILD)/%.cmo: %.ml
 $(BUILD)/%.cmi: %.mli
 	$(OCAMLC) $(OCAMLFLAGS) -o $@ -c $<
 
-$(BUILD)/%.cmx: %.ml
+$(BUILD)/%.cmx: %.ml $(BUILD)
 	$(OCAMLOPT) $(OCAMLOPTFLAGS) -o $@ -c $<
 
 # Clean up
 clean:
-	rm -f $(TARG) $(TARG_OPT) $(BUILD)/*.{cm[iox],o,mli} .depend
+	rm -f $(TARG) $(TARG_OPT) $(BUILD) .depend
 
 # Consistency test
 test: $(TARG_OPT)

@@ -1,7 +1,7 @@
 Nagoya Termination Tool (NaTT)
 =============================================
 
-This is NaTT ver.2.2.
+This is NaTT ver.2.3.
 
 ## Compilation ##
 
@@ -19,7 +19,7 @@ The command line of NaTT is in the following syntax:
 ./bin/NaTT.exe [file] [option]...
 ```
 The TRS whose termination should be verified is read from either the specified file or the standard input.
-The TRS format should follow the [XTC format](https://github.com/TermCOMP/TPDB/blob/master/xml/xtc.xsd) or [an original XML format](format.md), for the moment.
+The TRS format should follow the [XTC format](https://github.com/TermCOMP/TPDB/blob/master/xml/xtc.xsd) or [an original XML format](format.html), for the moment.
 
 To execute NaTT, an [SMT-LIB 2.0](http://smtlib.org) compliant solver must be installed. One can choose one by the following options:
 * `--z3`: [Z3](https://github.com/Z3Prover/z3) version 4.0 or later (default).
