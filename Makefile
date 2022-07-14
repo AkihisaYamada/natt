@@ -69,12 +69,12 @@ $(BUILD)/%.cmo: %.ml
 $(BUILD)/%.cmi: %.mli
 	$(OCAMLC) $(OCAMLFLAGS) -o $@ -c $<
 
-$(BUILD)/%.cmx: %.ml $(BUILD)
+$(BUILD)/%.cmx: %.ml
 	$(OCAMLOPT) $(OCAMLOPTFLAGS) -o $@ -c $<
 
 # Clean up
 clean:
-	rm -f $(TARG) $(TARG_OPT) $(BUILD) .depend
+	rm -rf $(TARG) $(TARG_OPT) $(BUILD) .depend
 
 # Consistency test
 test: $(TARG_OPT)

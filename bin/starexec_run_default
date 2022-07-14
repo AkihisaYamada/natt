@@ -1,5 +1,5 @@
 #!/bin/sh
 DIR=${0%/*}
 PATH=$DIR:$PATH
-NaTT.exe $OPT "$1" 2> "$2/stderr.txt"
+NaTT.exe "$1" 2> "$2/stderr.txt"
 cat $2/stderr.txt

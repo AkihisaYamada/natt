@@ -126,9 +126,7 @@
 		<call ref="comment" minOccurs="0" maxOccurs="unbounded"/>
 		<if test="prob/group[1] = 'INFEASIBILITY'">
 			<element name="infeasibility">
-				<element name="syms">
-					<call ref="syms" minOccurs="0" maxOccurs="unbounded"/>
-				</element>
+				<call ref="syms-decl" minOccurs="0" maxOccurs="unbounded"/>
 				<match>\(CONDITION\s+</match>
 				<call ref="conds"/>
 			</element>
