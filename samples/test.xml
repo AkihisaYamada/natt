@@ -1,22 +1,18 @@
 <trs>
-  <syms>
-    <var>x</var>
-    <var>y</var>
-    <var>z</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <var>y</var>
+  <var>z</var>
+  <rule>
+    <app>
+      <sym>f</sym>
       <app>
-        <sym>f</sym>
-        <app>
-          <sym>s</sym>
-          <sym>x</sym>
-        </app>
-      </app>
-      <app>
-        <sym>f</sym>
+        <sym>s</sym>
         <sym>x</sym>
       </app>
-    </rule>
-  </rules>
+    </app>
+    <app>
+      <sym>f</sym>
+      <sym>x</sym>
+    </app>
+  </rule>
 </trs>

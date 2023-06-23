@@ -1,0 +1,25 @@
+<trs>
+  <var>x</var>
+  <var>y</var>
+  <fun theory="AC">+</fun>
+  <fun theory="AC">*</fun>
+  <rule>
+    <app>
+      <sym>*</sym>
+      <sym>x</sym>
+      <app>
+        <sym>s</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+    <app>
+      <sym>+</sym>
+      <sym>x</sym>
+      <app>
+        <sym>*</sym>
+        <sym>x</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+  </rule>
+</trs>

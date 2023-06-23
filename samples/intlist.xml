@@ -1,54 +1,50 @@
 <trs>
-  <syms>
-    <var>x</var>
-    <var>y</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <var>y</var>
+  <rule>
+    <app>
+      <sym>p</sym>
       <app>
-        <sym>p</sym>
+        <sym>s</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <sym>x</sym>
+  </rule>
+  <rule>
+    <app>
+      <sym>intlist</sym>
+      <sym>x</sym>
+      <sym>0</sym>
+    </app>
+    <sym>nil</sym>
+  </rule>
+  <rule>
+    <app>
+      <sym>intlist</sym>
+      <sym>x</sym>
+      <app>
+        <sym>s</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+    <app>
+      <sym>cons</sym>
+      <sym>x</sym>
+      <app>
+        <sym>intlist</sym>
         <app>
           <sym>s</sym>
           <sym>x</sym>
         </app>
-      </app>
-      <sym>x</sym>
-    </rule>
-    <rule>
-      <app>
-        <sym>intlist</sym>
-        <sym>x</sym>
-        <sym>0</sym>
-      </app>
-      <sym>nil</sym>
-    </rule>
-    <rule>
-      <app>
-        <sym>intlist</sym>
-        <sym>x</sym>
         <app>
-          <sym>s</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-      <app>
-        <sym>cons</sym>
-        <sym>x</sym>
-        <app>
-          <sym>intlist</sym>
+          <sym>p</sym>
           <app>
             <sym>s</sym>
-            <sym>x</sym>
-          </app>
-          <app>
-            <sym>p</sym>
-            <app>
-              <sym>s</sym>
-              <sym>y</sym>
-            </app>
+            <sym>y</sym>
           </app>
         </app>
       </app>
-    </rule>
-  </rules>
+    </app>
+  </rule>
 </trs>

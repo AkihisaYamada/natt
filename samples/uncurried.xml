@@ -1,98 +1,94 @@
 <trs>
-  <syms>
-    <var>f</var>
-    <var>g</var>
-    <var>x</var>
-    <var>x3</var>
-    <var>x4</var>
-    <var>x5</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>f</var>
+  <var>g</var>
+  <var>x</var>
+  <var>x3</var>
+  <var>x4</var>
+  <var>x5</var>
+  <rule>
+    <app>
+      <sym>comp3</sym>
+      <sym>f</sym>
+      <sym>g</sym>
+      <sym>x</sym>
+    </app>
+    <app>
+      <sym>app</sym>
+      <sym>f</sym>
       <app>
-        <sym>comp3</sym>
-        <sym>f</sym>
+        <sym>app</sym>
         <sym>g</sym>
         <sym>x</sym>
       </app>
-      <app>
-        <sym>app</sym>
-        <sym>f</sym>
-        <app>
-          <sym>app</sym>
-          <sym>g</sym>
-          <sym>x</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>twice1</sym>
-        <sym>f</sym>
-      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>twice1</sym>
+      <sym>f</sym>
+    </app>
+    <app>
+      <sym>comp2</sym>
+      <sym>f</sym>
+      <sym>f</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>app</sym>
       <app>
         <sym>comp2</sym>
-        <sym>f</sym>
-        <sym>f</sym>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>app</sym>
-        <app>
-          <sym>comp2</sym>
-          <sym>x4</sym>
-          <sym>x3</sym>
-        </app>
-        <sym>x5</sym>
-      </app>
-      <app>
-        <sym>comp3</sym>
         <sym>x4</sym>
         <sym>x3</sym>
-        <sym>x5</sym>
       </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>app</sym>
-        <app>
-          <sym>comp1</sym>
-          <sym>x4</sym>
-        </app>
-        <sym>x5</sym>
-      </app>
-      <app>
-        <sym>comp2</sym>
-        <sym>x4</sym>
-        <sym>x5</sym>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>app</sym>
-        <app>
-          <sym>comp</sym>
-        </app>
-        <sym>x5</sym>
-      </app>
+      <sym>x5</sym>
+    </app>
+    <app>
+      <sym>comp3</sym>
+      <sym>x4</sym>
+      <sym>x3</sym>
+      <sym>x5</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>app</sym>
       <app>
         <sym>comp1</sym>
-        <sym>x5</sym>
+        <sym>x4</sym>
       </app>
-    </rule>
-    <rule>
+      <sym>x5</sym>
+    </app>
+    <app>
+      <sym>comp2</sym>
+      <sym>x4</sym>
+      <sym>x5</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>app</sym>
       <app>
-        <sym>app</sym>
-        <app>
-          <sym>twice</sym>
-        </app>
-        <sym>x5</sym>
+        <sym>comp</sym>
       </app>
+      <sym>x5</sym>
+    </app>
+    <app>
+      <sym>comp1</sym>
+      <sym>x5</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>app</sym>
       <app>
-        <sym>twice1</sym>
-        <sym>x5</sym>
+        <sym>twice</sym>
       </app>
-    </rule>
-  </rules>
+      <sym>x5</sym>
+    </app>
+    <app>
+      <sym>twice1</sym>
+      <sym>x5</sym>
+    </app>
+  </rule>
 </trs>

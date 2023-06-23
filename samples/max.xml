@@ -1,56 +1,52 @@
 <trs>
-  <syms>
-    <var>x</var>
-    <var>y</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <var>y</var>
+  <rule>
+    <app>
+      <sym>f</sym>
+      <sym>x</sym>
       <app>
-        <sym>f</sym>
-        <sym>x</sym>
+        <sym>g</sym>
         <app>
           <sym>g</sym>
-          <app>
-            <sym>g</sym>
-            <sym>y</sym>
-          </app>
-        </app>
-      </app>
-      <app>
-        <sym>g</sym>
-        <app>
-          <sym>f</sym>
-          <app>
-            <sym>g</sym>
-            <sym>y</sym>
-          </app>
-          <app>
-            <sym>g</sym>
-            <sym>y</sym>
-          </app>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>g</sym>
-        <app>
-          <sym>f</sym>
-          <app>
-            <sym>g</sym>
-            <sym>x</sym>
-          </app>
           <sym>y</sym>
         </app>
       </app>
+    </app>
+    <app>
+      <sym>g</sym>
       <app>
         <sym>f</sym>
-        <sym>x</sym>
+        <app>
+          <sym>g</sym>
+          <sym>y</sym>
+        </app>
+        <app>
+          <sym>g</sym>
+          <sym>y</sym>
+        </app>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>g</sym>
+      <app>
+        <sym>f</sym>
         <app>
           <sym>g</sym>
           <sym>x</sym>
         </app>
+        <sym>y</sym>
       </app>
-    </rule>
-  </rules>
+    </app>
+    <app>
+      <sym>f</sym>
+      <sym>x</sym>
+      <app>
+        <sym>g</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+  </rule>
 </trs>

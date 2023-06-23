@@ -1,47 +1,76 @@
 <trs>
-  <syms>
-    <var>n</var>
-    <var>m</var>
-    <var>L</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>n</var>
+  <var>m</var>
+  <var>L</var>
+  <rule>
+    <app>
+      <sym>ackloop</sym>
+      <sym>n</sym>
       <app>
-        <sym>ackloop</sym>
-        <sym>n</sym>
-        <app>
-          <sym>c</sym>
-          <sym>0</sym>
-          <sym>L</sym>
-        </app>
+        <sym>c</sym>
+        <sym>0</sym>
+        <sym>L</sym>
       </app>
+    </app>
+    <app>
+      <sym>ackloop</sym>
       <app>
-        <sym>ackloop</sym>
+        <sym>Suc</sym>
+        <sym>n</sym>
+      </app>
+      <sym>L</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>ackloop</sym>
+      <sym>0</sym>
+      <app>
+        <sym>c</sym>
         <app>
           <sym>Suc</sym>
-          <sym>n</sym>
+          <sym>m</sym>
         </app>
         <sym>L</sym>
       </app>
-    </rule>
-    <rule>
+    </app>
+    <app>
+      <sym>ackloop</sym>
       <app>
-        <sym>ackloop</sym>
+        <sym>Suc</sym>
         <sym>0</sym>
-        <app>
-          <sym>c</sym>
-          <app>
-            <sym>Suc</sym>
-            <sym>m</sym>
-          </app>
-          <sym>L</sym>
-        </app>
       </app>
       <app>
-        <sym>ackloop</sym>
+        <sym>c</sym>
+        <sym>m</sym>
+        <sym>L</sym>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>ackloop</sym>
+      <app>
+        <sym>Suc</sym>
+        <sym>n</sym>
+      </app>
+      <app>
+        <sym>c</sym>
         <app>
           <sym>Suc</sym>
-          <sym>0</sym>
+          <sym>m</sym>
+        </app>
+        <sym>L</sym>
+      </app>
+    </app>
+    <app>
+      <sym>ackloop</sym>
+      <sym>n</sym>
+      <app>
+        <sym>c</sym>
+        <app>
+          <sym>Suc</sym>
+          <sym>m</sym>
         </app>
         <app>
           <sym>c</sym>
@@ -49,47 +78,14 @@
           <sym>L</sym>
         </app>
       </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>ackloop</sym>
-        <app>
-          <sym>Suc</sym>
-          <sym>n</sym>
-        </app>
-        <app>
-          <sym>c</sym>
-          <app>
-            <sym>Suc</sym>
-            <sym>m</sym>
-          </app>
-          <sym>L</sym>
-        </app>
-      </app>
-      <app>
-        <sym>ackloop</sym>
-        <sym>n</sym>
-        <app>
-          <sym>c</sym>
-          <app>
-            <sym>Suc</sym>
-            <sym>m</sym>
-          </app>
-          <app>
-            <sym>c</sym>
-            <sym>m</sym>
-            <sym>L</sym>
-          </app>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>ackloop</sym>
-        <sym>m</sym>
-        <sym>Nil</sym>
-      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>ackloop</sym>
       <sym>m</sym>
-    </rule>
-  </rules>
+      <sym>Nil</sym>
+    </app>
+    <sym>m</sym>
+  </rule>
 </trs>

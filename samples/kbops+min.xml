@@ -1,66 +1,17 @@
 <trs>
-  <syms>
-    <var>x</var>
-    <var>y</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <var>y</var>
+  <rule>
+    <app>
+      <sym>-</sym>
       <app>
-        <sym>-</sym>
-        <app>
-          <sym>s</sym>
-          <sym>x</sym>
-        </app>
-        <sym>y</sym>
-      </app>
-      <app>
-        <sym>-</sym>
-        <app>
-          <sym>p</sym>
-          <app>
-            <sym>s</sym>
-            <sym>x</sym>
-          </app>
-        </app>
-        <app>
-          <sym>p</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>-</sym>
+        <sym>s</sym>
         <sym>x</sym>
-        <app>
-          <sym>s</sym>
-          <sym>y</sym>
-        </app>
       </app>
-      <app>
-        <sym>-</sym>
-        <app>
-          <sym>p</sym>
-          <sym>x</sym>
-        </app>
-        <app>
-          <sym>p</sym>
-          <app>
-            <sym>s</sym>
-            <sym>y</sym>
-          </app>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>-</sym>
-        <sym>0</sym>
-        <sym>0</sym>
-      </app>
-      <sym>0</sym>
-    </rule>
-    <rule>
+      <sym>y</sym>
+    </app>
+    <app>
+      <sym>-</sym>
       <app>
         <sym>p</sym>
         <app>
@@ -68,7 +19,52 @@
           <sym>x</sym>
         </app>
       </app>
+      <app>
+        <sym>p</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>-</sym>
       <sym>x</sym>
-    </rule>
-  </rules>
+      <app>
+        <sym>s</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+    <app>
+      <sym>-</sym>
+      <app>
+        <sym>p</sym>
+        <sym>x</sym>
+      </app>
+      <app>
+        <sym>p</sym>
+        <app>
+          <sym>s</sym>
+          <sym>y</sym>
+        </app>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>-</sym>
+      <sym>0</sym>
+      <sym>0</sym>
+    </app>
+    <sym>0</sym>
+  </rule>
+  <rule>
+    <app>
+      <sym>p</sym>
+      <app>
+        <sym>s</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <sym>x</sym>
+  </rule>
 </trs>

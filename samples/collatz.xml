@@ -1,196 +1,192 @@
 <trs>
   <!--The Collatz conjecture in binary arithmetic-->
-  <syms>
-    <var>x</var>
-    <var>y</var>
-  </syms>
-  <rules>
-    <rule>
-      <app>
-        <sym>suc</sym>
-        <sym>1</sym>
-      </app>
+  <var>x</var>
+  <var>y</var>
+  <rule>
+    <app>
+      <sym>suc</sym>
+      <sym>1</sym>
+    </app>
+    <app>
+      <sym>.0</sym>
+      <sym>1</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>suc</sym>
       <app>
         <sym>.0</sym>
-        <sym>1</sym>
+        <sym>x</sym>
       </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>suc</sym>
-        <app>
-          <sym>.0</sym>
-          <sym>x</sym>
-        </app>
-      </app>
+    </app>
+    <app>
+      <sym>.1</sym>
+      <sym>x</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>suc</sym>
       <app>
         <sym>.1</sym>
         <sym>x</sym>
       </app>
-    </rule>
-    <rule>
+    </app>
+    <app>
+      <sym>.0</sym>
       <app>
         <sym>suc</sym>
-        <app>
-          <sym>.1</sym>
-          <sym>x</sym>
-        </app>
+        <sym>x</sym>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
+      <sym>x</sym>
+      <sym>1</sym>
+    </app>
+    <app>
+      <sym>suc</sym>
+      <sym>x</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
+      <sym>1</sym>
+      <sym>y</sym>
+    </app>
+    <app>
+      <sym>suc</sym>
+      <sym>y</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
+      <app>
+        <sym>.0</sym>
+        <sym>x</sym>
       </app>
       <app>
         <sym>.0</sym>
-        <app>
-          <sym>suc</sym>
-          <sym>x</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>add</sym>
-        <sym>x</sym>
-        <sym>1</sym>
-      </app>
-      <app>
-        <sym>suc</sym>
-        <sym>x</sym>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>add</sym>
-        <sym>1</sym>
         <sym>y</sym>
       </app>
+    </app>
+    <app>
+      <sym>.0</sym>
       <app>
-        <sym>suc</sym>
+        <sym>add</sym>
+        <sym>x</sym>
         <sym>y</sym>
       </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>add</sym>
-        <app>
-          <sym>.0</sym>
-          <sym>x</sym>
-        </app>
-        <app>
-          <sym>.0</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-      <app>
-        <sym>.0</sym>
-        <app>
-          <sym>add</sym>
-          <sym>x</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>add</sym>
-        <app>
-          <sym>.1</sym>
-          <sym>x</sym>
-        </app>
-        <app>
-          <sym>.0</sym>
-          <sym>y</sym>
-        </app>
-      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
       <app>
         <sym>.1</sym>
-        <app>
-          <sym>add</sym>
-          <sym>x</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>add</sym>
-        <app>
-          <sym>.0</sym>
-          <sym>x</sym>
-        </app>
-        <app>
-          <sym>.1</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-      <app>
-        <sym>.1</sym>
-        <app>
-          <sym>add</sym>
-          <sym>x</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>add</sym>
-        <app>
-          <sym>.1</sym>
-          <sym>x</sym>
-        </app>
-        <app>
-          <sym>.1</sym>
-          <sym>y</sym>
-        </app>
-      </app>
-      <app>
-        <sym>.0</sym>
-        <app>
-          <sym>suc</sym>
-          <app>
-            <sym>add</sym>
-            <sym>x</sym>
-            <sym>y</sym>
-          </app>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>C</sym>
-        <app>
-          <sym>.0</sym>
-          <sym>x</sym>
-        </app>
-      </app>
-      <app>
-        <sym>C</sym>
         <sym>x</sym>
       </app>
-    </rule>
-    <rule>
       <app>
-        <sym>C</sym>
+        <sym>.0</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+    <app>
+      <sym>.1</sym>
+      <app>
+        <sym>add</sym>
+        <sym>x</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
+      <app>
+        <sym>.0</sym>
+        <sym>x</sym>
+      </app>
+      <app>
+        <sym>.1</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+    <app>
+      <sym>.1</sym>
+      <app>
+        <sym>add</sym>
+        <sym>x</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
+      <app>
+        <sym>.1</sym>
+        <sym>x</sym>
+      </app>
+      <app>
+        <sym>.1</sym>
+        <sym>y</sym>
+      </app>
+    </app>
+    <app>
+      <sym>.0</sym>
+      <app>
+        <sym>suc</sym>
+        <app>
+          <sym>add</sym>
+          <sym>x</sym>
+          <sym>y</sym>
+        </app>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>C</sym>
+      <app>
+        <sym>.0</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <app>
+      <sym>C</sym>
+      <sym>x</sym>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>C</sym>
+      <app>
+        <sym>.1</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <app>
+      <sym>C</sym>
+      <app>
+        <sym>add</sym>
         <app>
           <sym>.1</sym>
           <sym>x</sym>
         </app>
-      </app>
-      <app>
-        <sym>C</sym>
         <app>
-          <sym>add</sym>
+          <sym>.1</sym>
           <app>
             <sym>.1</sym>
             <sym>x</sym>
           </app>
-          <app>
-            <sym>.1</sym>
-            <app>
-              <sym>.1</sym>
-              <sym>x</sym>
-            </app>
-          </app>
         </app>
       </app>
-    </rule>
-  </rules>
+    </app>
+  </rule>
 </trs>

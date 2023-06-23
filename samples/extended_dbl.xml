@@ -1,10 +1,28 @@
 <trs>
-  <syms>
-    <var>x</var>
-    <var>y</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <var>y</var>
+  <rule>
+    <app>
+      <sym>dbl</sym>
+      <app>
+        <sym>s</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <app>
+      <sym>s</sym>
+      <app>
+        <sym>s</sym>
+        <app>
+          <sym>dbl</sym>
+          <sym>x</sym>
+        </app>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>s</sym>
       <app>
         <sym>dbl</sym>
         <app>
@@ -12,6 +30,9 @@
           <sym>x</sym>
         </app>
       </app>
+    </app>
+    <app>
+      <sym>s</sym>
       <app>
         <sym>s</sym>
         <app>
@@ -22,31 +43,6 @@
           </app>
         </app>
       </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>s</sym>
-        <app>
-          <sym>dbl</sym>
-          <app>
-            <sym>s</sym>
-            <sym>x</sym>
-          </app>
-        </app>
-      </app>
-      <app>
-        <sym>s</sym>
-        <app>
-          <sym>s</sym>
-          <app>
-            <sym>s</sym>
-            <app>
-              <sym>dbl</sym>
-              <sym>x</sym>
-            </app>
-          </app>
-        </app>
-      </app>
-    </rule>
-  </rules>
+    </app>
+  </rule>
 </trs>

@@ -1,70 +1,66 @@
 <trs>
-  <syms>
-    <var>x</var>
-    <var>y</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <var>y</var>
+  <rule>
+    <app>
+      <sym>add</sym>
+      <sym>0</sym>
+      <sym>y</sym>
+    </app>
+    <sym>y</sym>
+  </rule>
+  <rule>
+    <app>
+      <sym>add</sym>
       <app>
-        <sym>add</sym>
-        <sym>0</sym>
-        <sym>y</sym>
+        <sym>s</sym>
+        <sym>x</sym>
       </app>
       <sym>y</sym>
-    </rule>
-    <rule>
+    </app>
+    <app>
+      <sym>s</sym>
       <app>
         <sym>add</sym>
-        <app>
-          <sym>s</sym>
-          <sym>x</sym>
-        </app>
+        <sym>x</sym>
         <sym>y</sym>
+      </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>g</sym>
+      <app>
+        <sym>s</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <app>
+      <sym>add</sym>
+      <app>
+        <sym>g</sym>
+        <sym>x</sym>
       </app>
       <app>
         <sym>s</sym>
-        <app>
-          <sym>add</sym>
-          <sym>x</sym>
-          <sym>y</sym>
-        </app>
+        <sym>0</sym>
       </app>
-    </rule>
-    <rule>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>f</sym>
+      <app>
+        <sym>s</sym>
+        <sym>x</sym>
+      </app>
+    </app>
+    <app>
+      <sym>f</sym>
       <app>
         <sym>g</sym>
-        <app>
-          <sym>s</sym>
-          <sym>x</sym>
-        </app>
+        <sym>x</sym>
       </app>
-      <app>
-        <sym>add</sym>
-        <app>
-          <sym>g</sym>
-          <sym>x</sym>
-        </app>
-        <app>
-          <sym>s</sym>
-          <sym>0</sym>
-        </app>
-      </app>
-    </rule>
-    <rule>
-      <app>
-        <sym>f</sym>
-        <app>
-          <sym>s</sym>
-          <sym>x</sym>
-        </app>
-      </app>
-      <app>
-        <sym>f</sym>
-        <app>
-          <sym>g</sym>
-          <sym>x</sym>
-        </app>
-      </app>
-    </rule>
-  </rules>
+    </app>
+  </rule>
 </trs>

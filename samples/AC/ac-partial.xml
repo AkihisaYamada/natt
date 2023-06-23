@@ -1,54 +1,50 @@
 <trs>
-  <syms>
-    <sym theory="AC">+</sym>
-    <sym theory="AC">*</sym>
-  </syms>
-  <rules>
-    <rule>
+  <fun theory="AC">+</fun>
+  <fun theory="AC">*</fun>
+  <rule>
+    <app>
+      <sym>+</sym>
+      <sym>a</sym>
       <app>
-        <sym>+</sym>
-        <sym>a</sym>
+        <sym>*</sym>
+        <sym>b</sym>
+        <sym>c</sym>
+      </app>
+    </app>
+    <app>
+      <sym>+</sym>
+      <sym>b</sym>
+      <app>
+        <sym>f</sym>
         <app>
           <sym>*</sym>
-          <sym>b</sym>
+          <sym>a</sym>
           <sym>c</sym>
         </app>
       </app>
+    </app>
+  </rule>
+  <rule>
+    <app>
+      <sym>*</sym>
+      <sym>a</sym>
       <app>
         <sym>+</sym>
         <sym>b</sym>
-        <app>
-          <sym>f</sym>
-          <app>
-            <sym>*</sym>
-            <sym>a</sym>
-            <sym>c</sym>
-          </app>
-        </app>
+        <sym>c</sym>
       </app>
-    </rule>
-    <rule>
+    </app>
+    <app>
+      <sym>*</sym>
+      <sym>b</sym>
       <app>
-        <sym>*</sym>
-        <sym>a</sym>
+        <sym>f</sym>
         <app>
           <sym>+</sym>
-          <sym>b</sym>
+          <sym>a</sym>
           <sym>c</sym>
         </app>
       </app>
-      <app>
-        <sym>*</sym>
-        <sym>b</sym>
-        <app>
-          <sym>f</sym>
-          <app>
-            <sym>+</sym>
-            <sym>a</sym>
-            <sym>c</sym>
-          </app>
-        </app>
-      </app>
-    </rule>
-  </rules>
+    </app>
+  </rule>
 </trs>

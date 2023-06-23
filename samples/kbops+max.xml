@@ -1,38 +1,34 @@
 <trs>
-  <syms>
-    <var>x</var>
-  </syms>
-  <rules>
-    <rule>
+  <var>x</var>
+  <rule>
+    <app>
+      <sym>f</sym>
+      <app>
+        <sym>g</sym>
+        <app>
+          <sym>f</sym>
+          <sym>x</sym>
+        </app>
+      </app>
+    </app>
+    <app>
+      <sym>f</sym>
       <app>
         <sym>f</sym>
         <app>
           <sym>g</sym>
           <app>
-            <sym>f</sym>
-            <sym>x</sym>
-          </app>
-        </app>
-      </app>
-      <app>
-        <sym>f</sym>
-        <app>
-          <sym>f</sym>
-          <app>
             <sym>g</sym>
             <app>
-              <sym>g</sym>
+              <sym>f</sym>
               <app>
                 <sym>f</sym>
-                <app>
-                  <sym>f</sym>
-                  <sym>x</sym>
-                </app>
+                <sym>x</sym>
               </app>
             </app>
           </app>
         </app>
       </app>
-    </rule>
-  </rules>
+    </app>
+  </rule>
 </trs>
