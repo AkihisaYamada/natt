@@ -39,23 +39,21 @@ let static_usable_rules (trs : #trs) (estimator : #Estimator.t) (dg : #dg) used_
 	)
 
 
-let freeze =
-	if params.freezing then
-		fun (trs : #trs) (dg : #dg) ->
-			comment (puts "Freezing");
-			let appsyms = Freezing.auto_freeze trs dg in
-			if appsyms = [] then
-				(comment (puts " ... failed." << endl); false)
-			else (
-				comment (fun (pr : #printer) ->
-					List.iter (fun (a : #sym) -> pr#putc ' '; a#output pr) appsyms;
-					pr#endl;
-				);
-				problem trs#output;
-				true
-			)
-	else
-		fun _ _ -> false
+let freeze (trs : #trs) (dg : #dg) =
+	params.freezing && (
+		comment (puts "Freezing");
+		let appsyms = Freezing.auto_freeze trs dg in
+		if appsyms = [] then
+			(comment (puts " ... failed." << endl); false)
+		else (
+			comment (fun (pr : #printer) ->
+				List.iter (fun (a : #sym) -> pr#putc ' '; a#output pr) appsyms;
+				pr#endl;
+			);
+			problem trs#output;
+			true
+		)
+	)
 
 let theory_test (trs : #trs) =
 	let ths = trs#get_ths in
@@ -92,6 +90,20 @@ let trivial_test (trs : #trs) =
 	in
 	trs#iter_rules iterer;;
 
+(* test variable left-hand side *)
+let var_lhs_test (trs : #trs) =
+	let iterer i rule =
+		if (root rule#l)#is_var then begin
+			if rule#is_strict then begin
+				proof (puts "Variable left-hand side in rule " << put_int i << puts "." << endl);
+				raise Nonterm;
+			end else if rule#is_weak && params.freezing then begin
+				params.freezing <- false;
+				proof (puts "Disabled freezing due to weak rule " << put_int i << puts "." << endl);
+			end;
+		end;
+	in
+	trs#iter_rules iterer;;
 
 (* rule removal processor *)
 let dummy_estimator = Estimator.tcap (new trs)
@@ -374,6 +386,7 @@ let prove_termination (trs : #trs) =
 			theory_test trs;
 			extra_test trs;
 			trivial_test trs;
+			var_lhs_test trs;
 			rule_remove trs (fun trs ->
 				if freeze trs dummy_dg then
 					rule_remove trs dp_prove

@@ -1,7 +1,7 @@
 Nagoya Termination Tool (NaTT)
 =============================================
 
-This is NaTT ver.2.3.
+This is NaTT ver.2.3.1
 
 ## Compilation ##
 
