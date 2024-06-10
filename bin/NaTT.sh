@@ -3,7 +3,7 @@
 dir=${0%/*}
 options=
 proof=
-ext=xml
+ext=ari
 
 info()
 {
@@ -129,7 +129,7 @@ do
 	then
 		cat "$d$f"
 	else
-		java -jar "$dir/txtr-0.jar" "$dir/trs.xml.txtr" "$d$f"
+		java -jar "$dir/txtr-0.jar" "$dir/ari.xml.txtr" "$d$f"
 	fi | {
 		time -p {
 			timeout $t "$dir/NaTT.exe" $cpfopt "$@" $options 1> "$outfile"

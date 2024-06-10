@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<txtruct>
+	<class name="comment">
+		<match pattern=";([^\n]*)\n" as="cmt"/>
+		<comment>
+			<value-of select="cmt/group[1]"/>
+		</comment>
+	</class>
+	<class name="spaces">
+		<option>
+			<call ref="comment"/>
+			<call ref="spaces"/>
+		</option>
+		<option>
+			<match pattern="\s+"/>
+			<call ref="spaces"/>
+		</option>
+		<option/>
+	</class>
+	<class name="symbol">
+		<match pattern="[0-9A-Za-z_+\-*/.\\:=!?&lt;>\[\]']+" as="s"/>
+		<call ref="spaces"/>
+		<value-of select="s/match"/>
+	</class>
+	<class name="fun-decl">
+		<match pattern="\(fun(?=[\s\(\);])"/>
+		<call ref="spaces"/>
+		<call ref="symbol" as="s"/>
+		<match pattern="([0-9]+)(?=[\s\(\);])" as="ar"/>
+		<call ref="spaces"/>
+		<group minOccurs="0" as="th">
+			<match pattern=":theory(?=[\s\(\);])"/>
+			<call ref="spaces"/>
+			<match pattern="(AC|A|C)(?=[\s\(\);])" as="th"/>
+			<call ref="spaces"/>
+			<value-of select="th/group[1]"/>
+		</group>
+		<match pattern="\)"/>
+		<call ref="spaces"/>
+		<element name="fun">
+			<attribute name="arity">
+				<value-of select="ar/group[1]"/>
+			</attribute>
+			<if test="th">
+				<attribute name="theory">
+					<value-of select="th"/>
+				</attribute>
+			</if>
+			<value-of select="s"/>
+		</element>
+	</class>
+	<class name="term">
+		<option>
+			<call ref="symbol" as="s"/>
+			<element name="sym">
+				<value-of select="s"/>
+			</element>
+		</option>
+		<option>
+			<match pattern="\("/>
+			<call ref="spaces"/>
+			<element name="app">
+				<call ref="term" minOccurs="0" maxOccurs="unbounded"/>
+			</element>
+			<match pattern="\)"/>
+			<call ref="spaces"/>
+		</option>
+	</class>
+	<class name="cond">
+		<match pattern="\(\=(?=[\s\(\);])"/>
+		<call ref="spaces"/>
+		<call ref="term" as="lhs"/>
+		<call ref="term" as="rhs"/>
+		<match pattern="\)"/>
+		<call ref="spaces"/>
+		<element name="cond">
+			<value-of select="lhs"/>
+			<value-of select="rhs"/>
+		</element>
+	</class>
+	<class name="rule">
+		<match pattern="\(rule(?=[\s\(\);])"/>
+		<call ref="spaces"/>
+		<call ref="term" as="lhs"/>
+		<call ref="term" as="rhs"/>
+		<element name="rule">
+			<value-of select="lhs"/>
+			<value-of select="rhs"/>
+			<call ref="cond" minOccurs="0" maxOccurs="unbounded"/>
+		</element>
+		<match pattern="\)"/>
+		<call ref="spaces"/>
+	</class>
+
+	<class name="format">
+		<match pattern="\(format(?=[\s\(\);])"/>
+		<call ref="spaces"/>
+		<match pattern="(C?TRS)(?=[\s\(\);])" as="fmt"/>
+		<call ref="spaces"/>
+		<match pattern="(oriented|join|semi-equational)(?=[\s\(\);])" minOccurs="0" as="condtype"/>
+		<call ref="spaces"/>
+		<group minOccurs="0" as="prob">
+			<match pattern=":problem(?=[\s\(\);])"/>
+			<call ref="spaces"/>
+			<match pattern="infeasibility" as="it"/>
+			<value-of select="it/match"/>
+		</group>
+		<match pattern="\)"/>
+		<call ref="spaces"/>
+		<element name="format">
+			<value-of select="fmt/group[1]"/>
+		</element>
+		<if test="condtype">
+			<element name="condtype">
+				<value-of select="condtype/group[1]"/>
+			</element>
+		</if>
+		<if test="prob">
+			<element name="problem">
+				<value-of select="prob"/>
+			</element>
+		</if>
+	</class>
+
+	<element name="trs">
+		<call ref="spaces"/>
+		<call ref="format" as="fmt"/>
+		<call ref="fun-decl" minOccurs="0" maxOccurs="unbounded"/>
+		<call ref="rule" maxOccurs="unbounded"/>
+		<if test="fmt/problem = 'infeasibility'">
+			<element name="infeasibility">
+				<match pattern="\(infeasible\?(?=[\s\(\);])"/>
+				<call ref="spaces"/>
+				<call ref="cond" maxOccurs="unbounded"/>
+			</element>
+			<match pattern="\)"/>
+			<call ref="spaces"/>
+		</if>
+	</element>
+</txtruct>

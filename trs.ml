@@ -240,7 +240,7 @@ class trs =
 		method term_element xmls = (
 			element "sym" (
 				string >>= fun fname ->
-				let f = x#get_sym_name fname Fun in
+				let f = x#get_sym_name fname Var in
 				if f#arity_is_unknown then f#set_arity 0
 				else if f#arity <> 0 then
 					raise (No_support (string_of_int f#arity ^ "-ary symbol " ^ fname ^ " appeared unapplied"));
@@ -249,7 +249,7 @@ class trs =
 			element "app" (
 				element "sym" string >>= fun fname ->
 				many x#term_element >>= fun ss ->
-				let f = x#get_sym_name fname Fun in
+				let f = x#get_sym_name fname Var in
 				let n = List.length ss in
 				if f#arity_is_unknown then f#set_arity n
 				else if f#arity <> n then
@@ -259,10 +259,17 @@ class trs =
 		) xmls
 		method input_sym_decl =
 			element "fun" (
-				attribute "theory" >>= fun th ->
+				optional (attribute "arity") >>= fun oar ->
+				optional (attribute "theory") >>= fun oth ->
 				string >>= fun name ->
-				if th = "AC" || th = "A" || th = "C" then
-				(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th));
+				(match oth with Some th ->
+					if th = "AC" || th = "A" || th = "C" then
+					(x#add_sym (new sym_unmarked (Th th) name))#set_arity 2 else raise (No_support ("unknown theory " ^ th))
+				| None ->
+					(match oar with Some ar ->
+						(x#add_sym (new sym_unmarked Fun name))#set_arity (int_of_string ar)
+					)
+				);
 				return ()
 			) <|>
 			element "var" (
