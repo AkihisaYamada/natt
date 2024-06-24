@@ -1,26 +1,30 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<txtruct>
-	<class name="comment">
-		<match pattern=";([^\n]*)\n" as="cmt"/>
-		<comment>
-			<value-of select="cmt/group[1]"/>
-		</comment>
-	</class>
+<txtruct><!-- ARI format -->
 	<class name="spaces">
 		<option>
-			<call ref="comment"/>
+			<match pattern=";([^\n]*)\n" as="cmt"/>
+			<comment>
+				<value-of select="cmt/group[1]"/>
+			</comment>
 			<call ref="spaces"/>
 		</option>
 		<option>
 			<match pattern="\s+"/>
 			<call ref="spaces"/>
 		</option>
-		<option/>
+		<option><!-- @txtr: epsilon --></option>
 	</class>
 	<class name="symbol">
-		<match pattern="[0-9A-Za-z_+\-*/.\\:=!?&lt;>\[\]']+" as="s"/>
-		<call ref="spaces"/>
-		<value-of select="s/match"/>
+		<option>
+			<match pattern="[0-9A-Za-z_+\-*/.\\:=!?&lt;>\[\]']+" as="s"/>
+			<call ref="spaces"/>
+			<value-of select="s/match"/>
+		</option>
+		<option>
+			<match pattern="\|([^|\s;]+)\|" as="s"/>
+			<call ref="spaces"/>
+			<value-of select="s/group[1]"/>
+		</option>
 	</class>
 	<class name="fun-decl">
 		<match pattern="\(fun(?=[\s\(\);])"/>
@@ -103,6 +107,7 @@
 			<match pattern=":problem(?=[\s\(\);])"/>
 			<call ref="spaces"/>
 			<match pattern="infeasibility" as="it"/>
+			<call ref="spaces"/>
 			<value-of select="it/match"/>
 		</group>
 		<match pattern="\)"/>
@@ -127,7 +132,7 @@
 		<call ref="format" as="fmt"/>
 		<call ref="fun-decl" minOccurs="0" maxOccurs="unbounded"/>
 		<call ref="rule" maxOccurs="unbounded"/>
-		<if test="fmt/problem = 'infeasibility'">
+		<if test="fmt/problem = 'infeasibility'" mode="in">
 			<element name="infeasibility">
 				<match pattern="\(infeasible\?(?=[\s\(\);])"/>
 				<call ref="spaces"/>

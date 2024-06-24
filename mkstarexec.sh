@@ -11,7 +11,7 @@ bak=~/NaTT.backup
 tar="tar"
 
 doc="README.md"
-bin="NaTT.exe NaTT.sh z3 txtr-0.jar trs.xml.txtr"
+bin="NaTT.exe NaTT.sh z3 txtr-0.jar ari.xml.txtr"
 
 if [ -e "$bak" ]
 then

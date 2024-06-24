@@ -1,5 +1,0 @@
-#!/bin/sh
-DIR=${0%/*}
-PATH=$DIR:$PATH
-NaTT.exe -v:0 -x:"$2/cpf.xml" --tcap --edge:1 "$1"
-cat $2/cpf.xml

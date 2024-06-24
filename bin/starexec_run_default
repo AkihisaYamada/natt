@@ -1,5 +1,5 @@
 #!/bin/sh
 DIR=${0%/*}
 PATH=$DIR:$PATH
-NaTT.exe "$1" 2> "$2/stderr.txt"
+java -jar $DIR/txtr-0.jar $DIR/ari.xml.txtr "$1" | $DIR/NaTT.exe -S:"$STR" 2> "$2/stderr.txt"
 cat $2/stderr.txt
