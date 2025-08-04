@@ -195,7 +195,7 @@ let dp_remove (trs : #trs) (estimator : #Estimator.t) (dg : #dg) =
 			let ret = fst (static_usable_rules trs estimator dg scc) in
 			fun proc ->
 			if proc#using_usable then ret else all_rules
-		else fun _ _ -> []
+		else fun _ _ -> all_rules
 	in
 	let remove_strict scc =
 		let rec sub = function
