@@ -1,0 +1,121 @@
+<!DOCTYPE html SYSTEM "html">
+<html><head><META http-equiv="Content-Type" content="text/html; charset=utf-8"><title> NaTT XML format </title><style>
+				body { font: Georgia, serif; }
+				ul { list-style: none; margin: 0; padding: 0; }
+				div.class {
+					margin-bottom: 1ex;
+				}
+				div.class>ul {
+					vertical-align: text-top;
+				}
+				li { padding: 0; margin: 0; min-height: 3ex; }
+				li:empty { display: none; }
+				.ll { display: flex; align-items: baseline; }
+				.ll>span:first-child { white-space: pre; }
+				.comment {
+					color: #208020;
+					font-size: medium;
+					font-weight: normal;
+					position: relative;
+					padding-left: 12pt;
+				}
+				.comment::before {
+					position: absolute;
+					left: 0;
+					content: '/*';
+				}
+				.comment::after {
+					content: '*/';
+				}
+				span.comment:not(:first-child) { margin-left: 1em; }
+				table { vertical-align: text-top; }
+				th { vertical-align: text-top; }
+				ul.class>li {
+					display: list-item;
+				}
+				ul.class>li:first-of-type {
+					margin-left: 15pt;
+					padding-left: 6pt;
+				}
+				ul.class>li:first-of-type::marker {
+					content: '::=';
+					color: #0000D0;
+					font-weight: bold;
+				}
+				ul.class>li:not(:first-of-type) {
+					margin-left: 10pt;
+					padding-left: 10pt;
+				}
+				ul.class>li:not(:first-of-type)::marker {
+					content: '|';
+					font-size: 120%;
+					color: #0000D0;
+					font-weight: bold;
+				}
+				ul.paren>li:first-of-type {
+					margin-left: 5pt;
+					padding-left: 5pt;
+				}
+				ul.paren>li:first-of-type::marker {
+					content: '(';
+				}
+				ul.paren>li:not(:first-of-type) {
+					margin-left: 10pt;
+				}
+				ul.choice>li:not(:first-of-type) {
+					margin-left: 5pt;
+					padding-left: 5pt;
+				}
+				ul.choice>li:not(:first-of-type)::marker {
+					content: '|';
+					font-size: 110%;
+					color: #0000D0;
+					font-weight: bold;
+				}
+				ul.inner>li { margin-left: 20pt; }
+				ul.inline, ul.inline ul {
+					display: inline;
+				}
+				ul.inline li {
+					display: inline;
+					margin-left: 2pt;
+					padding-left: 0pt;
+				}
+				ul.inner>li.txtr-children, ul.inner>li.txtr-close { margin-left: 0; }
+				.ctrl {
+					color: #0000D0;
+					font-weight: bold;
+				}
+				.kw {
+					color: #0000D0;
+					font-weight: bold;
+					font-style: italic;
+				}
+				.regex {
+					font-family: monospace;
+					white-space:pre;
+					margin:1pt;
+					padding: 2pt;
+					background-color: #E0E0FF;
+				}
+				.xpath {
+					font-family: monospace;
+					white-space:pre;
+					margin:1pt;
+					padding: 2pt;
+					background-color: #C0FFFF;
+				}
+				.const {
+					font-family: monospace;
+					background-color: #E0E0E0;
+					margin:1pt;
+					padding:2pt;
+					white-space:pre;
+				}
+				span.class {
+					font-style: italic;
+					font-weight: bold;
+					padding: 2pt;
+				}
+				.comment { display: inline-block; }
+			</style></head><body><h1> NaTT XML format </h1><table class="class"><tr><th class="class-header"><span class="class">sym</span></th><td><ul class="class"><li><ul><li><span class="ll"><span class="const">&lt;sym&gt;</span></span><ul class="inner"><li><span class="kw">text</span></li></ul><span class="const">&lt;/sym&gt;</span></li></ul></li></ul></td></tr></table><table class="class"><tr><th class="class-header"><span class="class">term</span></th><td><ul class="class"><li><ul><li><span class="ll"><span><span class="class">sym</span></span><span class="comment"> constant or variable </span></span></li></ul></li><li><ul><li><span class="ll"><span class="const">&lt;app&gt;</span></span><ul class="inner"><li><span class="ll"><span><span class="class">sym</span></span><span class="comment"> function </span></span></li><li><span class="ll"><span><span class="class">term</span><sup class="kw">+</sup></span><span class="comment"> arguments </span></span></li></ul><span class="const">&lt;/app&gt;</span></li></ul></li></ul></td></tr></table><table class="class"><tr><th class="class-header"><span class="class">cond</span></th><td><ul class="class"><li><ul><li><span class="ll"><span class="const">&lt;cond&gt;</span><span class="comment"> conditions for conditional rules </span></span><ul class="inner"><li><span><span><span class="class">term</span></span></span></li><li><span><span><span class="class">term</span></span></span></li></ul><span class="const">&lt;/cond&gt;</span></li></ul></li></ul></td></tr></table><table class="class"><tr><th class="class-header"><span class="class">rule</span></th><td><ul class="class"><li><ul><li><span class="ll"><span class="const">&lt;rule&gt;</span></span><ul class="inner"><li><span class="ll"><span><span class="class">term</span></span><span class="comment"> left hand side </span></span></li><li><span class="ll"><span><span class="class">term</span></span><span class="comment"> right hand side </span></span></li><li><span class="ll"><span><span class="class">cond</span><span class="ctrl">*</span></span><span class="comment"> conditions </span></span></li></ul><span class="const">&lt;/rule&gt;</span></li></ul></li></ul></td></tr></table><table class="class"><tr><th class="class-header"><span class="class">sym-decl</span></th><td><ul class="class"><li><ul><li><span class="ll"><span class="const">&lt;var&gt;</span><span class="comment"> declares a variable symbol </span></span><ul class="inner"><li><span class="kw">text</span></li></ul><span class="const">&lt;/var&gt;</span></li></ul></li><li><ul><li><span class="ll"><span class="const">&lt;fun&gt;</span><span class="comment"> declares a function symbol </span></span><ul class="inner"><li><span class="ll"><span><span class="const">arity="</span><span class="regex">[0-9]+</span><span class="const">"</span></span></span></li><li><span class="ll"><span>(<span class="const">theory="</span><span class="regex">AC?|C</span><span class="const">"</span>)<sup class="ctrl">?</sup></span></span></li><li><span class="kw">text</span></li></ul><span class="const">&lt;/fun&gt;</span></li></ul></li></ul></td></tr></table><table class="class"><tr><th class="class-header"><span class="kw">root </span></th><td><ul class="class"><li><ul><li><span class="ll"><span class="const">&lt;trs&gt;</span></span><ul class="inner"><li><span><span><span class="class">sym-decl</span><span class="ctrl">*</span></span></span></li><li><span><span><span class="class">rule</span><sup class="kw">+</sup></span></span></li></ul><span class="const">&lt;/trs&gt;</span></li></ul></li></ul></td></tr></table></body></html>

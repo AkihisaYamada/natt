@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<txtruct><!-- NaTT XML format -->
+<class name="sym">
+ <in-element name="sym"><read-text/></in-element>
+</class>
+<class name="term">
+ <option>
+  <call ref="sym"><!-- constant or variable --></call>
+ </option>
+ <option>
+  <in-element name="app">
+   <call ref="sym"><!-- function --></call>
+   <call ref="term" maxOccurs="unbounded"><!-- arguments --></call>
+  </in-element>
+ </option>
+</class>
+<class name="cond">
+ <in-element name="cond"><!-- conditions for conditional rules -->
+  <call ref="term"/>
+  <call ref="term"/>
+ </in-element>
+</class>
+<class name="rule">
+ <in-element name="rule">
+  <call ref="term"><!-- left hand side --></call>
+  <call ref="term"><!-- right hand side --></call>
+  <call ref="cond" minOccurs="0" maxOccurs="unbounded"><!-- conditions --></call>
+ </in-element>
+</class>
+<class name="sym-decl">
+ <option>
+  <in-element name="var"><!-- declares a variable symbol -->
+   <read-text/>
+  </in-element>
+ </option>
+ <option>
+  <in-element name="fun"><!-- declares a function symbol -->
+   <read-attribute name="arity" pattern="[0-9]+"/>
+   <read-attribute name="theory" pattern="AC?|C" minOccurs="0"/>
+   <read-text/>
+  </in-element>
+ </option>
+</class>
+
+<in-element name="trs">
+ <call ref="sym-decl" minOccurs="0" maxOccurs="unbounded"/>
+ <call ref="rule" maxOccurs="unbounded"/>
+</in-element>
+</txtruct>
