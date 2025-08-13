@@ -1,0 +1,7 @@
+#!/bin/sh
+if ["$1" = "--name" ]; then
+	echo NaTT
+	exit 0
+fi
+DIR=bin
+java -jar $DIR/txtr-0.jar $DIR/ari.xml.txtr "$3" | $DIR/NaTT.exe
