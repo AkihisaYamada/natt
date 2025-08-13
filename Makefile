@@ -1,3 +1,4 @@
+SRC=src
 BUILD=_build
 TARG=bin/NaTT
 TARG_OPT=bin/NaTT.exe
@@ -8,7 +9,7 @@ OCAMLDEP=ocamldep
 OCAMLDOC=ocamldoc -html -d htdocs -t "Termination Tool" -I $(BUILD)
 
 # The list of ocaml source files
-OCAML_SRCS=\
+OCAML_FILES=\
 	io.ml \
 	util.ml \
 	txtr.ml \
@@ -35,11 +36,11 @@ OCAML_SRCS=\
 	nonterm.ml \
 	main.ml
 
-OCAML_MLS=$(OCAML_SRCS)
+OCAML_MLS=$(OCAML_FILES:%=$(SRC)/%)
 
-OCAML_CMOS=$(OCAML_MLS:%.ml=$(BUILD)/%.cmo)
+OCAML_CMOS=$(OCAML_FILES:%.ml=$(BUILD)/%.cmo)
 
-OCAML_CMXS=$(OCAML_MLS:%.ml=$(BUILD)/%.cmx)
+OCAML_CMXS=$(OCAML_FILES:%.ml=$(BUILD)/%.cmx)
 
 ## If you need a statically linked binary
 #OCAMLFLAGS= -cclib '-static'
@@ -51,9 +52,6 @@ all: $(TARG_OPT)
 install: all
 	cp -f $(TARG_OPT) xtc2tpdb.xml /usr/local/bin/
 
-$(BUILD):
-	mkdir $(BUILD)
-
 $(TARG_OPT): $(OCAML_CMXS)
 	$(OCAMLOPT) -o $@ $(OCAMLFLAGS) $^
 
@@ -63,18 +61,18 @@ $(TARG): $(OCAML_CMOS)
 # Common rules
 .SUFFIXES: .ml .mli .cmo .cmi .cmx .mll .mly
 
-$(BUILD)/%.cmo: %.ml
+$(BUILD)/%.cmo: $(SRC)/%.ml
 	$(OCAMLC) $(OCAMLFLAGS) -o $@ -c $<
 
 $(BUILD)/%.cmi: %.mli
 	$(OCAMLC) $(OCAMLFLAGS) -o $@ -c $<
 
-$(BUILD)/%.cmx: %.ml
+$(BUILD)/%.cmx: $(SRC)/%.ml
 	$(OCAMLOPT) $(OCAMLOPTFLAGS) -o $@ -c $<
 
 # Clean up
 clean:
-	rm -rf $(TARG) $(TARG_OPT) $(BUILD) .depend
+	rm -rf $(TARG) $(TARG_OPT) $(BUILD)/* .depend
 
 # Consistency test
 test: $(TARG_OPT)
