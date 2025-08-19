@@ -27,6 +27,8 @@
 			<value-of select="s/group[1]"/>
 		</option>
 	</class>
+	<class name="theory">
+	</class>
 	<class name="fun-decl">
 		<match pattern="\(fun(?=[\s\(\);])"/>
 		<call ref="spaces"/>
@@ -36,9 +38,9 @@
 		<group minOccurs="0" as="th">
 			<match pattern=":theory(?=[\s\(\);])"/>
 			<call ref="spaces"/>
-			<match pattern="(AC|A|C)(?=[\s\(\);])" as="th"/>
+			<match pattern="(AC|A|C)(?=[\s\(\);])" as="thg"/>
 			<call ref="spaces"/>
-			<value-of select="th/group[1]"/>
+			<value-of select="thg/group[1]"/>
 		</group>
 		<match pattern="\)"/>
 		<call ref="spaces"/>
@@ -105,7 +107,7 @@
 	<class name="format">
 		<match pattern="\(format(?=[\s\(\);])"/>
 		<call ref="spaces"/>
-		<match pattern="(C?TRS)(?=[\s\(\);])" as="fmt"/>
+		<match pattern="([CE]?TRS)(?=[\s\(\);])" as="fmt"/>
 		<call ref="spaces"/>
 		<match pattern="(oriented|join|semi-equational)(?=[\s\(\);])" minOccurs="0" as="condtype"/>
 		<call ref="spaces"/>
