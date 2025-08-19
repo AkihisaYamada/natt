@@ -3,5 +3,5 @@ if [ "$1" = "--name" ]; then
 	echo NaTT
 	exit 0
 fi
-DIR=bin
+DIR=${0%/*}
 java -jar $DIR/txtr-0.jar $DIR/ari.xml.txtr "$3" | $DIR/NaTT.exe

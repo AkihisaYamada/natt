@@ -288,7 +288,8 @@ class trs =
 							return (s,t)
 						)
 					) >>= fun conds ->
-					x#add_rule (crule l r conds);
+					default 1 (int_attribute "cost") >>= fun cost ->
+					x#add_rule (if cost = 0 then weak_rule l r else crule l r conds);
 					return ()
 				) <|> (
 					many (

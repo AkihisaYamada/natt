@@ -1,8 +1,8 @@
 FROM ubuntu:22.04
 
-WORKDIR /tmp
+WORKDIR /natt
 
-RUN apt update && apt install -y z3 opam
+RUN apt update && apt install -y default-jre z3 opam
 
 RUN opam init -y --disable-sandboxing &&\
 	opam install -y ocamlfind ocamlgraph re &&\
@@ -12,6 +12,6 @@ COPY . .
 
 RUN eval $(opam env); make
 
-ENV PATH $PATH:/tmp/bin
+ENV PATH $PATH:/natt/bin
 
 RUN echo $PWD; echo $PATH

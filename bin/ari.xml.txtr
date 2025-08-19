@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<txtruct><!-- ARI format -->
+<txtruct method="xml" indent="no"><!-- ARI format -->
+	<input method="text"/>
 	<class name="spaces">
 		<option>
 			<match pattern=";([^\n]*)\n" as="cmt"/>
@@ -91,6 +92,11 @@
 			<value-of select="lhs"/>
 			<value-of select="rhs"/>
 			<call ref="cond" minOccurs="0" maxOccurs="unbounded"/>
+			<group minOccurs="0">
+				<match pattern=":cost\s+"/>
+				<match pattern="[0-9]*(\.[0-9]*)?" as="cost"/>
+				<attribute name="cost"><value-of select="cost"/></attribute>
+			</group>
 		</element>
 		<match pattern="\)"/>
 		<call ref="spaces"/>
