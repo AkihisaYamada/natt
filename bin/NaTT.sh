@@ -28,9 +28,9 @@ then
 	shift
 fi
 
-if [ "$1" = "-trs" ]
+if [ "$1" = "-xml" ]
 then
-	ext="trs"
+	ext="xml"
 	shift
 fi
 
@@ -91,22 +91,9 @@ then
 	info "----------------------------------"
 fi
 
-(	if [ "${l##*.}" = "list" ]
-	then
-		cat "$l"
-	else
-		if [ "$d" = "" ]
-		then
-			echo "$l"
-		else
-			(cd "$d"; find . -type f -name "*.$ext") |
-			sed -e "s/^\.\///g"
-		fi
-	fi
-) |
-while read f
-do
-	finfo "$f"
+run()
+{
+	f="$1"
 #	read dummy < /dev/tty
 	if [ "$proof" = "" ]
 	then
@@ -129,24 +116,42 @@ do
 	then
 		cat "$d$f"
 	else
-		java -jar "$dir/txtr-0.jar" "$dir/ari.xml.txtr" "$d$f"
+		java -jar "$dir/txtr-1.0.0.jar" "$dir/ari.xml.txtr" "$d$f"
 	fi | {
 		time -p {
-			timeout $t "$dir/NaTT.exe" $cpfopt "$@" $options 1> "$outfile"
+			timeout $t "$dir/NaTT.exe" $cpfopt $options 1> "$outfile"
 		} 2> "$log"
 	} 2> "$timefile"
 	out=`sed -E "s/([A-Z]+)/\1/;q" "$outfile"`
+	time=`sed -E "s/real[ 	]*([0-9.]+).+$/\1/;q" "$timefile"`
 	if [ "$out" = "" -o "$out" = "Killed" ]
 	then
-		echo -n "TIMEOUT	"
+		echo $f,TIMEOUT,$time
 	else
-		echo -n "$out	"
+		echo $f,$out,$time
 	fi
-	sed -E "s/real[ 	]*([0-9.]+).+$/\1/;q" $timefile
 	rm -f $timefile $outfile
 	if [ "$ceta" != "" -a "$cpffile" != "" -a "$out" = "YES" ]
 	then
 		"$ceta" "$cpffile"
 	fi
-done
+}
+
+export -f run finfo
+export l d dir t options proof cpfdir
+
+(	if [ "${l##*.}" = "list" ]
+	then
+		cat "$l"
+	else
+		if [ "$d" = "" ]
+		then
+			echo "$l"
+		else
+			(cd "$d"; find . -type f -name "*.$ext") |
+			sed -e "s/^\.\///g"
+		fi
+	fi
+) |
+xargs -P `nproc` -n1 bash -c 'run "$0"'
 
